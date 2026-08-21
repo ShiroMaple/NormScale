@@ -1,0 +1,13 @@
+version: 0.1
+project:
+  name: "NormScale"
+  summary: "基于工业国家/行业执行标准的质量证明书合规检验引擎与智能比对系统"
+cairn:
+  knowledge_dir: "cairn"
+  skill_spec_date: "2026-08-07"
+  git_policy: "track"
+  language: "zh"
+graduation:
+  provider: none
+history:
+  migration_mode: "start_fresh"

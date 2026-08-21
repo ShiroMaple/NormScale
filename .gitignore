@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+.next
+dist
+build
+tsconfig.tsbuildinfo
+
+# Test Coverage
+coverage
+.nyc_output
+
+# Environment files
+.env
+.env*.local
+
+# System & IDE files
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Temporary files
+*.tmp
+*.bak
