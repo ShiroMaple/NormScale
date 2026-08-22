@@ -81,3 +81,7 @@ export function buildAuditStateGraph(deps?: AuditGraphDependencies) {
     checkpointer,
   });
 }
+
+/** 默认预编译的状态图实例 (供 LangGraph CLI / Studio 本地可视化调试服务加载) */
+export const auditGraph = buildAuditStateGraph();
+export default auditGraph;

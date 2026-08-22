@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "standard:validate": "vitest run tests/repository/validate-standards.test.ts"
+    "standard:validate": "vitest run tests/repository/validate-standards.test.ts",
+    "langgraph:dev": "langgraphjs dev"
   },
   "dependencies": {
     "@langchain/core": "^1.2.9",
@@ -23,6 +24,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@langchain/langgraph-cli": "^1.4.5",
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
