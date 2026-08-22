@@ -7,12 +7,12 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 3 - 质保书提取与归一化适配层构建**
+**当前焦点**：**Phase 4 - LangGraph 状态图与人机协同（HITL）编排层构建**
 - **待执行行动项清单（Next Steps）**：
-  1. 定义 `ICertificateExtractor` 抽象提取接口与统一提取结果 Schema，支持 DocEx 微服务 / 独立多模态 LLM / 本地 Mock 多后端适配；
-  2. 实现 `GradeNormalizer`（基于 Phase 2 别名字典与规则的牌号消歧与标准代号归一化）；
-  3. 实现 `UnitNormalizer`（物理量单位转换、温度修正与置信度过滤校验）；
-  4. 构建真实工业质保书测试样本集（包含冷拔无缝管、热轧管典型样本），编写全量单测闭环验证。
+  1. 定义 `QualityAuditState` 状态机数据结构（封装 RawPayload, NormalizedCert, ItemResults, HITL_Interrupts, FinalReport）；
+  2. 构建流程节点：`Extract_Node` $\to$ `Normalize_Node` $\to$ `Deterministic_Eval_Node` $\to$ `Semantic_RAG_Node` $\to$ `Decision_Aggregator_Node`；
+  3. 实现低置信度/未识别牌号/严重质量缺陷的人工干预（Interrupt & Resume）断点机制；
+  4. 编写 LangGraph 端到端全流程集成测试。
 
 ## 里程碑 (Milestones)
 
@@ -25,10 +25,12 @@
   - 实现基于文件与索引缓存的秒级标准规则检索器（`FileRuleStore`），支持多标准、多切片动态按需加载与 $O(1)$ 别名路由
   - 接入文本条款向量/关键词全文检索层（`ClauseStore`，用于定性说明与工艺技术条款 RAG 检索）
   - 构建《GB/T 13296-2023》全量 31 个钢级规则切片及表1/表2几何尺寸公差表，提供 `pnpm standard:validate` 离线校验工具（65 项测试全部通过）
-- [ ] **Phase 3: 质保书提取与归一化适配层**
-  - 建立统一提取抽象接口，对接 DocEx 微服务与独立 LLM 多模态提取
-  - 实现材料牌号归一化与别名映射消歧（如 SUS304/TP304 -> S30408）
-  - 实现物理量单位归一化与提取置信度校验
+- [x] **Phase 3: 质保书提取与归一化适配层**
+  - 建立统一提取抽象接口 `ICertificateExtractor`，支持本地确定性 Mock、DocEx HTTP Client 与 Direct LLM 多后端适配
+  - 实现材料牌号消歧器 `GradeNormalizer`（联动 31 个切片别名字典秒级映射 SUS304/TP316L/904L/254SMO 等）
+  - 实现物理量工程单位换算器 `UnitNormalizer`（基于 BigNumber 实现 kgf/mm²、psi/ksi $\to$ MPa 零精度损失转换）
+  - 实现检验项名称映射 `PropertyKeyNormalizer`、定性结论清洗 `QualitativeNormalizer` 与尺寸解析 `DimensionNormalizer`
+  - 构建 `CertificateNormalizer` 归一化总控流水线，92 项单元测试 100% 通过
 - [ ] **Phase 4: LangGraph 状态图与人机协同编排**
   - 编排端到端 QualityAuditState 状态机与各任务节点
   - 实现条款级语义 RAG 审核与全局决策汇总（一票否决制）
@@ -45,4 +47,4 @@
 
 1. **标准规则库存储演进触发点**：当前通过 Repository 接口层隔离文件系统，当标准数量超过多少（如 > 100 部）或引入多用户在线规则编辑时触发数据库存储插件化切换？
 2. **标准离线入库工具链**：离线标准结构化初期采用“人工编写模板”还是“LLM 自动结构化初提 + 人工核验”工作流？
-3. **提取层服务边界**：生产部署时优先通过 API 消费现有 DocEx 服务的 OCR 提取能力，还是在本项目内保留独立的 LLM Vision 多模态提取备用链路？
+3. **提取层服务边界与 DocEx REST API 待办**：当前 DocEx 项目端尚未实现专用的 MTC 质保书提取 REST API 端点（此项为未来联动待办），因此 Phase 3 优先通过 `ICertificateExtractor` 接口抽象完成协议契约与适配层（Mock / Direct LLM / HTTP Client），待 DocEx API 就绪后直接填入 URL 配置即可无缝打通。

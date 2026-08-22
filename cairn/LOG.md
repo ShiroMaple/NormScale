@@ -4,7 +4,16 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
-## 2026-08-22 · 完成 Phase 2 规格切片架构、全量31个钢级入库与规则检索仓库构建
+## 2026-08-22 · 完成 Phase 3 质保书提取抽象与确定性归一化流水线构建
+ 
+- 建立 `ICertificateExtractor` 提取抽象接口，支持 Mock、DocEx HTTP Client 与 Direct LLM 适配器。
+- 实现 `UnitNormalizer` 物理量单位换算器（基于 BigNumber 消除浮点误差，支持 $kgf/mm^2, psi, ksi \to MPa$）。
+- 实现 `GradeNormalizer` 牌号消歧器，联动 31 个规格切片倒排索引实现秒级牌号别名解析与消歧。
+- 实现 `PropertyKeyNormalizer` 属性映射器、`QualitativeNormalizer` 定性清洗器与 `DimensionNormalizer` 尺寸解构器。
+- 构建 `CertificateNormalizer` 总控流水线，验证归一化后无缝输入核心引擎；16 个测试套件 92 项单测全部通过。
+- 详细实施与验证总结参见：[docs/003_implementation_plan_phase_3.md](file:///Users/shiromaple/Github/NormScale/docs/003_implementation_plan_phase_3.md)。
+- 
+ ## 2026-08-22 · 完成 Phase 2 规格切片架构、全量31个钢级入库与规则检索仓库构建
 
 - 升级元模型至 Specification Slice 架构，抽象支持牌号、紧固件性能等级、法兰压力等级及胶料代号。
 - 实现 `IRuleStore` 仓库模式与 `FileRuleStore`（基于内存倒排索引，别名与统一代号 $O(1)$ 极速解析）。
