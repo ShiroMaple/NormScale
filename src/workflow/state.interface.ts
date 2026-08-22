@@ -1,10 +1,10 @@
 import { Annotation } from '@langchain/langgraph';
-import { RawCertificatePayload } from '../extractor/extractor.interface';
-import { CertificateExtract } from '../schemas/certificate.schema';
-import { NormalizationAuditLog } from '../normalizer/certificate-normalizer';
-import { StandardRuleSet, SpecificationSlice } from '../schemas/standard.schema';
-import { AuditReport, RuleEvaluationItemResult, AuditTraceItem } from '../schemas/report.schema';
-import { ITraceCollector } from '../logger/logger.interface';
+import { RawCertificatePayload } from '../extractor/extractor.interface.ts';
+import { CertificateExtract } from '../schemas/certificate.schema.ts';
+import { NormalizationAuditLog } from '../normalizer/certificate-normalizer.ts';
+import { StandardRuleSet, SpecificationSlice } from '../schemas/standard.schema.ts';
+import { AuditReport, RuleEvaluationItemResult, AuditTraceItem } from '../schemas/report.schema.ts';
+import { ITraceCollector } from '../logger/logger.interface.ts';
 
 /**
  * ============================================================================

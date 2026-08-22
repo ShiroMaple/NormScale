@@ -1,8 +1,8 @@
-import { IRuleStore } from '../../repository/rule-store.interface';
-import { FileRuleStore } from '../../repository/file-rule-store';
-import { QualityAuditState } from '../state.interface';
-import { getSafeCollector } from '../trace-helper';
-import { logger } from '../../logger';
+import { IRuleStore } from '../../repository/rule-store.interface.ts';
+import { FileRuleStore } from '../../repository/file-rule-store.ts';
+import { QualityAuditState } from '../state.interface.ts';
+import { getSafeCollector } from '../trace-helper.ts';
+import { logger } from '../../logger/index.ts';
 
 /**
  * ============================================================================

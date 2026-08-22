@@ -1,7 +1,7 @@
-import { ComplianceEngine } from '../../engine/core';
-import { QualityAuditState } from '../state.interface';
-import { getSafeCollector } from '../trace-helper';
-import { logger } from '../../logger';
+import { ComplianceEngine } from '../../engine/core.ts';
+import { QualityAuditState } from '../state.interface.ts';
+import { getSafeCollector } from '../trace-helper.ts';
+import { logger } from '../../logger/index.ts';
 
 /**
  * ============================================================================

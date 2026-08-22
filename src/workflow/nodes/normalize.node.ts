@@ -1,8 +1,8 @@
-import { CertificateNormalizer } from '../../normalizer/certificate-normalizer';
-import { IRuleStore } from '../../repository/rule-store.interface';
-import { QualityAuditState, HitlInterruptContext } from '../state.interface';
-import { getSafeCollector } from '../trace-helper';
-import { logger } from '../../logger';
+import { CertificateNormalizer } from '../../normalizer/certificate-normalizer.ts';
+import { IRuleStore } from '../../repository/rule-store.interface.ts';
+import { QualityAuditState, HitlInterruptContext } from '../state.interface.ts';
+import { getSafeCollector } from '../trace-helper.ts';
+import { logger } from '../../logger/index.ts';
 
 /**
  * ============================================================================

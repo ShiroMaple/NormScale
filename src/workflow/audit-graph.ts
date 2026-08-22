@@ -1,16 +1,16 @@
 import { StateGraph, MemorySaver, START, END } from '@langchain/langgraph';
-import { QualityAuditStateAnnotation, QualityAuditState } from './state.interface';
-import { createExtractNode } from './nodes/extract.node';
-import { createNormalizeNode } from './nodes/normalize.node';
-import { createRetrieveStandardNode } from './nodes/retrieve-standard.node';
-import { createDeterministicEvalNode } from './nodes/deterministic-eval.node';
-import { createSemanticReviewNode } from './nodes/semantic-review.node';
-import { createHumanReviewNode } from './nodes/human-review.node';
-import { createDecisionAggregatorNode } from './nodes/decision-aggregator.node';
-import { ICertificateExtractor } from '../extractor/extractor.interface';
-import { IRuleStore } from '../repository/rule-store.interface';
-import { ClauseStore } from '../repository/clause-store';
-import { logger } from '../logger';
+import { QualityAuditStateAnnotation, QualityAuditState } from './state.interface.ts';
+import { createExtractNode } from './nodes/extract.node.ts';
+import { createNormalizeNode } from './nodes/normalize.node.ts';
+import { createRetrieveStandardNode } from './nodes/retrieve-standard.node.ts';
+import { createDeterministicEvalNode } from './nodes/deterministic-eval.node.ts';
+import { createSemanticReviewNode } from './nodes/semantic-review.node.ts';
+import { createHumanReviewNode } from './nodes/human-review.node.ts';
+import { createDecisionAggregatorNode } from './nodes/decision-aggregator.node.ts';
+import { ICertificateExtractor } from '../extractor/extractor.interface.ts';
+import { IRuleStore } from '../repository/rule-store.interface.ts';
+import { ClauseStore } from '../repository/clause-store.ts';
+import { logger } from '../logger/index.ts';
 
 export interface AuditGraphDependencies {
   extractor?: ICertificateExtractor;

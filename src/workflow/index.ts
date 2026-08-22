@@ -11,13 +11,13 @@
  * ============================================================================
  */
 
-export * from './state.interface';
-export * from './audit-graph';
-export * from './workflow-engine';
-export * from './nodes/extract.node';
-export * from './nodes/normalize.node';
-export * from './nodes/retrieve-standard.node';
-export * from './nodes/deterministic-eval.node';
-export * from './nodes/semantic-review.node';
-export * from './nodes/human-review.node';
-export * from './nodes/decision-aggregator.node';
+export * from './state.interface.ts';
+export * from './audit-graph.ts';
+export * from './workflow-engine.ts';
+export * from './nodes/extract.node.ts';
+export * from './nodes/normalize.node.ts';
+export * from './nodes/retrieve-standard.node.ts';
+export * from './nodes/deterministic-eval.node.ts';
+export * from './nodes/semantic-review.node.ts';
+export * from './nodes/human-review.node.ts';
+export * from './nodes/decision-aggregator.node.ts';

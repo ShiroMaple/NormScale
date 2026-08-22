@@ -1,8 +1,8 @@
-import { ICertificateExtractor } from '../../extractor/extractor.interface';
-import { MockCertificateExtractor } from '../../extractor/mock-extractor';
-import { QualityAuditState } from '../state.interface';
-import { getSafeCollector } from '../trace-helper';
-import { logger } from '../../logger';
+import { ICertificateExtractor } from '../../extractor/extractor.interface.ts';
+import { MockCertificateExtractor } from '../../extractor/mock-extractor.ts';
+import { QualityAuditState } from '../state.interface.ts';
+import { getSafeCollector } from '../trace-helper.ts';
+import { logger } from '../../logger/index.ts';
 
 /**
  * ============================================================================

@@ -1,7 +1,7 @@
-import { ClauseStore } from '../../repository/clause-store';
-import { QualityAuditState, SemanticReviewItem } from '../state.interface';
-import { getSafeCollector } from '../trace-helper';
-import { logger } from '../../logger';
+import { ClauseStore } from '../../repository/clause-store.ts';
+import { QualityAuditState, SemanticReviewItem } from '../state.interface.ts';
+import { getSafeCollector } from '../trace-helper.ts';
+import { logger } from '../../logger/index.ts';
 
 /**
  * ============================================================================

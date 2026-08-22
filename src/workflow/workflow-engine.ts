@@ -1,9 +1,9 @@
 import { MemorySaver, Command } from '@langchain/langgraph';
-import { buildAuditStateGraph, AuditGraphDependencies } from './audit-graph';
-import { QualityAuditState, WorkflowOptions, HumanCorrectionInput, HitlInterruptContext } from './state.interface';
-import { AuditReport } from '../schemas/report.schema';
-import { MemoryTraceCollector } from '../logger/trace-collector';
-import { logger } from '../logger';
+import { buildAuditStateGraph, AuditGraphDependencies } from './audit-graph.ts';
+import { QualityAuditState, WorkflowOptions, HumanCorrectionInput, HitlInterruptContext } from './state.interface.ts';
+import { AuditReport } from '../schemas/report.schema.ts';
+import { MemoryTraceCollector } from '../logger/trace-collector.ts';
+import { logger } from '../logger/index.ts';
 
 export interface WorkflowExecutionResult {
   /** 任务唯一标识 */

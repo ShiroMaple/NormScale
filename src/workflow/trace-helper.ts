@@ -1,6 +1,6 @@
-import { ITraceCollector, LogModuleTag, LogLevel } from '../logger/logger.interface';
-import { MemoryTraceCollector } from '../logger/trace-collector';
-import { QualityAuditState } from './state.interface';
+import { ITraceCollector, LogModuleTag, LogLevel } from '../logger/logger.interface.ts';
+import { MemoryTraceCollector } from '../logger/trace-collector.ts';
+import { QualityAuditState } from './state.interface.ts';
 
 /**
  * 安全获取或重新水化 (Rehydrate) 内存轨迹收集器
