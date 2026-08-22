@@ -4,7 +4,15 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
-## 2026-08-22 · 完成 Phase 4 领域日志系统、审计轨迹与性能度量构建
+## 2026-08-22 · 完成 Phase 5 LangGraph 状态图与人机协同 (HITL) 编排层构建
+ 
+- 建立 `QualityAuditStateAnnotation` 状态通道，设计 `traces` 累积通道消除 Checkpoint 序列化方法丢失问题。
+- 构建 7 大节点（`Extract`, `Normalize`, `RetrieveStandard`, `DeterministicEval`, `SemanticReview`, `HumanReview`, `DecisionAggregator`）。
+- 实现基于 `interrupt()` 与 `MemorySaver` 的未知牌号与低置信度自动挂起，支持质检员修正后精准恢复。
+- 封装高层 `WorkflowEngine` 调度门面；21 个测试套件 104 项单测 100% 通过（全绿）。
+- 详细实施与验证总结参见：[docs/007_implementation_plan_phase_5.md](file:///Users/shiromaple/Github/NormScale/docs/007_implementation_plan_phase_5.md)。
+- 
+ ## 2026-08-22 · 完成 Phase 4 领域日志系统、审计轨迹与性能度量构建
  
 - 建立 `ILogger` 门面与 `DefaultDomainLogger`，支持 ANSI 多色高亮、自然语言排版与多模块 Tag 隔离。
 - 实现 `PerformanceProfiler` 微秒级性能分析器，支持同步与异步函数的高精度无侵入耗时度量。

@@ -19,6 +19,8 @@
  *    - 领域日志门面、自然语言输出、微秒级性能度量与审计轨迹收集器（ILogger, PerformanceProfiler, MemoryTraceCollector）。
  * 6. engine:
  *    - 确定性规则核验计算引擎（ComplianceEngine, GB/T 8170 修约, 动态公式, 几何公差）。
+ * 7. workflow:
+ *    - LangGraph 状态图与人机协同 (HITL) 编排引擎 (StateGraph, WorkflowEngine)。
  * ============================================================================
  */
 
@@ -28,3 +30,4 @@ export * from './extractor';
 export * from './normalizer';
 export * from './logger';
 export * from './engine';
+export * from './workflow';

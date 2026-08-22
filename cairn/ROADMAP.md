@@ -7,12 +7,12 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 5 - LangGraph 状态图与人机协同（HITL）编排层构建**
+**当前焦点**：**Phase 6 - Next.js 15 API 服务层与物资验收决策看板构建**
 - **待执行行动项清单（Next Steps）**：
-  1. 定义 `QualityAuditState` 状态机数据结构（封装 RawPayload, NormalizedCert, ItemResults, HITL_Interrupts, FinalReport）；
-  2. 构建流程节点：`Extract_Node` $\to$ `Normalize_Node` $\to$ `Deterministic_Eval_Node` $\to$ `Semantic_RAG_Node` $\to$ `Decision_Aggregator_Node`；
-  3. 实现低置信度/未识别牌号/严重质量缺陷的人工干预（Interrupt & Resume）断点机制；
-  4. 编写 LangGraph 端到端全流程集成测试。
+  1. 开发 Next.js 15 App Router 后端路由体系（`/api/audit/submit`, `/api/audit/status/[taskId]`, `/api/audit/resume/[taskId]`, `/api/standards`）；
+  2. 构建宽屏双列交互看板 UI（左侧原始质保书 PDF/图像高亮渲染与 OCR 标注，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）；
+  3. 构建 HITL 人工干预抽屉组件（支持牌号修正、实测值覆写、特批放行与重新触发流转）；
+  4. 编写 API Route 与前端组件集成测试。
 
 ## 里程碑 (Milestones)
 
@@ -36,10 +36,11 @@
   - 实现微秒级 `PerformanceProfiler` 性能度量器，精确统计各阶段耗时（切片加载、牌号消歧、单位换算、规则比对等）
   - 实现 `MemoryTraceCollector` 内存审计轨迹收集器，将自然语言决策轨迹与性能指标无缝注入 `AuditReport`
   - 完成核心模块全链路日志埋点，19 个测试套件 98 项单元测试 100% 通过
-- [ ] **Phase 5: LangGraph 状态图与人机协同编排**
-  - 编排端到端 QualityAuditState 状态机与各任务节点
-  - 实现条款级语义 RAG 审核与全局决策汇总（一票否决制）
-  - 实现低置信度/未识别牌号的人机协同（Interrupt & Resume）断点机制
+- [x] **Phase 5: LangGraph 状态图与人机协同编排**
+  - 定义 `QualityAuditStateAnnotation` 状态通道与序列化安全的 `traces` 累积通道
+  - 编排 7 大流水线节点（`Extract` $\to$ `Normalize` $\to$ `RetrieveStandard` $\to$ `DeterministicEval` $\to$ `SemanticReview` $\to$ `HumanReview` $\to$ `DecisionAggregator`）
+  - 实现基于 `interrupt()` 与 `MemorySaver` 的 HITL 人机协同断点挂起与质检员人工修正精准恢复机制
+  - 封装开箱即用的 `WorkflowEngine` 门面 API，21 个测试套件 104 项单测 100% 通过
 - [ ] **Phase 6: API 服务层与物资验收决策看板**
   - 开发 Next.js 15 App Router 接口体系（任务提交、轮询、恢复、报告导出）
   - 构建宽屏双列交互看板（左侧原始质保书高亮预览，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）
