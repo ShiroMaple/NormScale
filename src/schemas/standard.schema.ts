@@ -117,19 +117,15 @@ export type OrChoiceGroupCriteria = z.infer<typeof OrChoiceGroupCriteriaSchema>;
 // 6. 校验替代检验组规则（用于相互等效或替代的检测项目，如涡流探伤代替液压试验、超声代替射线）
 export const AlternativeCandidateSchema = z.object({
   candidate_key: z.string(),
-  display_name: stringOrOptional(),
-  required_level: stringOrOptional(),
-  test_standard: stringOrOptional(),
-  calc_pressure_formula: stringOrOptional(),
+  display_name: z.string().optional(),
+  required_level: z.string().optional(),
+  test_standard: z.string().optional(),
+  calc_pressure_formula: z.string().optional(),
   max_pressure_cap: z.number().optional(),
   min_holding_time_s: z.number().optional(),
-  criteria_description: stringOrOptional(),
+  criteria_description: z.string().optional(),
 });
 export type AlternativeCandidate = z.infer<typeof AlternativeCandidateSchema>;
-
-function stringOrOptional() {
-  return z.string().optional();
-}
 
 export const AlternativeGroupCriteriaSchema = z.object({
   group_logic: z.enum(['AT_LEAST_ONE_PASS', 'ALL_PASS']).default('AT_LEAST_ONE_PASS'),
@@ -139,11 +135,11 @@ export type AlternativeGroupCriteria = z.infer<typeof AlternativeGroupCriteriaSc
 
 // 7. 校验定性评级/方法枚举规则（用于无损探伤验收等级 U2/E3H、金相级别判定、晶间腐蚀合格结论等）
 export const QualitativeEnumCriteriaSchema = z.object({
-  required_level: stringOrOptional(),  // 例如："U2"（超声验收等级）、"E3H"（涡流验收等级）
-  test_standard: stringOrOptional(),   // 例如："GB/T 5777-2019"（无损检测国家标准）
-  method: stringOrOptional(),          // 例如："Method_E"（晶间腐蚀试验方法E法）
-  expected: stringOrOptional(),        // 例如："NO_CORROSION_TREND"（无晶间腐蚀倾向）
-  min_level: stringOrOptional(),
+  required_level: z.string().optional(),  // 例如："U2"（超声验收等级）、"E3H"（涡流验收等级）
+  test_standard: z.string().optional(),   // 例如："GB/T 5777-2019"（无损检测国家标准）
+  method: z.string().optional(),          // 例如："Method_E"（晶间腐蚀试验方法E法）
+  expected: z.string().optional(),        // 例如："NO_CORROSION_TREND"（无晶间腐蚀倾向）
+  min_level: z.string().optional(),
 });
 export type QualitativeEnumCriteria = z.infer<typeof QualitativeEnumCriteriaSchema>;
 
@@ -155,11 +151,11 @@ export type ExemptionCriteria = z.infer<typeof ExemptionCriteriaSchema>;
 
 
 /* ==========================================================================
-   三、顶层标准与牌号规则集整合 (Top-level Grade & Standard Ruleset)
-   - 校验通用判定规则项、材料牌号元数据、尺寸公差表及完整标准文件结构
+   三、通用规则项定义 (Evaluation Rule Definition)
+   - 包含规则唯一标识、类别、属性名、判定类型、触发条件及具体参数
    ========================================================================== */
 
-// 校验单条通用的评定规则结构（包含规则标识、类别、属性名、判定类型、触发条件及具体参数）
+// 校验单条通用的评定规则结构
 export const EvaluationRuleSchema = z.object({
   rule_id: z.string(),
   category: RuleCategorySchema,
@@ -180,11 +176,73 @@ export const EvaluationRuleSchema = z.object({
   ]),
   requirement_level: RequirementLevelSchema.default('MANDATORY'),
   trigger_condition: z.string().optional(), // JS 条件表达式，例如："ctx.header.dimensions.wall_thickness_mm >= 1.7"（当壁厚大于等于1.7mm时触发）
-  criteria: z.record(z.any()),              // 具体规则参数 (可由各 CriteriaSchema 校验)
+  criteria: z.record(z.any()),              // 具体规则参数 (由各 CriteriaSchema 校验)
 });
 export type EvaluationRule = z.infer<typeof EvaluationRuleSchema>;
 
-// 校验材料牌号元数据（主牌号、统一数字代号、金相组织分类及历史/外标对照别名）
+
+/* ==========================================================================
+   四、通用规格切片模型与尺寸公差表 (Specification Slice & Dimension Tolerance)
+   - 泛化抽象支持金属牌号、紧固件性能等级、法兰压力等级与密封件胶料代号
+   ========================================================================== */
+
+// 校验规格切片技术类别
+export const SpecTypeSchema = z.enum([
+  'grade',           // 材料牌号 (如 S30408, Q345R)
+  'property_class',  // 性能等级 (如 螺栓 8.8, 10.9, A2-70)
+  'pressure_class',  // 压力等级 (如 法兰 PN16, Class 150)
+  'material_group',  // 胶料/材质大类 (如 橡胶 NBR 70, FKM 80)
+  'standard_type',   // 标准型号/类型 (如 Type I, Schedule 40)
+]);
+export type SpecType = z.infer<typeof SpecTypeSchema>;
+
+// 校验通用规格切片模型（Specification Slice）
+export const SpecificationSliceSchema = z.object({
+  spec_key: z.string(),                                      // 切片全局唯一标识键 (如 "S30408", "Class_8_8", "PN16_WN")
+  spec_type: SpecTypeSchema.default('grade'),                 // 规格切片分类
+  display_name: z.string(),                                  // 界面展示全称 (如 "06Cr19Ni10 (S30408)")
+  primary_grade: z.string().optional(),                      // 若为牌号，对应的主牌号 (如 "06Cr19Ni10")
+  unified_code: z.string().optional(),                       // 统一数字代号 (如 "S30408")
+  standard_code: z.string().optional(),                      // 标准代号
+  structure_type: z.string().optional(),                     // 组织类型 (如 "austenitic", "ferritic", "duplex")
+  aliases: z.array(z.string()).default([]),                  // 跨国/历史别名字典 (如 ["SUS304", "TP304", "0Cr18Ni9"])
+  description: z.string().optional(),                        // 业务与条款说明
+  applicability_scope: ApplicabilityScopeSchema.optional(),
+  evaluation_rules: z.array(EvaluationRuleSchema),           // 本切片包含的全部判定规则清单
+});
+export type SpecificationSlice = z.infer<typeof SpecificationSliceSchema>;
+
+// 校验单条尺寸公差阶梯规则 (如 GB/T 13296 表1/表2 公差阶梯)
+export const ToleranceStepRuleSchema = z.object({
+  dimension_property: z.enum(['outer_diameter', 'wall_thickness']),
+  process: z.enum(['cold_drawn', 'hot_rolled', 'hot_extrusion', 'all']).default('all'),
+  delivery_mode: z.enum(['nominal_wall', 'min_wall']).default('min_wall'),
+  range_min: z.number().optional(),                          // 尺寸下限 (mm)
+  range_max: z.number().optional(),                          // 尺寸上限 (mm)
+  outer_diameter_limit: z.number().optional(),               // 依赖外径阶梯限制 (如 D <= 38mm)
+  plus_tolerance_value: z.number(),                          // 正偏差绝对值或百分比数值 (如 0.15 或 20 表示 +20%)
+  plus_tolerance_is_percent: z.boolean().default(false),     // 正偏差是否为百分比
+  minus_tolerance_value: z.number(),                         // 负偏差绝对值或百分比数值 (如 -0.15 或 0)
+  minus_tolerance_is_percent: z.boolean().default(false),    // 负偏差是否为百分比
+  note: z.string().optional(),
+});
+export type ToleranceStepRule = z.infer<typeof ToleranceStepRuleSchema>;
+
+// 校验全局几何尺寸公差表集合
+export const DimensionToleranceTableSchema = z.object({
+  table_id: z.string(),                                      // 如 "GB_T_13296_2023_TABLE_1"
+  table_name: z.string(),                                    // 如 "表1 钢管公称外径和最小壁厚的允许偏差"
+  rules: z.array(ToleranceStepRuleSchema),
+});
+export type DimensionToleranceTable = z.infer<typeof DimensionToleranceTableSchema>;
+
+
+/* ==========================================================================
+   五、顶层标准元信息与兼容标准规则集 (Top-level Standard Ruleset & Backward Compatibility)
+   - 保持向后兼容现有 GradeRule 模型，同时支持切片化结构
+   ========================================================================== */
+
+// 校验材料牌号元数据（向后兼容 GradeInfo）
 export const GradeInfoSchema = z.object({
   primary_grade: z.string(),               // 例如："06Cr19Ni10"（主牌号）
   unified_code: z.string().optional(),     // 例如："S30408"（统一数字代号）
@@ -194,7 +252,7 @@ export const GradeInfoSchema = z.object({
 });
 export type GradeInfo = z.infer<typeof GradeInfoSchema>;
 
-// 校验单个牌号的完整判定规则集合（绑定牌号信息、适用范围与所有评定规则项）
+// 校验单个牌号的判定规则集合（向后兼容 GradeRule）
 export const GradeRuleSchema = z.object({
   grade_info: GradeInfoSchema,
   description: z.string().optional(),      // 牌号综述说明
@@ -212,14 +270,16 @@ export const StandardMetaSchema = z.object({
   status: z.enum(['CURRENT', 'SUPERSEDED', 'WITHDRAWN']).default('CURRENT'),
   material_category: z.string().optional(), // 例如："ferrous_pipe"（黑色金属管材）
   applies_to_forms: z.array(z.string()).default([]),
+  tolerance_tables: z.array(DimensionToleranceTableSchema).optional(),
 });
 export type StandardMeta = z.infer<typeof StandardMetaSchema>;
 
-// 校验整个标准规则库文件（最顶层的完整 JSON 结构，包含标准元信息、全局尺寸公差表、各牌号规则列表）
+// 校验整个标准规则库文件（兼容顶层复合 JSON 结构）
 export const StandardRuleSetSchema = z.object({
-  $schema: z.string().optional(),
+  '$schema': z.string().optional(),
   standard_meta: StandardMetaSchema,
   global_dimension_tolerance_tables: z.record(z.any()).optional(),
-  grade_rules: z.array(GradeRuleSchema),
+  grade_rules: z.array(GradeRuleSchema).default([]),
+  slices: z.array(SpecificationSliceSchema).default([]),
 });
 export type StandardRuleSet = z.infer<typeof StandardRuleSetSchema>;

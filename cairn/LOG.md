@@ -2,6 +2,14 @@
 
 本文件按时间倒序记录实质性进展——最新条目在最上方，紧随本行之后。每条记录保持简短——仅包含摘要与指针；结论沉淀至 `cairn/<topic>.md`。
 
+## 2026-08-22 · 完成 Phase 2 规格切片架构、全量31个钢级入库与规则检索仓库构建
+
+- 升级元模型至 Specification Slice 架构，抽象支持牌号、紧固件性能等级、法兰压力等级及胶料代号。
+- 实现 `IRuleStore` 仓库模式与 `FileRuleStore`（基于内存倒排索引，别名与统一代号 $O(1)$ 极速解析）。
+- 对照《GB 13296-2023.pdf》全量录入 31 个钢级切片规则、表1/表2尺寸公差表及全文条款集。
+- 实现尺寸公差评估器与 `pnpm standard:validate` 离线校验工具，全部 65 项单测 100% 通过。
+- 详细实施与验证总结参见：[cairn/architecture.md](file:///Users/shiromaple/Github/NormScale/cairn/architecture.md)。
+
 ## 2026-08-22 · 完成 Phase 1 元模型与确定性规则核验引擎构建
 
 - 完成 Zod 强类型 Universal Meta-Schema 契约建模（标准/质保书/判定矩阵）。

@@ -1,17 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { ComplianceEngine } from '@/engine/core';
-import { StandardRuleSet, StandardRuleSetSchema } from '@/schemas/standard.schema';
+import { StandardRuleSet } from '@/schemas/standard.schema';
 import { CertificateExtract, CertificateExtractSchema } from '@/schemas/certificate.schema';
 import { AuditReportSchema } from '@/schemas/report.schema';
-import standardJson from '../../data/standards/GB_T_13296_2023.json';
+import { FileRuleStore } from '@/repository/file-rule-store';
 
 describe('ComplianceEngine 核心核验引擎黄金基准测试集 (GB/T 13296-2023)', () => {
-  // 校验基准标准规则是否符合 Zod Schema
-  const standardRuleSet: StandardRuleSet = StandardRuleSetSchema.parse(standardJson);
+  let standardRuleSet: StandardRuleSet;
 
-  it('标准规则库通过 Zod 强类型解析校验', () => {
+  beforeAll(async () => {
+    const store = new FileRuleStore();
+    const loaded = await store.getCompleteStandard('GB/T 13296-2023');
+    if (!loaded) throw new Error('Failed to load standard GB/T 13296-2023 from store');
+    standardRuleSet = loaded;
+  });
+
+  it('标准规则库通过 Zod 强类型解析校验且收录全部 31 个切片', () => {
     expect(standardRuleSet.standard_meta.standard_id).toBe('GB/T 13296-2023');
-    expect(standardRuleSet.grade_rules.length).toBe(2);
+    expect(standardRuleSet.grade_rules.length).toBe(31);
+    expect(standardRuleSet.slices?.length).toBe(31);
   });
 
   describe('Case 1: 全合格标准质保书 (S30408 冷拔管，涡流代替水压合格)', () => {
@@ -175,12 +182,27 @@ describe('ComplianceEngine 核心核验引擎黄金基准测试集 (GB/T 13296-2
           certificate_no: 'QS-202608-004B',
           declared_standard: 'GB/T 13296-2023',
           declared_grade: '07Cr19Ni11Ti',
+          dimensions: { outer_diameter_mm: 25.0, wall_thickness_mm: 2.0 },
         },
         test_records: [
           { category: 'chemical', property_key: 'C', measured_value_num: 0.06, unit: '%' },
+          { category: 'chemical', property_key: 'Si', measured_value_num: 0.50, unit: '%' },
+          { category: 'chemical', property_key: 'Mn', measured_value_num: 1.20, unit: '%' },
+          { category: 'chemical', property_key: 'P', measured_value_num: 0.025, unit: '%' },
+          { category: 'chemical', property_key: 'S', measured_value_num: 0.005, unit: '%' },
+          { category: 'chemical', property_key: 'Ni', measured_value_num: 10.50, unit: '%' },
+          { category: 'chemical', property_key: 'Cr', measured_value_num: 18.20, unit: '%' },
           { category: 'chemical', property_key: 'N', measured_value_num: 0.03, unit: '%' },
           { category: 'chemical', property_key: 'Ti', measured_value_num: 0.45, unit: '%' },
+          { category: 'mechanical', property_key: 'tensile_strength', measured_value_num: 560, unit: 'MPa' },
+          { category: 'mechanical', property_key: 'yield_strength_rp02', measured_value_num: 235, unit: 'MPa' },
+          { category: 'mechanical', property_key: 'elongation_A', measured_value_num: 40.0, unit: '%' },
+          { category: 'mechanical', property_key: 'hardness', sub_property: 'HRB', measured_value_num: 85, unit: 'HRB' },
+          { category: 'process', property_key: 'flattening_test', qualitative_result: 'PASS' },
+          { category: 'ndt', property_key: 'eddy_current_test', measured_level_claimed: 'E3H', qualitative_result: 'PASS' },
+          { category: 'ndt', property_key: 'ultrasonic_test', measured_level_claimed: 'U2', qualitative_result: 'PASS' },
           { category: 'metallographic', property_key: 'grain_size', measured_value_num: 5.5, unit: '级' },
+          // 晶间腐蚀 (intergranular_corrosion) 留空，验证是否被 EXEMPT 豁免放行
         ],
       };
 

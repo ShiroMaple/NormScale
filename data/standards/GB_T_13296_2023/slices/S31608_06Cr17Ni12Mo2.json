@@ -1,0 +1,290 @@
+{
+  "spec_key": "S31608",
+  "spec_type": "grade",
+  "display_name": "06Cr17Ni12Mo2 (S31608)",
+  "primary_grade": "06Cr17Ni12Mo2",
+  "unified_code": "S31608",
+  "structure_type": "austenitic",
+  "aliases": [
+    "SUS316",
+    "TP316",
+    "0Cr17Ni12Mo2"
+  ],
+  "description": "GB/T 13296-2023 序号11 06Cr17Ni12Mo2 (S31608) 钢级规则切片",
+  "evaluation_rules": [
+    {
+      "rule_id": "CHEM_S31608_C",
+      "category": "chemical",
+      "property_key": "C",
+      "display_name": "C含量 (C)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 C 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 0.08,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "CHEM_S31608_Si",
+      "category": "chemical",
+      "property_key": "Si",
+      "display_name": "Si含量 (Si)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 Si 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 1,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_S31608_Mn",
+      "category": "chemical",
+      "property_key": "Mn",
+      "display_name": "Mn含量 (Mn)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 Mn 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 2,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_S31608_P",
+      "category": "chemical",
+      "property_key": "P",
+      "display_name": "P含量 (P)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 P 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 0.035,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "CHEM_S31608_S",
+      "category": "chemical",
+      "property_key": "S",
+      "display_name": "S含量 (S)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 S 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 0.015,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "CHEM_S31608_Ni",
+      "category": "chemical",
+      "property_key": "Ni",
+      "display_name": "Ni含量 (Ni)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 Ni 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 10,
+        "max": 14,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_S31608_Cr",
+      "category": "chemical",
+      "property_key": "Cr",
+      "display_name": "Cr含量 (Cr)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 Cr 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 16,
+        "max": 18,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_S31608_Mo",
+      "category": "chemical",
+      "property_key": "Mo",
+      "display_name": "Mo含量 (Mo)",
+      "description": "依据 GB/T 13296-2023 表3，06Cr17Ni12Mo2 熔炼分析 Mo 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 2,
+        "max": 3,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "MECH_S31608_RM",
+      "category": "mechanical",
+      "property_key": "tensile_strength",
+      "display_name": "抗拉强度 (Rm)",
+      "description": "依据 GB/T 13296-2023 表4，06Cr17Ni12Mo2 常温抗拉强度 Rm >= 520 MPa",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 520,
+        "max": null,
+        "unit": "MPa",
+        "condition_adjustments": [
+          {
+            "when": "ctx.header.manufacturing_process == 'hot_extrusion'",
+            "min_offset": -20,
+            "note": "热挤压钢管抗拉强度允许降低20MPa"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "MECH_S31608_RP02",
+      "category": "mechanical",
+      "property_key": "yield_strength_rp02",
+      "display_name": "规定塑性延伸强度 (Rp0.2)",
+      "description": "依据 GB/T 13296-2023 表4，06Cr17Ni12Mo2 常温屈服强度 Rp0.2 >= 205 MPa",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 205,
+        "max": null,
+        "unit": "MPa"
+      }
+    },
+    {
+      "rule_id": "MECH_S31608_A",
+      "category": "mechanical",
+      "property_key": "elongation_A",
+      "display_name": "断后伸长率 (A)",
+      "description": "依据 GB/T 13296-2023 表4，06Cr17Ni12Mo2 断后伸长率 A >= 35 %",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 35,
+        "max": null,
+        "unit": "%"
+      }
+    },
+    {
+      "rule_id": "MECH_S31608_HARDNESS",
+      "category": "mechanical",
+      "property_key": "hardness",
+      "display_name": "硬度试验 (HRB/HBW/HV)",
+      "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验",
+      "rule_type": "or_choice_group",
+      "requirement_level": "CONDITIONAL",
+      "trigger_condition": "ctx.header.dimensions.wall_thickness_mm >= 1.7",
+      "criteria": {
+        "options": [
+          {
+            "sub_key": "HRB",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "max": 90,
+              "unit": "HRB"
+            }
+          },
+          {
+            "sub_key": "HBW",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "max": 192,
+              "unit": "HBW"
+            }
+          },
+          {
+            "sub_key": "HV",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "max": 200,
+              "unit": "HV"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "PROC_S31608_FLATTENING",
+      "category": "process",
+      "property_key": "flattening_test",
+      "display_name": "压扁试验",
+      "description": "依据 GB/T 13296-2023 第 7.6.1 条，壁厚 <= 10mm 钢管压扁间距 H=(1+0.09)S/(0.09+S/D)，试样无裂纹",
+      "rule_type": "dynamic_formula_pass",
+      "requirement_level": "MANDATORY",
+      "trigger_condition": "ctx.header.dimensions.wall_thickness_mm <= 10.0",
+      "criteria": {
+        "formula_distance_H": "(1 + 0.09) * S / (0.09 + S / D)",
+        "expected_visual_result": "NO_CRACKS",
+        "test_standard": "GB/T 246"
+      }
+    },
+    {
+      "rule_id": "NDT_S31608_PRESSURE_TIGHTNESS",
+      "category": "ndt",
+      "property_key": "pressure_tightness",
+      "display_name": "承压/致密性检验 (水压或涡流)",
+      "description": "依据 GB/T 13296-2023 第 7.5 条，钢管逐根水压试验或符合 GB/T 7735-2016 E3H 级的涡流检测",
+      "rule_type": "alternative_group",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "group_logic": "AT_LEAST_ONE_PASS",
+        "candidates": [
+          {
+            "candidate_key": "hydraulic_test",
+            "display_name": "液压试验",
+            "test_standard": "GB/T 241"
+          },
+          {
+            "candidate_key": "eddy_current_test",
+            "display_name": "涡流检测",
+            "required_level": "E3H",
+            "test_standard": "GB/T 7735-2016"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "NDT_S31608_ULTRASONIC",
+      "category": "ndt",
+      "property_key": "ultrasonic_test",
+      "display_name": "超声检测",
+      "description": "依据 GB/T 13296-2023 第 7.9 条，按 GB/T 5777-2019 进行纵向超声波检测，验收等级为 U2 级",
+      "rule_type": "enum_acceptance",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "required_level": "U2",
+        "test_standard": "GB/T 5777-2019"
+      }
+    },
+    {
+      "rule_id": "CORROSION_S31608_INTERGRANULAR",
+      "category": "corrosion",
+      "property_key": "intergranular_corrosion",
+      "display_name": "晶间腐蚀试验",
+      "description": "依据 GB/T 13296-2023 第 7.7 条，06Cr17Ni12Mo2 应按 GB/T 4334-2020 E法进行晶间腐蚀试验",
+      "rule_type": "qualitative_pass",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "method": "Method_E",
+        "test_standard": "GB/T 4334-2020",
+        "expected": "NO_CORROSION_TREND"
+      }
+    }
+  ]
+}
