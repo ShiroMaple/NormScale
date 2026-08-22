@@ -5,6 +5,13 @@ import { EvaluationContext, evaluateNumericRange } from './numeric-evaluator';
 import { evaluateDynamicExpression } from './dynamic-evaluator';
 import { evaluateOrChoiceGroup, evaluateAlternativeGroup, evaluateQualitativeEnum, evaluateExemption } from './logic-evaluator';
 import { isRuleTriggered } from './missing-scanner';
+import { logger as defaultLogger, ILogger, ITraceCollector } from '../logger';
+import { PerformanceProfiler } from '../logger/profiler';
+
+export interface EngineEvaluationOptions {
+  logger?: ILogger;
+  collector?: ITraceCollector;
+}
 
 /* ==========================================================================
    合规性核验核心调度引擎 (Compliance Verification Engine)
@@ -21,93 +28,133 @@ export class ComplianceEngine {
    * 执行质保书合规性核验的主入口函数
    * @param standardRuleSet 命中的标准规则全集（如 GB/T 13296-2023）
    * @param certificate 结构化提取出的质保书实测数据
-   * @returns 包含各单项明细与全局决策的完整核验报告
+   * @param options 可选的日志器与内存审计轨迹收集器
+   * @returns 包含各单项明细、全局决策与审计轨迹的完整核验报告
    */
   public static evaluate(
     standardRuleSet: StandardRuleSet,
-    certificate: CertificateExtract
+    certificate: CertificateExtract,
+    options?: EngineEvaluationOptions
   ): AuditReport {
+    const log = options?.logger || defaultLogger;
+    const collector = options?.collector;
     const header = certificate.header;
     const declaredGrade = header.declared_grade.trim();
 
-    // --------------------------------------------------------------------------
-    // 步骤 1：牌号规则路由与切片命中 (Grade Resolution & Slice Routing)
-    // --------------------------------------------------------------------------
-    // 根据质保书声称的牌号（如 "06Cr19Ni10"、"S30408"、"SUS304"），在标准库中精确定位对应的规则切片
-    const gradeRule = this.resolveGradeRule(standardRuleSet, declaredGrade);
-    if (!gradeRule) {
-      throw new Error(
-        `Standard '${standardRuleSet.standard_meta.standard_id}' does not contain rules for grade '${declaredGrade}'`
-      );
-    }
+    log.info('ENGINE', `启动合规性核验引擎: 质保书 [${header.certificate_no}]，标准 [${header.declared_standard}]，牌号 [${declaredGrade}]`);
 
-    // --------------------------------------------------------------------------
-    // 步骤 2：构建全局核验上下文数据图谱 (Build Evaluation Context)
-    // --------------------------------------------------------------------------
-    // 预聚合化学成分、力学性能与几何尺寸实测值，建立 O(1) 快速索引表，支撑跨字段关联
-    const context = this.buildContext(certificate);
-
-    // --------------------------------------------------------------------------
-    // 步骤 3：逐项执行原子规则评估流水线 (Execute Rule Evaluator Pipeline)
-    // --------------------------------------------------------------------------
-    const itemResults: RuleEvaluationItemResult[] = [];
-    const missingMandatory: string[] = [];
-    const evaluatedPropertyKeys = new Set<string>(); // 记录已核验的属性键集合，供后续比对额外报送项
-
-    for (const rule of gradeRule.evaluation_rules) {
-      // 调度单条规则评估器（包含前置条件激活检查与各类型求值）
-      const result = this.evaluateSingleRule(rule, context);
-      itemResults.push(result);
-      evaluatedPropertyKeys.add(rule.property_key);
-
-      // 处理复合逻辑组（多选一组 / 替代检验组）的候选键覆盖，避免误判为额外报送
-      if (rule.rule_type === 'alternative_group' && Array.isArray(rule.criteria['candidates'])) {
-        for (const cand of rule.criteria['candidates']) {
-          if (cand.candidate_key) evaluatedPropertyKeys.add(cand.candidate_key);
-        }
+    return PerformanceProfiler.profileSync('ENGINE', '质保书规则核验主流水线', () => {
+      // --------------------------------------------------------------------------
+      // 步骤 1：牌号规则路由与切片命中 (Grade Resolution & Slice Routing)
+      // --------------------------------------------------------------------------
+      const gradeRule = this.resolveGradeRule(standardRuleSet, declaredGrade);
+      if (!gradeRule) {
+        log.error('ENGINE', `标准 [${standardRuleSet.standard_meta.standard_id}] 未找到牌号 [${declaredGrade}] 的核验规则`);
+        if (collector) collector.addTrace('ENGINE', 'error', `未收录牌号: ${declaredGrade}`);
+        throw new Error(
+          `Standard '${standardRuleSet.standard_meta.standard_id}' does not contain rules for grade '${declaredGrade}'`
+        );
       }
-      if (rule.rule_type === 'or_choice_group' && Array.isArray(rule.criteria['options'])) {
-        for (const opt of rule.criteria['options']) {
-          if (opt.sub_key) {
-            evaluatedPropertyKeys.add(opt.sub_key);
-            evaluatedPropertyKeys.add(`${rule.property_key}_${opt.sub_key}`);
+
+      if (collector) {
+        collector.addTrace('ENGINE', 'info', `命中标准规则切片: [${standardRuleSet.standard_meta.standard_id}] -> [${gradeRule.grade_info.primary_grade}] (包含 ${gradeRule.evaluation_rules.length} 条检验规则)`);
+      }
+
+      // --------------------------------------------------------------------------
+      // 步骤 2：构建全局核验上下文数据图谱 (Build Evaluation Context)
+      // --------------------------------------------------------------------------
+      const context = this.buildContext(certificate);
+
+      // --------------------------------------------------------------------------
+      // 步骤 3：逐项执行原子规则评估流水线 (Execute Rule Evaluator Pipeline)
+      // --------------------------------------------------------------------------
+      const itemResults: RuleEvaluationItemResult[] = [];
+      const missingMandatory: string[] = [];
+      const evaluatedPropertyKeys = new Set<string>();
+
+      for (const rule of gradeRule.evaluation_rules) {
+        const result = this.evaluateSingleRule(rule, context);
+        itemResults.push(result);
+        evaluatedPropertyKeys.add(rule.property_key);
+
+        // 处理复合逻辑组候选键覆盖
+        if (rule.rule_type === 'alternative_group' && Array.isArray(rule.criteria['candidates'])) {
+          for (const cand of rule.criteria['candidates']) {
+            if (cand.candidate_key) evaluatedPropertyKeys.add(cand.candidate_key);
           }
         }
+        if (rule.rule_type === 'or_choice_group' && Array.isArray(rule.criteria['options'])) {
+          for (const opt of rule.criteria['options']) {
+            if (opt.sub_key) {
+              evaluatedPropertyKeys.add(opt.sub_key);
+              evaluatedPropertyKeys.add(`${rule.property_key}_${opt.sub_key}`);
+            }
+          }
+        }
+
+        // 记录单项审验日志与轨迹
+        if (result.status === 'FAIL') {
+          log.warn('ENGINE', `[不合格] ${rule.display_name}: ${result.message}`);
+          if (collector) collector.addTrace('ENGINE', 'warn', `[不合格] ${rule.display_name}: ${result.message}`);
+        } else if (result.status === 'MISSING') {
+          log.warn('ENGINE', `[漏检] ${rule.display_name}: ${result.message}`);
+          if (collector) collector.addTrace('ENGINE', 'warn', `[漏检] ${rule.display_name}: ${result.message}`);
+        } else if (result.status === 'PASS') {
+          log.debug('ENGINE', `[合格] ${rule.display_name}: ${result.message}`);
+        }
+
+        // 强制项或条件触发项漏检时记录到强制漏检清单
+        if (result.status === 'MISSING' && (rule.requirement_level === 'MANDATORY' || rule.requirement_level === 'CONDITIONAL')) {
+          missingMandatory.push(`${rule.display_name} (${rule.property_key})`);
+        }
       }
 
-      // 强制项 (MANDATORY) 或条件触发项 (CONDITIONAL) 漏检时记录到强制漏检清单
-      if (result.status === 'MISSING' && (rule.requirement_level === 'MANDATORY' || rule.requirement_level === 'CONDITIONAL')) {
-        missingMandatory.push(`${rule.display_name} (${rule.property_key})`);
+      // --------------------------------------------------------------------------
+      // 步骤 4：统计质保书中未被标准规则覆盖的额外检测项 (Extra Reported Items)
+      // --------------------------------------------------------------------------
+      const unmatchedRecords: TestRecord[] = [];
+      for (const rec of certificate.test_records) {
+        if (!evaluatedPropertyKeys.has(rec.property_key)) {
+          unmatchedRecords.push(rec);
+        }
       }
-    }
-
-    // --------------------------------------------------------------------------
-    // 步骤 4：统计质保书中未被标准规则覆盖的额外检测项 (Extra Reported Items)
-    // --------------------------------------------------------------------------
-    const unmatchedRecords: TestRecord[] = [];
-    for (const rec of certificate.test_records) {
-      if (!evaluatedPropertyKeys.has(rec.property_key)) {
-        unmatchedRecords.push(rec);
+      if (unmatchedRecords.length > 0 && collector) {
+        collector.addTrace('ENGINE', 'info', `发现 ${unmatchedRecords.length} 项标准未强制要求的额外报送检测项`);
       }
-    }
 
-    // --------------------------------------------------------------------------
-    // 步骤 5：全局决策汇总与一票否决裁决 (Decision Aggregation & Gatekeeping)
-    // --------------------------------------------------------------------------
-    const summary = this.buildSummary(itemResults, missingMandatory);
+      // --------------------------------------------------------------------------
+      // 步骤 5：全局决策汇总与一票否决裁决 (Decision Aggregation & Gatekeeping)
+      // --------------------------------------------------------------------------
+      const summary = this.buildSummary(itemResults, missingMandatory);
 
-    return {
-      certificate_no: header.certificate_no,
-      declared_standard: header.declared_standard,
-      declared_grade: declaredGrade,
-      matched_standard_id: standardRuleSet.standard_meta.standard_id,
-      matched_grade: gradeRule.grade_info.primary_grade,
-      audit_timestamp: new Date().toISOString(),
-      summary,
-      item_results: itemResults,
-      missing_mandatory_items: missingMandatory,
-      unmatched_certificate_records: unmatchedRecords.length > 0 ? unmatchedRecords : undefined,
-    };
+      log.info(
+        'ENGINE',
+        `核验决策完成: 全局结论 [${summary.overall_status}] (共评估 ${summary.total_rules_evaluated} 项，合格 ${summary.pass_count} 项，不合格 ${summary.fail_count} 项，漏检 ${summary.missing_count} 项)`
+      );
+
+      if (collector) {
+        collector.addTrace(
+          'ENGINE',
+          summary.overall_status === 'PASS' ? 'info' : 'warn',
+          `全局裁决结论: [${summary.overall_status}] (合格: ${summary.pass_count}, 不合格: ${summary.fail_count}, 漏检: ${summary.missing_count})`
+        );
+      }
+
+      return {
+        certificate_no: header.certificate_no,
+        declared_standard: header.declared_standard,
+        declared_grade: declaredGrade,
+        matched_standard_id: standardRuleSet.standard_meta.standard_id,
+        matched_grade: gradeRule.grade_info.primary_grade,
+        audit_timestamp: new Date().toISOString(),
+        summary,
+        item_results: itemResults,
+        missing_mandatory_items: missingMandatory,
+        unmatched_certificate_records: unmatchedRecords.length > 0 ? unmatchedRecords : undefined,
+        audit_traces: collector?.getTraces(),
+        performance_metrics: collector?.getPerformanceMetrics(),
+      };
+    }, log, collector).result;
   }
 
 

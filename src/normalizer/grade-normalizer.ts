@@ -1,4 +1,5 @@
 import { IRuleStore } from '../repository/rule-store.interface';
+import { logger } from '../logger';
 
 export interface NormalizedGradeResult {
   /** 原始提取到的牌号字符串 (如 'SUS 304', 'TP-316L') */
@@ -156,9 +157,11 @@ export class GradeNormalizer {
     if (this.ruleStore) {
       const slice = await this.ruleStore.resolveRuleSlice(declaredStandard, cleanStr);
       if (slice) {
+        const primary = slice.primary_grade || slice.display_name;
+        logger.info('NORMALIZER', `牌号 [${rawGrade}] 成功消歧为标准主牌号 [${primary}] (统一代号: ${slice.unified_code || '无'})`);
         return {
           raw_grade: rawGrade,
-          primary_grade: slice.primary_grade || slice.display_name,
+          primary_grade: primary,
           unified_code: slice.unified_code,
           standard_id: declaredStandard,
           structure_type: slice.structure_type,
@@ -172,6 +175,7 @@ export class GradeNormalizer {
     // 2. 查静态别名映射兜底表
     if (GradeNormalizer.STATIC_ALIAS_MAP[normKey]) {
       const mapped = GradeNormalizer.STATIC_ALIAS_MAP[normKey];
+      logger.info('NORMALIZER', `牌号 [${rawGrade}] 经静态别名字典消歧为 [${mapped.primary}] (统一代号: ${mapped.code})`);
       return {
         raw_grade: rawGrade,
         primary_grade: mapped.primary,
@@ -185,6 +189,7 @@ export class GradeNormalizer {
     }
 
     // 3. 未知牌号，原样保留并输出警告信息（交由 Phase 4 HITL 人工干预）
+    logger.warn('NORMALIZER', `未知或未收录的材料牌号: [${rawGrade}] (清洗后: ${cleanStr})，置信度标记为 0.5`);
     return {
       raw_grade: rawGrade,
       primary_grade: cleanStr,

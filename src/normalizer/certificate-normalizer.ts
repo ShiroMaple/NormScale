@@ -6,6 +6,13 @@ import { PropertyKeyNormalizer } from './property-key-normalizer';
 import { UnitNormalizer } from './unit-normalizer';
 import { QualitativeNormalizer } from './qualitative-normalizer';
 import { DimensionNormalizer } from './dimension-normalizer';
+import { logger as defaultLogger, ILogger, ITraceCollector } from '../logger';
+import { PerformanceProfiler } from '../logger/profiler';
+
+export interface NormalizationOptions {
+  logger?: ILogger;
+  collector?: ITraceCollector;
+}
 
 export interface NormalizationAuditLog {
   /** 转换时间戳 */
@@ -25,6 +32,8 @@ export interface NormalizationAuditLog {
   warnings: string[];
   /** 综合质检数据平均置信度 */
   overall_confidence: number;
+  /** 归一化总耗时 (毫秒) */
+  duration_ms?: number;
 }
 
 export interface NormalizationResult {
@@ -54,66 +63,105 @@ export class CertificateNormalizer {
   /**
    * 执行全量确定性清洗与归一化
    */
-  public async normalize(payload: RawCertificatePayload): Promise<NormalizationResult> {
-    const warnings: string[] = [];
-    const unitConversions: NormalizationAuditLog['unit_conversions'] = [];
+  public async normalize(
+    payload: RawCertificatePayload,
+    options?: NormalizationOptions
+  ): Promise<NormalizationResult> {
+    const log = options?.logger || defaultLogger;
+    const collector = options?.collector;
 
-    // 1. 抬头信息 (Header) 清洗与牌号消歧
-    const rawHeader = payload.header || {};
-    const rawDeclaredStandard = String(this.unwrapValue(rawHeader.declared_standard) || 'GB/T 13296-2023').trim();
-    const rawDeclaredGrade = String(this.unwrapValue(rawHeader.declared_grade) || '06Cr19Ni10').trim();
+    log.info('NORMALIZER', `开始执行质保书确定性归一化清洗流水线...`);
 
-    // 牌号消歧
-    const gradeRes = await this.gradeNormalizer.normalize(rawDeclaredGrade, rawDeclaredStandard);
-    if (!gradeRes.is_matched) {
-      warnings.push(gradeRes.message);
-    }
+    const profileRes = await PerformanceProfiler.profileAsync('NORMALIZER', '质保书确定性归一化全流水线', async () => {
+      const warnings: string[] = [];
+      const unitConversions: NormalizationAuditLog['unit_conversions'] = [];
 
-    const cleanHeader = {
-      certificate_no: String(this.unwrapValue(rawHeader.certificate_no) || 'UNKNOWN-NO').trim(),
-      supplier_name: this.unwrapOptionalString(rawHeader.supplier_name),
-      purchase_order_no: this.unwrapOptionalString(rawHeader.purchase_order_no),
-      declared_standard: rawDeclaredStandard,
-      declared_grade: gradeRes.primary_grade, // 统一使用消歧后的主牌号
-      heat_number: this.unwrapOptionalString(rawHeader.heat_number),
-      lot_number: this.unwrapOptionalString(rawHeader.lot_number),
-      material_form: this.unwrapOptionalString(rawHeader.material_form),
-      manufacturing_process: this.unwrapOptionalString(rawHeader.manufacturing_process),
-      delivery_state: this.unwrapOptionalString(rawHeader.delivery_state),
-      issue_date: this.unwrapOptionalString(rawHeader.issue_date),
-      inspector_name: this.unwrapOptionalString(rawHeader.inspector_name),
-      dimensions: DimensionNormalizer.normalize(
-        payload.dimensions as Record<string, unknown> | undefined
-      ),
-    };
+      // 1. 抬头信息 (Header) 清洗与牌号消歧
+      const rawHeader = payload.header || {};
+      const rawDeclaredStandard = String(this.unwrapValue(rawHeader.declared_standard) || 'GB/T 13296-2023').trim();
+      const rawDeclaredGrade = String(this.unwrapValue(rawHeader.declared_grade) || '06Cr19Ni10').trim();
 
-    // 2. 检验项目清单 (Test Records) 逐项归一化
-    const cleanTestRecords: TestRecord[] = [];
-    const rawRecords = payload.test_records || [];
-
-    for (const item of rawRecords) {
-      const normalizedItem = this.normalizeSingleRecord(item, unitConversions, warnings);
-      if (normalizedItem) {
-        cleanTestRecords.push(normalizedItem);
+      // 牌号消歧
+      const gradeRes = await this.gradeNormalizer.normalize(rawDeclaredGrade, rawDeclaredStandard);
+      if (!gradeRes.is_matched) {
+        warnings.push(gradeRes.message);
+        if (collector) collector.addTrace('NORMALIZER', 'warn', `牌号未收录预警: ${gradeRes.message}`);
+      } else {
+        if (collector) collector.addTrace('NORMALIZER', 'info', `牌号消歧: [${rawDeclaredGrade}] -> [${gradeRes.primary_grade}] (${gradeRes.unified_code || '无'})`);
       }
-    }
 
-    const certExtractCandidate: CertificateExtract = {
-      header: cleanHeader,
-      test_records: cleanTestRecords,
-    };
+      const dimensions = DimensionNormalizer.normalize(
+        payload.dimensions as Record<string, unknown> | undefined
+      );
+      if (dimensions && collector) {
+        collector.addTrace('NORMALIZER', 'info', `几何尺寸规格解构: 外径 ${dimensions.outer_diameter_mm || '-'}mm, 壁厚 ${dimensions.wall_thickness_mm || '-'}mm, 长度 ${dimensions.length_mm || '-'}mm`);
+      }
 
-    // 3. 经过 Zod Schema 契约校验
-    const validatedCertificate = CertificateExtractSchema.parse(certExtractCandidate);
+      const cleanHeader = {
+        certificate_no: String(this.unwrapValue(rawHeader.certificate_no) || 'UNKNOWN-NO').trim(),
+        supplier_name: this.unwrapOptionalString(rawHeader.supplier_name),
+        purchase_order_no: this.unwrapOptionalString(rawHeader.purchase_order_no),
+        declared_standard: rawDeclaredStandard,
+        declared_grade: gradeRes.primary_grade, // 统一使用消歧后的主牌号
+        heat_number: this.unwrapOptionalString(rawHeader.heat_number),
+        lot_number: this.unwrapOptionalString(rawHeader.lot_number),
+        material_form: this.unwrapOptionalString(rawHeader.material_form),
+        manufacturing_process: this.unwrapOptionalString(rawHeader.manufacturing_process),
+        delivery_state: this.unwrapOptionalString(rawHeader.delivery_state),
+        issue_date: this.unwrapOptionalString(rawHeader.issue_date),
+        inspector_name: this.unwrapOptionalString(rawHeader.inspector_name),
+        dimensions,
+      };
+
+      // 2. 检验项目清单 (Test Records) 逐项归一化
+      const cleanTestRecords: TestRecord[] = [];
+      const rawRecords = payload.test_records || [];
+
+      for (const item of rawRecords) {
+        const normalizedItem = this.normalizeSingleRecord(item, unitConversions, warnings);
+        if (normalizedItem) {
+          cleanTestRecords.push(normalizedItem);
+        }
+      }
+
+      if (unitConversions.length > 0 && collector) {
+        for (const uc of unitConversions) {
+          collector.addTrace('NORMALIZER', 'info', `物理量单位换算: [${uc.property_key}] ${String(uc.raw_value)} -> ${uc.converted_value} ${uc.to_unit} (${uc.formula || '转换公式'})`);
+        }
+      }
+
+      const certExtractCandidate: CertificateExtract = {
+        header: cleanHeader,
+        test_records: cleanTestRecords,
+      };
+
+      // 3. 经过 Zod Schema 契约校验
+      const validatedCertificate = CertificateExtractSchema.parse(certExtractCandidate);
+
+      log.info(
+        'NORMALIZER',
+        `质保书清洗完成: 牌号 [${cleanHeader.declared_grade}]，共标准化 ${cleanTestRecords.length} 项检验指标，完成 ${unitConversions.length} 次单位换算`
+      );
+
+      return {
+        certificate: validatedCertificate,
+        gradeRes,
+        unitConversions,
+        warnings,
+      };
+    }, log, collector);
+
+    const { certificate, gradeRes, unitConversions, warnings } = profileRes.result;
 
     return {
-      certificate: validatedCertificate,
+      certificate,
       audit_log: {
         timestamp: new Date().toISOString(),
         grade_normalization: gradeRes,
         unit_conversions: unitConversions,
         warnings,
         overall_confidence: payload.overall_confidence ?? 0.95,
+        duration_ms: profileRes.duration_ms,
       },
     };
   }

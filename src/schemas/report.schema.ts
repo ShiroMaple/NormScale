@@ -71,11 +71,35 @@ export type AuditSummary = z.infer<typeof AuditSummarySchema>;
 
 
 /* ==========================================================================
-   四、完整合规性核验报告根模型 (Root Compliance Audit Report)
+   四、审验过程轨迹与性能度量模型 (Audit Traces & Performance Profiling)
+   - 校验随单输出的自然语言决策全过程与微秒级子阶段性能耗时统计
+   ========================================================================== */
+
+// 校验单条审计过程轨迹记录
+export const AuditTraceItemSchema = z.object({
+  timestamp: z.string(),
+  stage: z.string(),
+  level: z.string(),
+  message: z.string(),
+  duration_ms: z.number().optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+export type AuditTraceItem = z.infer<typeof AuditTraceItemSchema>;
+
+// 校验核验执行耗时与各子阶段性能度量指标
+export const PerformanceMetricsSchema = z.object({
+  total_duration_ms: z.number(),
+  phase_durations: z.record(z.number()),
+});
+export type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;
+
+
+/* ==========================================================================
+   五、完整合规性核验报告根模型 (Root Compliance Audit Report)
    - 校验最终输出给前端展示、质检归档或 ERP/MES 系统消费的完整质检裁决报告
    ========================================================================== */
 
-// 校验整份质保书核验结果的顶层根模型（涵盖匹配标准、时间戳、汇总决策、全量项明细矩阵及漏检清单）
+// 校验整份质保书核验结果的顶层根模型（涵盖匹配标准、时间戳、汇总决策、全量项明细矩阵、漏检清单及审计轨迹）
 export const AuditReportSchema = z.object({
   certificate_no: z.string(),                                // 被核验的质保书单号（例如："MTC-2024-05882"）
   declared_standard: z.string(),                             // 质保书声明执行的标准代号（例如："GB/T 13296-2023"）
@@ -87,5 +111,7 @@ export const AuditReportSchema = z.object({
   item_results: z.array(RuleEvaluationItemResultSchema),     // 全量检验规则项比对明细矩阵列表
   missing_mandatory_items: z.array(z.string()),              // 强制要求但未报送的漏检项属性清单（例如：["ultrasonic_test"]）
   unmatched_certificate_records: z.array(TestRecordSchema).optional(), // 质保书中已报送但标准库中未定义比对规则的额外记录项
+  audit_traces: z.array(AuditTraceItemSchema).optional(),     // 业务审验过程自然语言轨迹流（供前端看板抽屉可视化渲染）
+  performance_metrics: PerformanceMetricsSchema.optional(), // 全流程微秒级耗时与各子阶段性能度量
 });
 export type AuditReport = z.infer<typeof AuditReportSchema>;

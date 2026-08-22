@@ -3,6 +3,7 @@ import {
   RawCertificatePayload,
   ExtractOptions,
 } from './extractor.interface';
+import { logger } from '../logger';
 
 /**
  * ============================================================================
@@ -117,14 +118,20 @@ export class MockCertificateExtractor implements ICertificateExtractor {
     input: Buffer | Uint8Array | string,
     _options?: ExtractOptions
   ): Promise<RawCertificatePayload> {
+    logger.info('EXTRACTOR', `[MockCertificateExtractor] 正在提取质保书数据 (模式: 本地仿真样本)...`);
+
     // 若入参为指定的预设键名，则直接返回对应预设样本
     if (typeof input === 'string' && this.presetPayloads.has(input)) {
-      return JSON.parse(JSON.stringify(this.presetPayloads.get(input)!));
+      const payload = JSON.parse(JSON.stringify(this.presetPayloads.get(input)!));
+      logger.info('EXTRACTOR', `[MockCertificateExtractor] 成功加载预设样本 [${input}]，共包含 ${payload.test_records?.length || 0} 条检验项`);
+      return payload;
     }
 
     // 默认返回首个 S30408 典型样本
     const defaultPayload = this.presetPayloads.get('s30408_messy_sample')!;
-    return JSON.parse(JSON.stringify(defaultPayload));
+    const payload = JSON.parse(JSON.stringify(defaultPayload));
+    logger.info('EXTRACTOR', `[MockCertificateExtractor] 默认加载 S30408 典型样本，共包含 ${payload.test_records?.length || 0} 条检验项`);
+    return payload;
   }
 
   /**

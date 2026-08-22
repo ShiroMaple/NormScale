@@ -4,7 +4,15 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
-## 2026-08-22 · 完成 Phase 3 质保书提取抽象与确定性归一化流水线构建
+## 2026-08-22 · 完成 Phase 4 领域日志系统、审计轨迹与性能度量构建
+ 
+- 建立 `ILogger` 门面与 `DefaultDomainLogger`，支持 ANSI 多色高亮、自然语言排版与多模块 Tag 隔离。
+- 实现 `PerformanceProfiler` 微秒级性能分析器，支持同步与异步函数的高精度无侵入耗时度量。
+- 实现 `MemoryTraceCollector` 内存轨迹收集器，将决策过程与性能指标自动注入 `AuditReport` 报告中。
+- 完成 `Extractor`, `Normalizer`, `Repository`, `Engine` 四大执行层全链路埋点；19 个套件 98 项单测全绿。
+- 详细实施与验证总结参见：[docs/005_implementation_plan_phase_4.md](file:///Users/shiromaple/Github/NormScale/docs/005_implementation_plan_phase_4.md)。
+- 
+ ## 2026-08-22 · 完成 Phase 3 质保书提取抽象与确定性归一化流水线构建
  
 - 建立 `ICertificateExtractor` 提取抽象接口，支持 Mock、DocEx HTTP Client 与 Direct LLM 适配器。
 - 实现 `UnitNormalizer` 物理量单位换算器（基于 BigNumber 消除浮点误差，支持 $kgf/mm^2, psi, ksi \to MPa$）。

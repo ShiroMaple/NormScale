@@ -15,7 +15,9 @@
  *    - 质保书提取抽象与多后端适配层（ICertificateExtractor, Mock, DocEx HTTP Client）。
  * 4. normalizer:
  *    - 确定性归一化与消歧流水线（GradeNormalizer, UnitNormalizer, CertificateNormalizer）。
- * 5. engine:
+ * 5. logger:
+ *    - 领域日志门面、自然语言输出、微秒级性能度量与审计轨迹收集器（ILogger, PerformanceProfiler, MemoryTraceCollector）。
+ * 6. engine:
  *    - 确定性规则核验计算引擎（ComplianceEngine, GB/T 8170 修约, 动态公式, 几何公差）。
  * ============================================================================
  */
@@ -24,4 +26,5 @@ export * from './schemas';
 export * from './repository';
 export * from './extractor';
 export * from './normalizer';
+export * from './logger';
 export * from './engine';

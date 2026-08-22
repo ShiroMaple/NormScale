@@ -7,7 +7,7 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 4 - LangGraph 状态图与人机协同（HITL）编排层构建**
+**当前焦点**：**Phase 5 - LangGraph 状态图与人机协同（HITL）编排层构建**
 - **待执行行动项清单（Next Steps）**：
   1. 定义 `QualityAuditState` 状态机数据结构（封装 RawPayload, NormalizedCert, ItemResults, HITL_Interrupts, FinalReport）；
   2. 构建流程节点：`Extract_Node` $\to$ `Normalize_Node` $\to$ `Deterministic_Eval_Node` $\to$ `Semantic_RAG_Node` $\to$ `Decision_Aggregator_Node`；
@@ -31,14 +31,19 @@
   - 实现物理量工程单位换算器 `UnitNormalizer`（基于 BigNumber 实现 kgf/mm²、psi/ksi $\to$ MPa 零精度损失转换）
   - 实现检验项名称映射 `PropertyKeyNormalizer`、定性结论清洗 `QualitativeNormalizer` 与尺寸解析 `DimensionNormalizer`
   - 构建 `CertificateNormalizer` 归一化总控流水线，92 项单元测试 100% 通过
-- [ ] **Phase 4: LangGraph 状态图与人机协同编排**
+- [x] **Phase 4: 领域日志系统、审计轨迹与性能度量**
+  - 构建 `ILogger` 门面与轻量级自然语言日志引擎，支持 `[EXTRACTOR]`、`[NORMALIZER]`、`[REPOSITORY]`、`[ENGINE]`、`[PERF]` 分级多色标签
+  - 实现微秒级 `PerformanceProfiler` 性能度量器，精确统计各阶段耗时（切片加载、牌号消歧、单位换算、规则比对等）
+  - 实现 `MemoryTraceCollector` 内存审计轨迹收集器，将自然语言决策轨迹与性能指标无缝注入 `AuditReport`
+  - 完成核心模块全链路日志埋点，19 个测试套件 98 项单元测试 100% 通过
+- [ ] **Phase 5: LangGraph 状态图与人机协同编排**
   - 编排端到端 QualityAuditState 状态机与各任务节点
   - 实现条款级语义 RAG 审核与全局决策汇总（一票否决制）
   - 实现低置信度/未识别牌号的人机协同（Interrupt & Resume）断点机制
-- [ ] **Phase 5: API 服务层与物资验收决策看板**
+- [ ] **Phase 6: API 服务层与物资验收决策看板**
   - 开发 Next.js 15 App Router 接口体系（任务提交、轮询、恢复、报告导出）
-  - 构建宽屏双列交互看板（左侧原始质保书高亮预览，右侧红/黄/绿合规判定矩阵）
-- [ ] **Phase 6: 全链路集成验证、存储升级与生产加固**
+  - 构建宽屏双列交互看板（左侧原始质保书高亮预览，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）
+- [ ] **Phase 7: 全链路集成验证、存储升级与生产加固**
   - 扩充管材、板材、锻件等多品类标准规则库
   - **标准库存储架构平滑演进**：当收录标准规模扩展至数百部、切片达数万条时，利用 `IRuleStore` 仓库模式从 `FileRuleStore` 无缝升级至 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），并对接生产级分布式向量库
   - 全链路结构化日志、可观测性追踪与 Docker 容器化打包

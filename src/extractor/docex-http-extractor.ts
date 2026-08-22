@@ -4,6 +4,8 @@ import {
   RawTestRecordItem,
   ExtractOptions,
 } from './extractor.interface';
+import { logger } from '../logger';
+import { PerformanceProfiler } from '../logger/profiler';
 
 export interface DocExHttpConfig {
   /** DocEx 抽取服务的基础 URL 地址 (例如: 'http://localhost:8000') */
@@ -45,64 +47,78 @@ export class DocExHttpExtractor implements ICertificateExtractor {
     options?: ExtractOptions
   ): Promise<RawCertificatePayload> {
     const timeoutMs = options?.timeoutMs || this.defaultTimeoutMs;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const endpoint = this.baseUrl + '/api/v1/extract/mtc';
 
-    try {
-      let body: string | FormData;
-      const headers: Record<string, string> = {};
+    logger.info('EXTRACTOR', `[DocExHttpExtractor] 发起远程 MTC 抽取请求: ${endpoint} (超时阈值: ${timeoutMs}ms)`);
 
-      if (this.apiKey) {
-        headers['Authorization'] = 'Bearer ' + this.apiKey;
-      }
+    return (await PerformanceProfiler.profileAsync('EXTRACTOR', `DocEx 远程抽取 [${endpoint}]`, async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-      if (typeof input === 'string') {
-        // Base64 编码或 JSON 文本传入
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify({
-          document_base64: input,
-          options: {
-            custom_prompt: options?.customPrompt,
-            enable_confidence: options?.enableOcrConfidence ?? true,
-          },
-        });
-      } else {
-        // 二进制 Buffer 转为 FormData 上传
-        const formData = new FormData();
-        const bufferData = input instanceof Uint8Array ? input : new Uint8Array(input);
-        const blob = new Blob([bufferData as BlobPart], { type: 'application/pdf' });
-        formData.append('file', blob, 'certificate.pdf');
-        if (options?.customPrompt) {
-          formData.append('custom_prompt', options.customPrompt);
+      try {
+        let body: string | FormData;
+        const headers: Record<string, string> = {};
+
+        if (this.apiKey) {
+          headers['Authorization'] = 'Bearer ' + this.apiKey;
         }
-        body = formData;
-      }
 
-      const endpoint = this.baseUrl + '/api/v1/extract/mtc';
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller.signal,
-      });
+        if (typeof input === 'string') {
+          // Base64 编码或 JSON 文本传入
+          headers['Content-Type'] = 'application/json';
+          body = JSON.stringify({
+            document_base64: input,
+            options: {
+              custom_prompt: options?.customPrompt,
+              enable_confidence: options?.enableOcrConfidence ?? true,
+            },
+          });
+        } else {
+          // 二进制 Buffer 转为 FormData 上传
+          const formData = new FormData();
+          const bufferData = input instanceof Uint8Array ? input : new Uint8Array(input);
+          const blob = new Blob([bufferData as BlobPart], { type: 'application/pdf' });
+          formData.append('file', blob, 'certificate.pdf');
+          if (options?.customPrompt) {
+            formData.append('custom_prompt', options.customPrompt);
+          }
+          body = formData;
+        }
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(
-          'DocEx 提取服务响应异常 [HTTP ' + response.status + ']: ' + (errorText || response.statusText)
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          logger.error('EXTRACTOR', `DocEx 服务响应异常 [HTTP ${response.status}]`, undefined, { errorText });
+          throw new Error(
+            'DocEx 提取服务响应异常 [HTTP ' + response.status + ']: ' + (errorText || response.statusText)
+          );
+        }
+
+        const responseJson = (await response.json()) as Record<string, unknown>;
+        const payload = this.mapDocExResponseToPayload(responseJson);
+
+        logger.info(
+          'EXTRACTOR',
+          `DocEx 提取解析成功，获得 ${payload.test_records?.length || 0} 条检验项，声明牌号 [${payload.header?.declared_grade || '未标明'}]，OCR 置信度: ${payload.overall_confidence ?? 0.9}`
         );
-      }
 
-      const responseJson = (await response.json()) as Record<string, unknown>;
-      return this.mapDocExResponseToPayload(responseJson);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw new Error('DocEx 提取服务请求超时 (' + timeoutMs + 'ms)');
+        return payload;
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          logger.warn('EXTRACTOR', `DocEx 请求超时 (${timeoutMs}ms) 被熔断拦截`);
+          throw new Error('DocEx 提取服务请求超时 (' + timeoutMs + 'ms)');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
       }
-      throw err;
-    } finally {
-      clearTimeout(timer);
-    }
+    }, logger)).result;
   }
 
   /**

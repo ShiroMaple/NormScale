@@ -10,6 +10,8 @@ import {
   GradeRule,
 } from '../schemas/standard.schema';
 import { IRuleStore, StandardOverview } from './rule-store.interface';
+import { logger } from '../logger';
+import { PerformanceProfiler } from '../logger/profiler';
 
 export class FileRuleStore implements IRuleStore {
   private baseDir: string;
@@ -51,28 +53,36 @@ export class FileRuleStore implements IRuleStore {
    * 扫描文件系统，构建内存倒排索引
    */
   public async reload(): Promise<void> {
-    this.standardsMap.clear();
+    await PerformanceProfiler.profileAsync('REPOSITORY', '构建标准规则库内存倒排索引', async () => {
+      this.standardsMap.clear();
 
-    if (!fs.existsSync(this.baseDir)) {
-      this.initialized = true;
-      return;
-    }
-
-    const entries = fs.readdirSync(this.baseDir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(this.baseDir, entry.name);
-
-      if (entry.isDirectory()) {
-        // 模块化切片目录结构 (data/standards/GB_T_13296_2023/)
-        await this.loadModularStandard(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith('.json')) {
-        // 单体 JSON 兼容模式 (data/standards/GB_T_13296_2023.json)
-        await this.loadMonolithicStandard(fullPath);
+      if (!fs.existsSync(this.baseDir)) {
+        this.initialized = true;
+        logger.warn('REPOSITORY', `标准库根目录不存在: ${this.baseDir}`);
+        return;
       }
-    }
 
-    this.initialized = true;
+      const entries = fs.readdirSync(this.baseDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(this.baseDir, entry.name);
+
+        if (entry.isDirectory()) {
+          // 模块化切片目录结构 (data/standards/GB_T_13296_2023/)
+          await this.loadModularStandard(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith('.json')) {
+          // 单体 JSON 兼容模式 (data/standards/GB_T_13296_2023.json)
+          await this.loadMonolithicStandard(fullPath);
+        }
+      }
+
+      this.initialized = true;
+      let totalSlices = 0;
+      for (const entry of this.standardsMap.values()) {
+        totalSlices += entry.uniqueSlices.length;
+      }
+      logger.info('REPOSITORY', `规则仓库就绪，已装载 ${this.standardsMap.size} 部标准、共计 ${totalSlices} 个规格切片`);
+    }, logger);
   }
 
   private async loadModularStandard(dirPath: string): Promise<void> {
@@ -193,10 +203,19 @@ export class FileRuleStore implements IRuleStore {
     await this.ensureInitialized();
     const normStdId = this.normalizeStandardId(standardId);
     const standardEntry = this.standardsMap.get(normStdId);
-    if (!standardEntry) return undefined;
+    if (!standardEntry) {
+      logger.debug('REPOSITORY', `未找到标准代号: [${standardId}] (标准化后: ${normStdId})`);
+      return undefined;
+    }
 
     const normKey = this.normalizeRoutingKey(routingKey);
-    return standardEntry.slices.get(normKey);
+    const slice = standardEntry.slices.get(normKey);
+    if (slice) {
+      logger.debug('REPOSITORY', `倒排索引精准命中规格切片: [${standardId}] -> 路由键 [${routingKey}] 映射至 [${slice.spec_key}]`);
+    } else {
+      logger.debug('REPOSITORY', `标准 [${standardId}] 内部未找到规格切片路由键: [${routingKey}]`);
+    }
+    return slice;
   }
 
   public async getStandardMeta(standardId: string): Promise<StandardMeta | undefined> {
