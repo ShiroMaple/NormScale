@@ -51,3 +51,40 @@
 * **设计截图预览**：
   [![NormScale 物资不合格拒收通知书截图](https://lh3.googleusercontent.com/aida/AEtjO1VzKZRdqf4C-vc5n17qZ-X-ZO53_loOpDSVE4OP90Jri88NNLaqJhvWun7VwMRStqKagdtNfEyRs-w8h1MWYsf1oebFOG9W-fleHgRaYdsXN7_Q8_nD1b0YcfoHtx1Jo7IW2N2onR-lCpCg8iPV7GVF2MRn4kHUTpKjntgNYpILXq1aho-0ERNH0vyX66J_l9SCrlrlNnZDQ5Y5-o2Do_5JmEJ3jWBOUPPRbSJsuZ-V9XgpbZjkARQ_yDc)](https://lh3.googleusercontent.com/aida/AEtjO1VzKZRdqf4C-vc5n17qZ-X-ZO53_loOpDSVE4OP90Jri88NNLaqJhvWun7VwMRStqKagdtNfEyRs-w8h1MWYsf1oebFOG9W-fleHgRaYdsXN7_Q8_nD1b0YcfoHtx1Jo7IW2N2onR-lCpCg8iPV7GVF2MRn4kHUTpKjntgNYpILXq1aho-0ERNH0vyX66J_l9SCrlrlNnZDQ5Y5-o2Do_5JmEJ3jWBOUPPRbSJsuZ-V9XgpbZjkARQ_yDc)
 * **前端 HTML 代码包**：[下载拒收通知书 HTML 代码](https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sXzRiZWQ3OWNhYjEzOTQ3MTVhYjQwYjQ5ZjcxZGY2ZDBkEgsSBxDViabNiggYAZIBJAoKcHJvamVjdF9pZBIWQhQxMTQzMzE1ODE5MDA1MzAyMTc0MQ&filename=&opi=96797242)
+
+---
+
+### 屏幕 5：物资进货检验合格放行通知单与导出界面 (Inbound Pass Release Certificate Modal)
+* **Screen ID**：`56cddba301d24af196c3c868606321c7`
+* **设计意图与特点**：
+  - **全中文工业正式公文排版**：大尺寸居中模态框，包含 4 列物资与质保书基本信息网格、15 项理化检验全项达标判定表格（全绿标【合格】）；
+  - **低饱和度视觉**：采用 `#059669` 低饱和度翡翠绿作为合格放行章与结论标签；
+  - **多重防伪与签章**：质检工程师数字签名、质保主管审核、SHA-256 存证哈希与防伪验真二维码；
+  - **动作集成**：支持导出防篡改 PDF、一键打印 A4 标准放行单、复制结构化 JSON 数据。
+* **设计截图预览**：
+  [![NormScale 物资进货检验合格放行通知单截图](https://lh3.googleusercontent.com/aida/AEtjO1UaJVDobLR9ameJEV11PQ052edyC_IWPCZ27Ui8Z6fSQXlJX8OTqX7nWfPolSB_hmAF9dYbcsbqTU39YVQR0cwONXslEYqiwAIhX2N_-7_CeMxXXpBRh6q_18fZPEjSd6KOuadgl9c9bjNbin9RkFeGP8_hij2B8KdJ19HuvO0YX1xpjkiihQwABZRfetRrpbOcDdEQVW50JHztA6SUNuY-ADXVT_ocvpurCA8NO4M9N7_1gaZYQjen4uot)](https://lh3.googleusercontent.com/aida/AEtjO1UaJVDobLR9ameJEV11PQ052edyC_IWPCZ27Ui8Z6fSQXlJX8OTqX7nWfPolSB_hmAF9dYbcsbqTU39YVQR0cwONXslEYqiwAIhX2N_-7_CeMxXXpBRh6q_18fZPEjSd6KOuadgl9c9bjNbin9RkFeGP8_hij2B8KdJ19HuvO0YX1xpjkiihQwABZRfetRrpbOcDdEQVW50JHztA6SUNuY-ADXVT_ocvpurCA8NO4M9N7_1gaZYQjen4uot)
+* **前端 HTML 代码包**：[下载合格放行通知单 HTML 代码](https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sXzBiOTE1Mzk0YmM4MTQ3OWFhMzM0Yzc4ZWJhNWUyY2NlEgsSBxDViabNiggYAZIBJAoKcHJvamVjdF9pZBIWQhQxMTQzMzE1ODE5MDA1MzAyMTc0MQ&filename=&opi=96797242)
+
+---
+
+### 屏幕 6：国家标准知识库与规格切片浏览器 (National Standard Knowledge Base & Slice Explorer)
+* **Screen ID**：`092fb569d903430c85de81ba2045ce65`
+* **设计意图与特点**：
+  - **分栏知识架构**：左侧 28% 标准-钢级切片目录树（GB/T 13296-2023 全量 31 个钢级快速检索与切换），右侧 72% 切片详细技术规范；
+  - **多维度规范详情**：化学成分限值表（含 GB/T 8170 修约精度）、力学性能指标卡（Rm, Rp0.2, A, 硬度）、工艺检验条款（压扁公式 H, 扩口, 水压/涡流/超声, 晶间腐蚀）、AST 动态跨元素公式计算器（如钛稳定化 $Ti \ge 4 \times (C+N)$）；
+  - **全中文工业化风格**：低饱和度深色，无衬线 UI 标签结合等宽字体数据。
+* **设计截图预览**：
+  [![NormScale 标准知识库浏览器截图](https://lh3.googleusercontent.com/aida/AEtjO1UVgWcA-1wASieZ9y93dD9XY-tVazRyLOf2SkGnUENpcYo4hSV3PcmkxP9jnEdY2Zu31vTby23-RViAkDkZZzQErbDitPS7w3GJJK-GywBRRGYpmi-oSgyentdumn0QG-wLYGWggVgtC3ysiSyhSNJtoB2MD5Eh7EcfKRsWsiWExH9nILeeB0GgrnSComS0lBiNapIQoA1psJ_NC3SUhtY8nl7vzIqF1d5A_l2g2WsFNF_TK4Br_RucQDY)](https://lh3.googleusercontent.com/aida/AEtjO1UVgWcA-1wASieZ9y93dD9XY-tVazRyLOf2SkGnUENpcYo4hSV3PcmkxP9jnEdY2Zu31vTby23-RViAkDkZZzQErbDitPS7w3GJJK-GywBRRGYpmi-oSgyentdumn0QG-wLYGWggVgtC3ysiSyhSNJtoB2MD5Eh7EcfKRsWsiWExH9nILeeB0GgrnSComS0lBiNapIQoA1psJ_NC3SUhtY8nl7vzIqF1d5A_l2g2WsFNF_TK4Br_RucQDY)
+* **前端 HTML 代码包**：[下载标准知识库浏览器 HTML 代码](https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sX2NiMTU1Y2ZhN2Y1ODQzOWFhOWJlNmZiNTUxNGJlMWMzEgsSBxDViabNiggYAZIBJAoKcHJvamVjdF9pZBIWQhQxMTQzMzE1ODE5MDA1MzAyMTc0MQ&filename=&opi=96797242)
+
+---
+
+### 屏幕 7：系统管理与运维配置控制台 (System Admin & Configuration Console)
+* **Screen ID**：`229333422fa04ebca03b760517ff4dda`
+* **设计意图与特点**：
+  - **大模型与解析引擎配置**：内建解析引擎与外部接口单选、主备大语言模型下拉配置（Gemini 3.1 Pro / Claude 3.7）、API Key 掩码管理、OCR 置信度阈值滑块；
+  - **全局运行日志与微秒级监控**：深黑控制台终端日志流，支持按模块与日志级别实时过滤，显示今日核验吞吐量与平均耗时（1.25ms）；
+  - **质检员权限与电子签章体系**：质检工程师/主管角色表格、CA 数字证书绑定状态、权限粒度控制。
+* **设计截图预览**：
+  [![NormScale 系统管理控制台截图](https://lh3.googleusercontent.com/aida/AEtjO1WCK1fO5ADxgI-hbR1XthqJOaQXd0bB4oy1uTA_ev8Rom54YEPHXv6BMb-yJpnTY_zFJVEuOERTIVzCi_ejbULTF1OiSV96BuMoziW6CqAoGkzxndxI5NvqJGdP-g-UHC0WlAMXqZ04gByNBDVoFdKFPXV3UmUN9EuTEoGXFDxr0Aa0TEbR8UmkJtpzBSLEmiOMBHfZj43ETu8rOVRe0ibVdV0JF8WhpWvu_X_O0_oPu7lZIe1RIg02EwhO)](https://lh3.googleusercontent.com/aida/AEtjO1WCK1fO5ADxgI-hbR1XthqJOaQXd0bB4oy1uTA_ev8Rom54YEPHXv6BMb-yJpnTY_zFJVEuOERTIVzCi_ejbULTF1OiSV96BuMoziW6CqAoGkzxndxI5NvqJGdP-g-UHC0WlAMXqZ04gByNBDVoFdKFPXV3UmUN9EuTEoGXFDxr0Aa0TEbR8UmkJtpzBSLEmiOMBHfZj43ETu8rOVRe0ibVdV0JF8WhpWvu_X_O0_oPu7lZIe1RIg02EwhO)
+* **前端 HTML 代码包**：[下载系统管理控制台 HTML 代码](https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sX2ZkNzk4OWVkMjJkNzRhMDM5YmJkMWVlYTcyNDA4NzhlEgsSBxDViabNiggYAZIBJAoKcHJvamVjdF9pZBIWQhQxMTQzMzE1ODE5MDA1MzAyMTc0MQ&filename=&opi=96797242)
