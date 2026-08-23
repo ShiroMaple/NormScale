@@ -7,11 +7,12 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 7 - 全链路集成验证、存储升级与生产加固**
+**当前焦点**：**Phase 7 - NormScale 业务工作流与前端交互深度纵向贯通 (Deep Interactive UX & Real Workflow)**
 - **待执行行动项清单（Next Steps）**：
-  1. 扩充管材、板材、锻件等多品类标准规则库与切片；
-  2. 针对大规模标准检索场景，实现基于 SQLite/PostgreSQL JSONB 的 `IRuleStore` 扩展实现；
-  3. 完善 Docker 容器化打包与端到端健康检查端点。
+  1. **真实文件上传与原件视图 (Real Document Upload & PDF/Image Viewer)**：支持拖拽真实质保书文件，左侧呈现原件预览并与右侧结构化提取数据形成对照；
+  2. **标准切片与条款知识浏览器 (Standard Rule & Slice Explorer)**：提供独立的标准知识库查阅面板，支持质检员检索 GB/T 13296 全量 31 个钢级规则、GB/T 8170 进舍修约说明与 AST 公式；
+  3. **历史核验台账与任务回溯检索 (Audit Ledger & Task History)**：构建质检台账列表，支持按批号、炉号、日期、状态（PASS/FAIL/HITL）多维检索与历史报告回溯；
+  4. **深层 HITL 干预矩阵 (Comprehensive HITL & Exception Handling)**：支持单项实测值的手动覆写/修正、不合格指标特批豁免放行审批与质检工程师电子签章。
 
 ## 里程碑 (Milestones)
 
@@ -40,18 +41,29 @@
   - 编排 7 大流水线节点（`Extract` $\to$ `Normalize` $\to$ `RetrieveStandard` $\to$ `DeterministicEval` $\to$ `SemanticReview` $\to$ `HumanReview` $\to$ `DecisionAggregator`）
   - 实现基于 `interrupt()` 与 `MemorySaver` 的 HITL 人机协同断点挂起与质检员人工修正精准恢复机制
   - 封装开箱即用的 `WorkflowEngine` 门面 API，21 个测试套件 104 项单测 100% 通过
-- [x] **Phase 6: API 服务层与物资验收决策看板**
+- [x] **Phase 6: API 服务层与物资验收决策看板原型**
   - 开发 Next.js 15 App Router 接口体系（`/api/standards`, `/api/samples`, `/api/audit/submit`, `/api/audit/status/[taskId]`, `/api/audit/resume/[taskId]`）
   - 构建宽屏双列交互看板 UI（左侧原始质保书结构化视图，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）
   - 构建基于 `framer-motion` 的 HITL 人机协同干预抽屉组件（支持牌号修正建议、实测值微调、特批放行与恢复流转）
   - 编写 API Route 路由层集成测试，Next.js 15 生产级打包成功，22 个测试套件 108 项测试 100% 通过
-- [ ] **Phase 7: 全链路集成验证、存储升级与生产加固**
+- [ ] **Phase 7: NormScale 业务工作流与前端交互深度纵向贯通**
+  - 真实 PDF/图像上传与原件视图对照
+  - 标准规则库切片与条款知识浏览器 (Standard Explorer)
+  - 历史核验台账与任务回溯检索 (Audit Ledger)
+  - 深度 HITL 干预矩阵（值覆写、指标特批放行、质检多级签章）
+- [ ] **Phase 8: DocEx 质保书专用抽取 REST API 服务构建与真机联调**
+  - 在 DocEx 项目端实现面向 MTC 的版面分析与结构化抽取 REST API 端点（`POST /api/v1/extract/mtc`）
+  - 激活 NormScale 侧 `HttpCertificateExtractor`，完成跨项目真实 PDF 提取与全流程真机联调
+- [ ] **Phase 9: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 7 后置)**
   - 扩充管材、板材、锻件等多品类标准规则库
-  - **标准库存储架构平滑演进**：当收录标准规模扩展至数百部、切片达数万条时，利用 `IRuleStore` 仓库模式从 `FileRuleStore` 无缝升级至 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），并对接生产级分布式向量库
+  - 升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），对接生产级分布式向量库
   - 全链路结构化日志、可观测性追踪与 Docker 容器化打包
 
 ## 开放问题 (Open Questions)
 
-1. **标准规则库存储演进触发点**：当前通过 Repository 接口层隔离文件系统，当标准数量超过多少（如 > 100 部）或引入多用户在线规则编辑时触发数据库存储插件化切换？
-2. **标准离线入库工具链**：离线标准结构化初期采用“人工编写模板”还是“LLM 自动结构化初提 + 人工核验”工作流？
-3. **提取层服务边界与 DocEx REST API 待办**：当前 DocEx 项目端尚未实现专用的 MTC 质保书提取 REST API 端点（此项为未来联动待办），因此 Phase 3 优先通过 `ICertificateExtractor` 接口抽象完成协议契约与适配层（Mock / Direct LLM / HTTP Client），待 DocEx API 就绪后直接填入 URL 配置即可无缝打通。
+1. **PDF 预览与字段对齐方案**：在左侧 PDF 原件预览中，是否需要实现“点击右侧实测数据行，左侧 PDF 自动滚动并用黄色高亮框圈出对应 OCR 识别区域（Bounding Box 溯源）”？
+2. **标准知识库浏览器入口形态**：标准知识库采用“顶部导航 Tab 切换独立页面”，还是“主看板内唤出右侧全屏 Drawer/Modal”？
+3. **DocEx 联调协议字段对齐**：DocEx 抽取端点输出结构是否严格以 NormScale 的 `RawCertificatePayload` 契约为准？
+4. **标准规则库存储演进触发点**：当前通过 Repository 接口层隔离文件系统，当标准数量超过多少（如 > 100 部）或引入多用户在线规则编辑时触发数据库存储插件化切换？
+5. **标准离线入库工具链**：离线标准结构化初期采用“人工编写模板”还是“LLM 自动结构化初提 + 人工核验”工作流？
+6. **提取层服务边界与 DocEx REST API 待办**：当前 DocEx 项目端尚未实现专用的 MTC 质保书提取 REST API 端点（此项为未来联动待办），因此 Phase 3 优先通过 `ICertificateExtractor` 接口抽象完成协议契约与适配层（Mock / Direct LLM / HTTP Client），待 DocEx API 就绪后直接填入 URL 配置即可无缝打通。
