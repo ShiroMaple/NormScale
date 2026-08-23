@@ -35,11 +35,14 @@
 
 ---
 
-### 屏幕 3：纵向瀑布流工作台与双向 BBox 溯源 (Vertical Waterfall Workbench & BBox Traceability)
-* **Screen ID**：`795209b527904212af3c21c52189f4e0`
+### 屏幕 3：纵向瀑布流质检工作台全流程 (Vertical Waterfall Workbench & Explicit Stage Separation)
+* **Screen ID**：`fab8251edfd44aa1b4564137c63dcb8e`
+* **设计意图纠偏与领域模型映射**：
+  - **Stage 02（文档解析核对与归一化）**：源文档与 BBox 坐标框（黄/青色方框）的对照**严格在此阶段完成**。质检员在此核验 OCR 准确性与单位换算，一旦确认便生成符合 `certificate.schema.ts` 的 `CertificateExtract` 标准数据，作为后续流水线的**唯一真理来源 (Single Source of Truth)**。
+  - **Stage 04（国家标准合规比对与裁决处置）**：此阶段不再回溯 OCR 原件，而是**纯粹将 Stage 02 产生的归一化真理数据与国家标准切片规则要求进行确定性比对**（包含 GB/T 8170 进舍修约、动态 AST 公式边界、缺项扫描与一票否决），并提供导出放行单与生成不合格拒收处置单入口。
 * **设计截图预览**：
-  [![NormScale 纵向瀑布流工作台截图](https://lh3.googleusercontent.com/aida/AEtjO1XOCQ-yjo20p1mS0RYgGCJBQDMNKV3shAjsJqHeZJHSQA0Ulr3ze2UiIGMppwj1G7edhX2VOJA2i9bZF_M9XgSnS16_RY9CUUWpjjyfF1MM6Bf0PW5Vk0iT9waGvS1TuWSAC0tNedzWclpikC_ZWkeOIy71SDKEhxwn-zjwB5xTSS8-bxA8evkQztZ3u32hMoLI4ZiiLx8JW2_Nb3Pj-x051vd0DmaoPqPz6fmGK_F9RtVsLFFqk96tB_4_)](https://lh3.googleusercontent.com/aida/AEtjO1XOCQ-yjo20p1mS0RYgGCJBQDMNKV3shAjsJqHeZJHSQA0Ulr3ze2UiIGMppwj1G7edhX2VOJA2i9bZF_M9XgSnS16_RY9CUUWpjjyfF1MM6Bf0PW5Vk0iT9waGvS1TuWSAC0tNedzWclpikC_ZWkeOIy71SDKEhxwn-zjwB5xTSS8-bxA8evkQztZ3u32hMoLI4ZiiLx8JW2_Nb3Pj-x051vd0DmaoPqPz6fmGK_F9RtVsLFFqk96tB_4_)
-* **前端 HTML 代码包**：[下载瀑布流工作台 HTML 代码](https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sX2JmZGE0OTg5ZDdmNjQ5ZDI4NjFiNjgyZDBlOWMyOGEwEgsSBxDViabNiggYAZIBJAoKcHJvamVjdF9pZBIWQhQxMTQzMzE1ODE5MDA1MzAyMTc0MQ&filename=&opi=96797242)
+  [![NormScale 纵向瀑布流核验工作台截图](https://lh3.googleusercontent.com/aida/AEtjO1U8Dk5GhdEKtMl_yPVc3Y-Nc9FeuELP5xcKb6fum3RGXT8NH8bXBkuD9NrvEy24sLgulWq5KObs8fD3miLASftuQIrp0HmX2JanzwOafBtd17hmwGoqEiphlfzREMTM4iUtpTqli_5OJiILRpABBSj60fj_xYBvvbSOgLcie9mmP2Evrnv2Xmh-HUHbV__cRXapJxLN2C3t8QlSjJqVl8kU3Uh2Cq2YpgEYaEJExCmVbtTUqtAglEB_-qE)](https://lh3.googleusercontent.com/aida/AEtjO1U8Dk5GhdEKtMl_yPVc3Y-Nc9FeuELP5xcKb6fum3RGXT8NH8bXBkuD9NrvEy24sLgulWq5KObs8fD3miLASftuQIrp0HmX2JanzwOafBtd17hmwGoqEiphlfzREMTM4iUtpTqli_5OJiILRpABBSj60fj_xYBvvbSOgLcie9mmP2Evrnv2Xmh-HUHbV__cRXapJxLN2C3t8QlSjJqVl8kU3Uh2Cq2YpgEYaEJExCmVbtTUqtAglEB_-qE)
+* **前端 HTML 代码包**：[下载修正版瀑布流工作台 HTML 代码](https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sX2Q2OWExZTRjMGIwNzQ1MzNiNzU3ZWIwODgzZTBmOWVlEgsSBxDViabNiggYAZIBJAoKcHJvamVjdF9pZBIWQhQxMTQzMzE1ODE5MDA1MzAyMTc0MQ&filename=&opi=96797242)
 
 ---
 
