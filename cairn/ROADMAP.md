@@ -7,12 +7,11 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 6 - Next.js 15 API 服务层与物资验收决策看板构建**
+**当前焦点**：**Phase 7 - 全链路集成验证、存储升级与生产加固**
 - **待执行行动项清单（Next Steps）**：
-  1. 开发 Next.js 15 App Router 后端路由体系（`/api/audit/submit`, `/api/audit/status/[taskId]`, `/api/audit/resume/[taskId]`, `/api/standards`）；
-  2. 构建宽屏双列交互看板 UI（左侧原始质保书 PDF/图像高亮渲染与 OCR 标注，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）；
-  3. 构建 HITL 人工干预抽屉组件（支持牌号修正、实测值覆写、特批放行与重新触发流转）；
-  4. 编写 API Route 与前端组件集成测试。
+  1. 扩充管材、板材、锻件等多品类标准规则库与切片；
+  2. 针对大规模标准检索场景，实现基于 SQLite/PostgreSQL JSONB 的 `IRuleStore` 扩展实现；
+  3. 完善 Docker 容器化打包与端到端健康检查端点。
 
 ## 里程碑 (Milestones)
 
@@ -41,9 +40,11 @@
   - 编排 7 大流水线节点（`Extract` $\to$ `Normalize` $\to$ `RetrieveStandard` $\to$ `DeterministicEval` $\to$ `SemanticReview` $\to$ `HumanReview` $\to$ `DecisionAggregator`）
   - 实现基于 `interrupt()` 与 `MemorySaver` 的 HITL 人机协同断点挂起与质检员人工修正精准恢复机制
   - 封装开箱即用的 `WorkflowEngine` 门面 API，21 个测试套件 104 项单测 100% 通过
-- [ ] **Phase 6: API 服务层与物资验收决策看板**
-  - 开发 Next.js 15 App Router 接口体系（任务提交、轮询、恢复、报告导出）
-  - 构建宽屏双列交互看板（左侧原始质保书高亮预览，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）
+- [x] **Phase 6: API 服务层与物资验收决策看板**
+  - 开发 Next.js 15 App Router 接口体系（`/api/standards`, `/api/samples`, `/api/audit/submit`, `/api/audit/status/[taskId]`, `/api/audit/resume/[taskId]`）
+  - 构建宽屏双列交互看板 UI（左侧原始质保书结构化视图，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）
+  - 构建基于 `framer-motion` 的 HITL 人机协同干预抽屉组件（支持牌号修正建议、实测值微调、特批放行与恢复流转）
+  - 编写 API Route 路由层集成测试，Next.js 15 生产级打包成功，22 个测试套件 108 项测试 100% 通过
 - [ ] **Phase 7: 全链路集成验证、存储升级与生产加固**
   - 扩充管材、板材、锻件等多品类标准规则库
   - **标准库存储架构平滑演进**：当收录标准规模扩展至数百部、切片达数万条时，利用 `IRuleStore` 仓库模式从 `FileRuleStore` 无缝升级至 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），并对接生产级分布式向量库

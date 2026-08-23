@@ -109,6 +109,44 @@ export class MockCertificateExtractor implements ICertificateExtractor {
         { raw_category: '无损探伤', raw_property_name: '超声波探伤 UT', raw_value: '合格 (U2 等级)', raw_unit: '' },
       ],
     });
+
+    // 样本 3: 未知/非标材料牌号样本（用于测试 HITL 人机协同断点挂起与质检员修正）
+    this.presetPayloads.set('unknown_grade_sample', {
+      source_provider: 'mock-extractor',
+      overall_confidence: 0.96,
+      header: {
+        certificate_no: 'MTC-2026-UNKNOWN-88',
+        supplier_name: '无锡某特种不锈钢管件制造厂',
+        declared_standard: 'GB/T 13296-2023',
+        declared_grade: 'SUS 304H-Special', // 未知非标牌号
+        heat_number: 'H-SPEC-009',
+        lot_number: 'LOT-SPEC-00901',
+        material_form: '无缝钢管',
+        delivery_state: '固溶处理',
+      },
+      dimensions: {
+        outer_diameter: '25.0mm',
+        wall_thickness: '2.5mm',
+        length: '6000mm',
+      },
+      test_records: [
+        { raw_category: '化学成分', raw_property_name: 'C', raw_value: 0.052, raw_unit: '%' },
+        { raw_category: '化学成分', raw_property_name: 'Si', raw_value: 0.50, raw_unit: '%' },
+        { raw_category: '化学成分', raw_property_name: 'Mn', raw_value: 1.20, raw_unit: '%' },
+        { raw_category: '化学成分', raw_property_name: 'P', raw_value: 0.026, raw_unit: '%' },
+        { raw_category: '化学成分', raw_property_name: 'S', raw_value: 0.002, raw_unit: '%' },
+        { raw_category: '化学成分', raw_property_name: 'Ni', raw_value: 8.45, raw_unit: '%' },
+        { raw_category: '化学成分', raw_property_name: 'Cr', raw_value: 18.25, raw_unit: '%' },
+        { raw_category: '力学性能', raw_property_name: '抗拉强度 Rm', raw_value: '570 MPa', raw_unit: 'MPa' },
+        { raw_category: '力学性能', raw_property_name: '屈服强度 ReH', raw_value: '250 MPa', raw_unit: 'MPa' },
+        { raw_category: '力学性能', raw_property_name: '断后伸长率 A', raw_value: '45.0 %', raw_unit: '%' },
+        { raw_category: '力学性能', raw_property_name: '洛氏硬度', raw_value: '80 HRB', raw_unit: 'HRB' },
+        { raw_category: '工艺性能', raw_property_name: '压扁试验', raw_value: '合格 (未见裂纹)', raw_unit: '' },
+        { raw_category: '无损探伤', raw_property_name: '涡流探伤 ET', raw_value: 'PASS (E3H 验收合格)', raw_unit: '' },
+        { raw_category: '无损探伤', raw_property_name: '超声波探伤 UT', raw_value: 'PASS (U2 验收合格)', raw_unit: '' },
+        { raw_category: '耐腐蚀性能', raw_property_name: '晶间腐蚀 (E法)', raw_value: '合格', raw_unit: '' },
+      ],
+    });
   }
 
   /**

@@ -4,6 +4,15 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-08-23 · 完成 Phase 6 Next.js 15 API 服务层与物资验收决策看板构建
+ 
+- 构建 Next.js 15 App Router API 路由体系（`/api/standards`, `/api/samples`, `/api/audit/submit`, `/api/audit/status`, `/api/audit/resume`）。
+- 落地现代极简工业风物资验收看板（左侧质保书结构化解析视图，右侧红/黄/绿合规判定矩阵与审计时间轴）。
+- 实现基于 `framer-motion` 的 HITL 人机协同干预抽屉（支持牌号修正建议、实测微调、特批放行与恢复流转）。
+- 确立无 Emoji、纯 Lucide 矢量图标、字号基准（严禁滥用 `text-xs`）与点击微回弹前端规范。
+- API 路由集成测试全部通过，Next.js 生产打包成功，全量 22 个套件 108 项测试 100% 通过。
+- 详细实施与验证总结参见：[docs/009_implementation_plan_phase_6.md](file:///Users/shiromaple/Github/NormScale/docs/009_implementation_plan_phase_6.md)。
+
 ## 2026-08-22 · 完成 Phase 5 LangGraph 状态图与人机协同 (HITL) 编排层构建
  
 - 建立 `QualityAuditStateAnnotation` 状态通道，设计 `traces` 累积通道消除 Checkpoint 序列化方法丢失问题。
