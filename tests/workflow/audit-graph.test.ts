@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WorkflowEngine } from '@/workflow/workflow-engine';
 import { FileRuleStore } from '@/repository/file-rule-store';
 import { ClauseStore } from '@/repository/clause-store';
@@ -20,6 +20,13 @@ describe('LangGraph 状态图与人机协同 (HITL) 工作流集成测试', () =
       clauseStore,
       extractor,
     });
+  });
+
+  afterAll(async () => {
+    // 若启用了 LangSmith，等待 1 秒确保后台 HTTP Trace 异步批量上传完成
+    if (process.env.LANGSMITH_TRACING === 'true') {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   });
 
   it('1. Happy Path 全自动核验流转: 提取 -> 清洗 -> 检索 -> 规则比对 -> 条款复核 -> 聚合报告', async () => {
