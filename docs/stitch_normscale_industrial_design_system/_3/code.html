@@ -1,0 +1,547 @@
+<!DOCTYPE html><html class="light" lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>质检工作台 - Step2 解析结果核对</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "border-dark": "#334155",
+                "on-primary-fixed": "#001d31",
+                "status-fail-text": "#B91C1C",
+                "surface-container-highest": "#dfe3e8",
+                "surface-container": "#ebeef4",
+                "on-error": "#ffffff",
+                "surface-dark": "#1E293B",
+                "status-hitl-text": "#6D28D9",
+                "on-surface": "#181c20",
+                "on-secondary-fixed-variant": "#3a485b",
+                "tertiary-fixed-dim": "#ffb875",
+                "on-secondary-fixed": "#0d1c2e",
+                "status-pass-bg": "#ECFDF5",
+                "primary-container": "#e0f2fe",
+                "border-light": "#E2E8F0",
+                "surface-container-low": "#f1f4fa",
+                "text-primary-light": "#0F172A",
+                "surface": "#f7f9ff",
+                "inverse-on-surface": "#eef1f7",
+                "inverse-surface": "#2d3135",
+                "on-tertiary-fixed-variant": "#6b3b00",
+                "primary": "#0284c7",
+                "on-tertiary-fixed": "#2d1600",
+                "on-surface-variant": "#3f4850",
+                "outline-variant": "#bfc7d2",
+                "status-warning-text": "#B45309",
+                "primary-dark": "#38BDF8",
+                "on-tertiary-container": "#fffbff",
+                "surface-dim": "#d7dae0",
+                "tertiary-fixed": "#ffdcc0",
+                "surface-bright": "#f7f9ff",
+                "surface-container-lowest": "#ffffff",
+                "tertiary-container": "#ac6200",
+                "status-warning-bg": "#FFFBEB",
+                "on-secondary": "#ffffff",
+                "secondary-container": "#d0e1fb",
+                "error": "#ba1a1a",
+                "status-pass-text": "#047857",
+                "on-secondary-container": "#54647a",
+                "secondary-fixed-dim": "#b7c8e1",
+                "surface-container-high": "#e5e8ee",
+                "status-fail-bg": "#FEF2F2",
+                "text-primary-dark": "#F8FAFC",
+                "error-container": "#ffdad6",
+                "inverse-primary": "#93ccff",
+                "on-primary": "#ffffff",
+                "surface-light": "#FFFFFF",
+                "background-dark": "#0B0F17",
+                "on-primary-container": "#fdfcff",
+                "on-tertiary": "#ffffff",
+                "on-primary-fixed-variant": "#004b73",
+                "primary-fixed-dim": "#93ccff",
+                "on-background": "#181c20",
+                "primary-fixed": "#cce5ff",
+                "surface-tint": "#0284c7",
+                "surface-variant": "#dfe3e8",
+                "status-hitl-bg": "#F5F3FF",
+                "background-light": "#F8FAFC",
+                "on-error-container": "#93000a",
+                "outline": "#707881",
+                "tertiary": "#894d00",
+                "background": "#f7f9ff",
+                "secondary": "#505f76",
+                "secondary-fixed": "#d3e4fe",
+                "bg-industrial-slate": "#0B0F17",
+                "bg-slate-mist": "#F8FAFC"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+        },
+        "spacing": {
+                "sidebar-width": "480px",
+                "cell-py": "0.5rem",
+                "cell-px": "0.75rem",
+                "card-p": "1rem",
+                "panel-gap": "1rem",
+                "container-padding": "1rem",
+                "gutter": "1rem",
+                "stack-gap": "0.5rem"
+        },
+        "fontFamily": {
+                "body-md": [
+                        "Inter"
+                ],
+                "caption": [
+                        "Inter"
+                ],
+                "data-mono": [
+                        "JetBrains Mono"
+                ],
+                "section-title": [
+                        "Inter"
+                ],
+                "decision-hero": [
+                        "Inter"
+                ],
+                "headline-lg": [
+                        "Inter"
+                ],
+                "data-display": [
+                        "JetBrains Mono"
+                ],
+                "headline-md": [
+                        "Inter"
+                ],
+                "label-mono": [
+                        "JetBrains Mono"
+                ],
+                "body-lg": [
+                        "Inter"
+                ],
+                "headline-sm": [
+                        "Inter"
+                ],
+                "label-sm": [
+                        "Inter"
+                ]
+        },
+        "fontSize": {
+                "body-md": [
+                        "13px",
+                        {
+                                "lineHeight": "1.4",
+                                "fontWeight": "400"
+                        }
+                ],
+                "caption": [
+                        "11px",
+                        {
+                                "lineHeight": "1.4",
+                                "fontWeight": "400"
+                        }
+                ],
+                "data-mono": [
+                        "13px",
+                        {
+                                "lineHeight": "1.5",
+                                "fontWeight": "400"
+                        }
+                ],
+                "section-title": [
+                        "16px",
+                        {
+                                "lineHeight": "1.5",
+                                "fontWeight": "500"
+                        }
+                ],
+                "decision-hero": [
+                        "28px",
+                        {
+                                "lineHeight": "1.2",
+                                "fontWeight": "700"
+                        }
+                ],
+                "headline-lg": [
+                        "24px",
+                        {
+                                "lineHeight": "1.5",
+                                "fontWeight": "600"
+                        }
+                ],
+                "data-display": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "headline-md": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "label-mono": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "body-lg": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "headline-sm": [
+                        "20px",
+                        {
+                                "lineHeight": "28px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "label-sm": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "fontWeight": "500"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<style>
+        .ocr-box {
+            position: absolute;
+            border: 2px solid theme('colors.primary');
+            background-color: rgba(2, 132, 199, 0.1);
+            transition: background-color 0.2s, border-color 0.2s;
+            cursor: pointer;
+        }
+        .ocr-box:hover, .ocr-box.active {
+            background-color: rgba(2, 132, 199, 0.2);
+            border-color: theme('colors.primary-container');
+            box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.3);
+        }
+        .paper-texture {
+            background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
+            background-color: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        /* Custom scrollbar for tables */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: theme('colors.surface-container-lowest'); 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.surface-variant'); 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.outline'); 
+        }
+    </style>
+</head>
+<body class="bg-bg-slate-mist text-on-surface h-screen flex flex-col font-body-md overflow-hidden">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-bg-industrial-slate font-body-md text-body-md border-b border-outline-variant dark:border-on-surface-variant flex justify-between items-center w-full px-6 h-16 shrink-0 z-10">
+<div class="flex items-center gap-8">
+<div class="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary-fixed-dim tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" style="font-variation-settings: &quot;FILL&quot; 1;">precision_manufacturing</span>
+                NormScale <span class="text-on-surface-variant font-normal text-sm ml-2 hidden md:inline">| 工业质保证书合规检验</span>
+</div>
+<nav class="hidden md:flex gap-6 items-center h-full pt-1"><a class="text-primary dark:text-primary-fixed-dim font-bold border-b-2 border-primary dark:border-primary-fixed-dim pb-1 hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center" href="#">工作台</a><a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">历史台账</a><a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">标准库</a><a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">系统管理</a></nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">light_mode</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="flex items-center gap-3 border-l border-outline-variant pl-4 ml-2">
+<div class="text-right hidden md:block">
+<div class="text-on-surface font-medium text-xs">高级质检工程师</div>
+<div class="text-on-surface-variant text-[10px]">当前在线</div>
+</div>
+<div class="w-8 h-8 rounded-full bg-primary-container text-primary flex items-center justify-center font-bold">
+                    SQE
+                </div>
+</div>
+</div>
+</header>
+<!-- Main Workspace -->
+<main class="flex-1 flex overflow-hidden">
+<!-- Left Column: Document Viewer (45%) -->
+<section class="w-[45%] border-r border-outline-variant bg-surface-container flex flex-col relative">
+<div class="px-4 py-3 border-b border-outline-variant flex justify-between items-center bg-surface-container-lowest shrink-0">
+<div class="flex items-center gap-2">
+<img alt="PDF Icon" class="w-5 h-5 opacity-70" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9Muy1yX0jmJ7vFHyMD1Fvmei7WT4zPnszWgnVkXyRbzGkekOW1f3w6NpkOPA1Jv6WmgtI1z4LJufvdMffMZGrSbLsKAmzb_9kKaadxMVc91vYdEFdr5r4Ye2e-iC-2rJMhzqom_-bXGZ581UAjKMIir6SerHwRFliXKXOvHAju9yvHwle0N0CdW3IodzN7Bm0redb2LKzl9KF3IGRzgzgtACRa80aMv5amH_AiyWSsIsE77T1PX7GbmuaebmgajIwUw">
+<span class="font-label-sm text-label-sm font-semibold">MTC_S30408_Batch_8829.pdf</span>
+</div>
+<div class="flex items-center bg-surface-container-low rounded border border-outline-variant p-1 gap-1">
+<button class="p-1 hover:bg-surface-container rounded text-secondary" title="Zoom Out"><span class="material-symbols-outlined text-[18px]">remove</span></button>
+<span class="font-label-mono text-label-mono w-10 text-center">125%</span>
+<button class="p-1 hover:bg-surface-container rounded text-secondary" title="Zoom In"><span class="material-symbols-outlined text-[18px]">add</span></button>
+<div class="w-px h-4 bg-outline-variant mx-1"></div>
+<button class="p-1 hover:bg-surface-container rounded text-secondary" title="Rotate"><span class="material-symbols-outlined text-[18px]">rotate_right</span></button>
+<div class="w-px h-4 bg-outline-variant mx-1"></div>
+<button class="p-1 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[18px]">chevron_left</span></button>
+<span class="font-label-mono text-label-mono">1 / 3</span>
+<button class="p-1 hover:bg-surface-container rounded text-secondary"><span class="material-symbols-outlined text-[18px]">chevron_right</span></button>
+</div>
+</div>
+<div class="flex-1 overflow-auto p-4 flex justify-center bg-surface-container relative" id="pdf-container">
+<!-- PDF Render Mockup -->
+<div class="paper-texture w-[800px] h-[1131px] relative">
+<!-- Placeholder content for PDF -->
+<div class="p-12 text-on-surface-variant font-data-display text-data-display">
+<h1 class="text-headline-md font-headline-md text-center mb-8 border-b-2 border-outline pb-4">MATERIAL TEST CERTIFICATE</h1>
+<div class="grid grid-cols-2 gap-4 mb-8 text-[12px]">
+<div class=""><strong class="text-on-surface">Supplier:</strong> Tisco Stainless Steel Co., Ltd.</div>
+<div class=""><strong class="text-on-surface">Date:</strong> 2023-10-15</div>
+<div class=""><strong class="text-on-surface">Standard:</strong> GB/T 14976-2012</div>
+<div class=""><strong class="text-on-surface">Heat No:</strong> HT239910</div>
+</div>
+</div>
+<!-- OCR Bounding Boxes -->
+<div class="ocr-box" style="top: 15%; left: 10%; width: 40%; height: 30px;" title="Supplier Name"></div>
+<div class="ocr-box" style="top: 20%; left: 10%; width: 30%; height: 25px;" title="Heat No"></div>
+<div class="ocr-box active" style="top: 30%; left: 5%; width: 90%; height: 150px;" title="Chemical Composition"></div>
+<div class="ocr-box" style="top: 50%; left: 5%; width: 90%; height: 120px;" title="Mechanical Properties"></div>
+</div>
+</div>
+</section>
+<!-- Right Column: Extracted Form & Tables (55%) -->
+<section class="w-[55%] flex flex-col bg-surface-container-lowest">
+<div class="px-6 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-lowest shrink-0">
+<h2 class="text-headline-sm font-headline-sm text-on-surface">解析结果核对</h2>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-status-pass-bg text-status-pass-text rounded font-label-sm text-label-sm border border-status-pass-text/20">OCR 置信度: 96%</span>
+</div>
+</div>
+<div class="flex-1 overflow-auto p-6 space-y-6">
+<!-- Section 1 [基础元数据] -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="bg-surface-container-low px-4 py-2 border-b border-outline-variant font-label-sm text-label-sm text-on-surface-variant font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">info</span>
+                        基础元数据
+                    </div>
+<div class="p-4 grid grid-cols-2 gap-4">
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Supplier Name (供货商)</label>
+<input class="w-full border-outline-variant rounded p-2 text-body-md font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text" value="Tisco Stainless Steel Co., Ltd.">
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Material Grade (材质)</label>
+<div class="flex items-center gap-2">
+<input class="flex-1 border-outline-variant rounded p-2 text-body-md font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text" value="06Cr19Ni10">
+<span class="px-2 py-1 bg-status-hitl-bg text-status-hitl-text rounded text-[10px] font-semibold border border-status-hitl-text/20 whitespace-nowrap">S30408 匹配度98%</span>
+</div>
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Heat No (炉号)</label>
+<input class="w-full border-outline-variant rounded p-2 text-body-md font-body-md font-data-display focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text" value="HT239910">
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Batch No (批号)</label>
+<input class="w-full border-outline-variant rounded p-2 text-body-md font-body-md font-data-display focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text" value="BN20231015-01">
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Dimensions (规格)</label>
+<input class="w-full border-outline-variant rounded p-2 text-body-md font-body-md font-data-display focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text" value="OD 25.0mm, WT 2.0mm">
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Standard (执行标准)</label>
+<input class="w-full border-outline-variant rounded p-2 text-body-md font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text" value="GB/T 14976-2012">
+</div>
+</div>
+</div>
+<!-- Section 2 [化学成分] -->
+<div class="border border-outline-variant rounded-lg overflow-hidden border-primary/40 shadow-[0_0_0_1px_rgba(2,132,199,0.2)]"> <!-- Highlighted section linked to active OCR box -->
+<div class="bg-primary-container/10 px-4 py-2 border-b border-outline-variant font-label-sm text-label-sm text-primary font-semibold flex justify-between items-center">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">science</span>
+                            化学成分
+                        </div>
+<span class="text-[10px] bg-primary/10 px-2 py-0.5 rounded text-primary border border-primary/20">Active Selection</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse whitespace-nowrap">
+<thead class="bg-surface-container-low font-label-sm text-label-sm text-secondary border-b border-outline-variant">
+<tr>
+<th class="px-3 py-2 font-medium">Element</th>
+<th class="px-3 py-2 font-medium">Extracted Value (%)</th>
+<th class="px-3 py-2 font-medium">OCR Confidence</th>
+</tr>
+</thead>
+<tbody class="font-data-display text-data-display text-on-surface divide-y divide-outline-variant">
+<tr>
+<td class="px-3 py-2">C</td>
+<td class="px-3 py-2"><input class="w-20 border-transparent hover:border-outline-variant focus:border-primary rounded px-1 py-0.5 outline-none bg-transparent" type="text" value="0.045"></td>
+<td class="px-3 py-2 text-status-pass-text text-[12px]">99%</td>
+</tr>
+<tr>
+<td class="px-3 py-2">Si</td>
+<td class="px-3 py-2"><input class="w-20 border-transparent hover:border-outline-variant focus:border-primary rounded px-1 py-0.5 outline-none bg-transparent" type="text" value="0.52"></td>
+<td class="px-3 py-2 text-status-pass-text text-[12px]">98%</td>
+</tr>
+<tr>
+<td class="px-3 py-2">Mn</td>
+<td class="px-3 py-2"><input class="w-20 border-transparent hover:border-outline-variant focus:border-primary rounded px-1 py-0.5 outline-none bg-transparent" type="text" value="1.20"></td>
+<td class="px-3 py-2 text-status-pass-text text-[12px]">97%</td>
+</tr>
+<tr class="bg-status-warning-bg/30">
+<td class="px-3 py-2">P</td>
+<td class="px-3 py-2">
+<div class="flex items-center gap-2">
+<input class="w-20 border-status-warning-text/30 focus:border-status-warning-text rounded px-1 py-0.5 outline-none bg-white" type="text" value="0.035">
+<span class="text-[10px] text-status-warning-text flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">warning</span> 需人工核实</span>
+</div>
+</td>
+<td class="px-3 py-2 text-status-warning-text text-[12px]">82%</td>
+</tr>
+<tr>
+<td class="px-3 py-2">S</td>
+<td class="px-3 py-2"><input class="w-20 border-transparent hover:border-outline-variant focus:border-primary rounded px-1 py-0.5 outline-none bg-transparent" type="text" value="0.008"></td>
+<td class="px-3 py-2 text-status-pass-text text-[12px]">96%</td>
+</tr>
+<tr>
+<td class="px-3 py-2">Ni</td>
+<td class="px-3 py-2"><input class="w-20 border-transparent hover:border-outline-variant focus:border-primary rounded px-1 py-0.5 outline-none bg-transparent" type="text" value="8.05"></td>
+<td class="px-3 py-2 text-status-pass-text text-[12px]">99%</td>
+</tr>
+<tr>
+<td class="px-3 py-2">Cr</td>
+<td class="px-3 py-2"><input class="w-20 border-transparent hover:border-outline-variant focus:border-primary rounded px-1 py-0.5 outline-none bg-transparent" type="text" value="18.20"></td>
+<td class="px-3 py-2 text-status-pass-text text-[12px]">98%</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Section 3 [力学性能] -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="bg-surface-container-low px-4 py-2 border-b border-outline-variant font-label-sm text-label-sm text-on-surface-variant font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">fitness_center</span>
+                        力学性能
+                    </div>
+<div class="p-4 grid grid-cols-2 gap-4">
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Rm (抗拉强度)</label>
+<div class="flex">
+<input class="flex-1 border-outline-variant rounded-l p-2 font-data-display text-data-display focus:border-primary focus:ring-1 focus:ring-primary outline-none border-r-0" type="text" value="560">
+<select class="border-outline-variant rounded-r bg-surface-container-low text-label-sm font-label-sm px-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary">
+<option selected="">MPa</option>
+<option>psi</option>
+<option>kgf/mm²</option>
+</select>
+</div>
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Rp0.2 (屈服强度)</label>
+<div class="flex">
+<input class="flex-1 border-outline-variant rounded-l p-2 font-data-display text-data-display focus:border-primary focus:ring-1 focus:ring-primary outline-none border-r-0" type="text" value="230">
+<select class="border-outline-variant rounded-r bg-surface-container-low text-label-sm font-label-sm px-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary">
+<option selected="">MPa</option>
+<option>psi</option>
+<option>kgf/mm²</option>
+</select>
+</div>
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">A (延伸率)</label>
+<div class="flex">
+<input class="flex-1 border-outline-variant rounded-l p-2 font-data-display text-data-display focus:border-primary focus:ring-1 focus:ring-primary outline-none border-r-0" type="text" value="45">
+<div class="border border-outline-variant rounded-r bg-surface-container-low text-label-sm font-label-sm px-3 flex items-center border-l-0">%</div>
+</div>
+</div>
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">HRB (硬度)</label>
+<div class="flex">
+<input class="w-full border-outline-variant rounded p-2 font-data-display text-data-display focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text" value="85">
+</div>
+</div>
+</div>
+</div>
+<!-- Section 4 [无损检测] -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="bg-surface-container-low px-4 py-2 border-b border-outline-variant font-label-sm text-label-sm text-on-surface-variant font-semibold flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">radar</span>
+                        无损检测
+                    </div>
+<div class="p-4">
+<div class="space-y-1">
+<label class="font-label-sm text-label-sm text-secondary">Ultrasonic Testing (超声波检测)</label>
+<select class="w-full border-outline-variant rounded p-2 text-body-md font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-white">
+<option selected="">合格 (Acceptable)</option>
+<option>不合格 (Unacceptable)</option>
+<option>未检测 (Not Tested)</option>
+</select>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (JSON based semantic shell override) -->
+<footer class="bg-surface-container dark:bg-inverse-surface font-body-md text-body-md border-t border-outline-variant dark:border-on-surface-variant shadow-sm fixed bottom-0 left-0 w-full flex justify-between items-center py-3 px-6 z-50">
+<!-- Stepper -->
+<div class="flex items-center gap-4 hidden md:flex"><div class="flex flex-col items-center justify-center text-status-pass-text px-4 py-1.5 min-w-[120px]"><span class="material-symbols-outlined text-[20px] mb-0.5">check_circle</span><span class="text-[10px] font-bold">上传文档</span></div><div class="w-4 h-[1px] bg-outline-variant"></div><div class="flex flex-col items-center justify-center bg-primary-container text-primary rounded-xl px-4 py-1.5 min-w-[120px]"><span class="material-symbols-outlined text-[20px] mb-0.5">fact_check</span><span class="text-[10px] font-bold">核对解析结果</span></div><div class="w-4 h-[1px] bg-outline-variant"></div><div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1.5 opacity-60 min-w-[120px]"><span class="material-symbols-outlined text-[20px] mb-0.5">rule</span><span class="text-[10px]">比对标准</span></div><div class="w-4 h-[1px] bg-outline-variant"></div><div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1.5 opacity-60 min-w-[120px]"><span class="material-symbols-outlined text-[20px] mb-0.5">archive</span><span class="text-[10px]">归档/导出</span></div></div>
+<!-- Mobile Nav representation -->
+<div class="md:hidden flex justify-around w-full gap-2">
+<div class="flex flex-col items-center justify-center text-status-pass-text px-3 py-1.5">
+<span class="material-symbols-outlined text-[18px]">upload_file</span>
+<span class="text-[10px] font-bold hidden sm:block mt-0.5">Upload</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-primary dark:text-on-primary rounded-xl px-3 py-1.5">
+<span class="material-symbols-outlined text-[18px]">fact_check</span>
+<span class="text-[10px] hidden sm:block mt-0.5">Verify Data</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-3 py-1.5 opacity-60">
+<span class="material-symbols-outlined text-[18px]">rule</span>
+<span class="text-[10px] hidden sm:block mt-0.5">Compliance</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-3 py-1.5 opacity-60">
+<span class="material-symbols-outlined text-[18px]">archive</span>
+<span class="text-[10px] hidden sm:block mt-0.5">Archive</span>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center gap-3 ml-auto">
+<button class="px-4 py-2 border border-outline-variant text-secondary rounded font-medium hover:bg-surface-container transition-colors text-xs hidden sm:block">← 返回上一步</button>
+<button class="px-5 py-2 bg-primary text-on-primary rounded font-bold hover:bg-primary-fixed-variant transition-colors text-xs flex items-center gap-1">核对完成，开始比对 →</button>
+</div>
+</footer>
+<script>
+        // Simple script to handle hover/active state linking between OCR boxes and form sections
+        document.addEventListener('DOMContentLoaded', () => {
+            const boxes = document.querySelectorAll('.ocr-box');
+            // Normally this would have logic to link specific boxes to specific right-side sections
+            boxes.forEach(box => {
+                box.addEventListener('click', () => {
+                    boxes.forEach(b => b.classList.remove('active'));
+                    box.classList.add('active');
+                });
+            });
+        });
+    </script>
+
+
+</body></html>

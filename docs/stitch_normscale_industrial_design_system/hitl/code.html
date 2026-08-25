@@ -1,0 +1,560 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>质检工作台 - Step3 比对标准</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-container": "#fdfcff",
+                      "border-dark": "#334155",
+                      "on-secondary": "#ffffff",
+                      "status-warning-bg": "#FFFBEB",
+                      "on-secondary-fixed-variant": "#3a485b",
+                      "tertiary-fixed": "#ffdcc0",
+                      "background-light": "#F8FAFC",
+                      "secondary-fixed": "#d5e3fc",
+                      "on-primary-fixed-variant": "#004b73",
+                      "primary-container": "#007bb9",
+                      "text-primary-dark": "#F8FAFC",
+                      "surface-tint": "#006398",
+                      "status-hitl-bg": "#F5F3FF",
+                      "surface-container-high": "#e5e8ee",
+                      "on-secondary-container": "#57657a",
+                      "status-pass-bg": "#ECFDF5",
+                      "secondary": "#515f74",
+                      "primary-fixed-dim": "#93ccff",
+                      "inverse-on-surface": "#eef1f7",
+                      "surface": "#f7f9ff",
+                      "on-primary-fixed": "#001d31",
+                      "status-warning-text": "#B45309",
+                      "surface-variant": "#dfe3e8",
+                      "surface-light": "#FFFFFF",
+                      "error": "#ba1a1a",
+                      "surface-dim": "#d7dae0",
+                      "on-tertiary-container": "#fffbff",
+                      "secondary-fixed-dim": "#b9c7df",
+                      "primary-dark": "#38BDF8",
+                      "border-light": "#E2E8F0",
+                      "inverse-primary": "#93ccff",
+                      "status-hitl-text": "#6D28D9",
+                      "primary-fixed": "#cce5ff",
+                      "secondary-container": "#d5e3fc",
+                      "inverse-surface": "#2d3135",
+                      "surface-container": "#ebeef4",
+                      "background-dark": "#0B0F17",
+                      "surface-dark": "#1E293B",
+                      "tertiary-fixed-dim": "#ffb875",
+                      "on-tertiary-fixed-variant": "#6b3b00",
+                      "on-background": "#181c20",
+                      "on-tertiary-fixed": "#2d1600",
+                      "outline-variant": "#bfc7d2",
+                      "status-fail-text": "#B91C1C",
+                      "background": "#f7f9ff",
+                      "on-error-container": "#93000a",
+                      "on-surface": "#181c20",
+                      "tertiary": "#894d00",
+                      "on-tertiary": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "surface-bright": "#f7f9ff",
+                      "status-pass-text": "#047857",
+                      "text-primary-light": "#0F172A",
+                      "on-error": "#ffffff",
+                      "primary": "#006194",
+                      "surface-container-highest": "#dfe3e8",
+                      "outline": "#707881",
+                      "status-fail-bg": "#FEF2F2",
+                      "tertiary-container": "#ac6200",
+                      "on-surface-variant": "#3f4850",
+                      "surface-container-low": "#f1f4fa",
+                      "on-primary": "#ffffff",
+                      "on-secondary-fixed": "#0d1c2e",
+                      "surface-container-lowest": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "container-padding": "1rem",
+                      "gutter": "1rem",
+                      "cell-py": "0.5rem",
+                      "stack-gap": "0.5rem",
+                      "cell-px": "0.75rem"
+              },
+              "fontFamily": {
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "label-sm": [
+                              "Inter"
+                      ],
+                      "label-mono": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "data-display": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-sm": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-mono": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "data-display": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-sm": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+</head>
+<body class="bg-background-light text-on-surface font-body-md min-h-screen flex flex-col pt-16 pb-24">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-bg-industrial-slate font-body-md text-body-md border-b border-outline-variant dark:border-on-surface-variant flex justify-between items-center w-full px-6 h-16 shrink-0 z-50 fixed top-0">
+<div class="flex items-center gap-8">
+<div class="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary-fixed-dim tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" style="font-variation-settings: &quot;FILL&quot; 1;">precision_manufacturing</span>
+                NormScale <span class="text-on-surface-variant font-normal text-sm ml-2 hidden md:inline">| 工业质保证书合规检验</span>
+</div>
+<nav class="hidden md:flex gap-6 items-center h-full pt-1">
+<a class="text-primary dark:text-primary-fixed-dim font-bold border-b-2 border-primary dark:border-primary-fixed-dim pb-1 hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center" href="#">工作台</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">历史检验台账</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">标准库</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">系统管理</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">light_mode</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="flex items-center gap-3 border-l border-outline-variant pl-4 ml-2">
+<div class="text-right hidden md:block">
+<div class="text-on-surface font-medium text-xs">高级质检工程师</div>
+<div class="text-on-surface-variant text-[10px]">当前在线</div>
+</div>
+<div class="w-8 h-8 rounded-full bg-primary-container text-primary flex items-center justify-center font-bold">
+                    SQE
+                </div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow p-container-padding flex gap-gutter max-w-[1600px] mx-auto w-full">
+<!-- Left Column: Parsed Results -->
+<section class="w-[45%] flex flex-col gap-stack-gap">
+<h2 class="font-headline-sm text-headline-sm text-text-primary-light flex items-center gap-2 mb-2">质保书解析结果</h2>
+<div class="bg-surface-light border border-border-light rounded-lg p-container-padding flex flex-col gap-4 shadow-sm">
+<div class="grid grid-cols-2 gap-4">
+<div>
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">供应商</div>
+<div class="font-data-display text-data-display text-on-surface">Tisco Stainless Steel Co., Ltd.</div>
+</div>
+<div>
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">牌号</div>
+<div class="font-data-display text-data-display text-on-surface">06Cr19Ni10/S30408</div>
+</div>
+<div>
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">炉号</div>
+<div class="font-data-display text-data-display text-on-surface">L230914-01</div>
+</div>
+<div>
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">批号</div>
+<div class="font-data-display text-data-display text-on-surface">B2023-A992</div>
+</div>
+</div>
+<div class="border-t border-border-light pt-4 mt-2">
+<h3 class="font-label-sm text-label-sm font-semibold text-text-primary-light mb-3">化学成分实测值 (%)</h3>
+<div class="grid grid-cols-4 gap-3">
+<div class="bg-surface-container-lowest border border-border-light rounded p-2 text-center">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">C</span>
+<span class="font-data-display text-data-display">0.025</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2 text-center">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">Si</span>
+<span class="font-data-display text-data-display">0.45</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2 text-center">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">Mn</span>
+<span class="font-data-display text-data-display">1.20</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2 text-center">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">P</span>
+<span class="font-data-display text-data-display">0.030</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2 text-center">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">S</span>
+<span class="font-data-display text-data-display">0.010</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2 text-center">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">Ni</span>
+<span class="font-data-display text-data-display">8.50</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2 text-center">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">Cr</span>
+<span class="font-data-display text-data-display">18.20</span>
+</div>
+</div>
+</div>
+<div class="border-t border-border-light pt-4 mt-2">
+<h3 class="font-label-sm text-label-sm font-semibold text-text-primary-light mb-3">力学性能实测值</h3>
+<div class="grid grid-cols-2 gap-3">
+<div class="bg-surface-container-lowest border border-border-light rounded p-2">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">Rm (MPa)</span>
+<span class="font-data-display text-data-display">580</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">Rp0.2 (MPa)</span>
+<span class="font-data-display text-data-display">240</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">A (%)</span>
+<span class="font-data-display text-data-display">45</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-2">
+<span class="block text-on-surface-variant font-label-mono text-label-mono mb-1">Hardness (HRB)</span>
+<span class="font-data-display text-data-display">85</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Column: Rules & Comparison -->
+<section class="w-[55%] flex flex-col gap-stack-gap">
+<!-- Rule Snippet -->
+<div class="bg-surface-container-low border border-border-light rounded-lg px-4 py-3 flex items-start gap-2">
+<div>
+<span class="font-body-md text-on-surface">锁定规则切片：<strong class="">GB/T 14976-2012 / S30408</strong></span>
+<p class="font-label-sm text-on-surface-variant mt-1">（前置条件激活: 壁厚 2.0mm ≥ 1.7mm 触发硬度检验）</p>
+</div>
+</div>
+<!-- Decision Banner -->
+<div class="bg-status-pass-bg border border-[#A7F3D0] rounded-lg p-5 flex items-center justify-between shadow-sm">
+<div>
+<div class="font-headline-md text-headline-md text-status-pass-text flex items-center gap-2">
+
+                        综合判定: PASS 全项合格
+                    </div>
+<div class="font-body-md text-status-pass-text mt-1 opacity-80">（符合 GB/T 14976 锅炉及热交换器管标准）</div>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 bg-surface-container-high border border-outline-variant text-on-secondary-container rounded font-label-sm hover:bg-surface-container-highest transition-colors">拒收</button>
+<button class="px-4 py-2 bg-surface-light border border-border-light text-on-surface-variant rounded font-label-sm hover:bg-surface-container-low transition-colors">特批放行</button>
+<button class="px-4 py-2 bg-primary text-on-primary rounded font-label-sm hover:bg-surface-tint transition-colors shadow-sm">审批合格</button>
+</div>
+</div>
+<!-- Module A: Chemistry -->
+<div class="bg-surface-light border border-border-light rounded-lg shadow-sm overflow-hidden mt-2">
+<div class="px-4 py-3 border-b border-border-light bg-surface-container-lowest">
+<h3 class="font-headline-sm text-headline-sm text-text-primary-light">模块 A: 化学成分比对表</h3>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-border-light">
+<th class="py-cell-py px-cell-px font-label-sm text-on-surface-variant">指标</th>
+<th class="py-cell-py px-cell-px font-label-sm text-on-surface-variant">实测值</th>
+<th class="py-cell-py px-cell-px font-label-sm text-on-surface-variant">标准范围 [Min, Max]</th>
+<th class="py-cell-py px-cell-px font-label-sm text-on-surface-variant">判定值</th>
+<th class="py-cell-py px-cell-px font-label-sm text-on-surface-variant">偏差量</th>
+<th class="py-cell-py px-cell-px font-label-sm text-on-surface-variant">状态</th>
+</tr>
+</thead>
+<tbody class="font-data-display text-data-display text-on-surface divide-y divide-border-light">
+<tr class="hover:bg-surface-container-lowest">
+<td class="py-cell-py px-cell-px">C</td>
+<td class="py-cell-py px-cell-px">0.025</td>
+<td class="py-cell-py px-cell-px">[-, 0.08]</td>
+<td class="py-cell-py px-cell-px">-</td>
+<td class="py-cell-py px-cell-px text-on-surface-variant">-0.055</td>
+<td class="py-cell-py px-cell-px"><span class="inline-flex items-center gap-1 bg-status-pass-bg text-status-pass-text px-2 py-0.5 rounded-full font-label-sm"><span class="material-symbols-outlined text-[14px]" data-icon="check">check</span>PASS</span></td>
+</tr>
+<tr class="hover:bg-surface-container-lowest">
+<td class="py-cell-py px-cell-px">Cr</td>
+<td class="py-cell-py px-cell-px">18.20</td>
+<td class="py-cell-py px-cell-px">[18.00, 20.00]</td>
+<td class="py-cell-py px-cell-px">-</td>
+<td class="py-cell-py px-cell-px text-on-surface-variant">+0.20</td>
+<td class="py-cell-py px-cell-px"><span class="inline-flex items-center gap-1 bg-status-pass-bg text-status-pass-text px-2 py-0.5 rounded-full font-label-sm"><span class="material-symbols-outlined text-[14px]" data-icon="check">check</span>PASS</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Modules B & C Grid -->
+<div class="grid grid-cols-2 gap-4 mt-2">
+<!-- Module B -->
+<div class="bg-surface-light border border-border-light rounded-lg shadow-sm p-4">
+<h3 class="font-headline-sm text-headline-sm text-text-primary-light mb-3">模块 B: 力学性能</h3>
+<div class="space-y-3">
+<div class="flex justify-between items-center pb-2 border-b border-border-light border-dashed">
+<span class="font-label-mono text-label-mono text-on-surface-variant">Rm ≥ 515 MPa</span>
+<span class="font-data-display text-data-display text-on-surface flex items-center gap-2">580 <span class="material-symbols-outlined text-status-pass-text text-[16px]" data-icon="check_circle">check_circle</span></span>
+</div>
+<div class="flex justify-between items-center pb-2 border-b border-border-light border-dashed">
+<span class="font-label-mono text-label-mono text-on-surface-variant">Rp0.2 ≥ 205 MPa</span>
+<span class="font-data-display text-data-display text-on-surface flex items-center gap-2">240 <span class="material-symbols-outlined text-status-pass-text text-[16px]" data-icon="check_circle">check_circle</span></span>
+</div>
+</div>
+<div class="mt-4 bg-status-hitl-bg border border-[#C4B5FD] rounded p-3">
+<p class="font-label-sm text-status-hitl-text flex items-start gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="auto_awesome">auto_awesome</span>
+                            已完成涡流探伤(E3H)合格 -&gt; 依据6.5.2免做水压
+                        </p>
+</div>
+</div>
+<!-- Module C -->
+<div class="bg-surface-light border border-border-light rounded-lg shadow-sm p-4">
+<h3 class="font-headline-sm text-headline-sm text-text-primary-light mb-3">模块 C: 定性条款</h3>
+<div class="space-y-3">
+<div class="bg-surface-container-lowest border border-border-light rounded p-3 flex justify-between items-center">
+<span class="font-body-md text-on-surface">压扁试验</span>
+<span class="inline-flex items-center gap-1 bg-status-pass-bg text-status-pass-text px-2 py-0.5 rounded-full font-label-sm">PASS</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-light rounded p-3 flex justify-between items-center">
+<span class="font-body-md text-on-surface">晶间腐蚀 (Method E)</span>
+<span class="inline-flex items-center gap-1 bg-status-pass-bg text-status-pass-text px-2 py-0.5 rounded-full font-label-sm">PASS</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Module D: Audit Trail -->
+<div class="bg-surface-light border border-border-light rounded-lg shadow-sm p-4 mt-2">
+<details class="group">
+<summary class="font-headline-sm text-headline-sm text-text-primary-light cursor-pointer list-none flex justify-between items-center">
+<span class="">模块 D: 审计轨迹</span>
+<span class="material-symbols-outlined group-open:rotate-180 transition-transform" data-icon="expand_more">expand_more</span>
+</summary>
+<div class="pt-4 mt-4 border-t border-border-light space-y-4 relative before:absolute before:inset-y-0 before:left-[11px] before:w-0.5 before:bg-border-light before:mt-5">
+<div class="flex gap-4 relative">
+<div class="w-6 h-6 rounded-full bg-surface-container-high border-2 border-surface-light flex items-center justify-center z-10 shrink-0">
+<div class="w-2 h-2 rounded-full bg-outline"></div>
+</div>
+<div>
+<p class="font-label-sm text-on-surface-variant">2023-10-27 14:32:01</p>
+<p class="font-body-md text-on-surface">系统自动匹配规则组 GB/T 14976-2012</p>
+</div>
+</div>
+<div class="flex gap-4 relative">
+<div class="w-6 h-6 rounded-full bg-status-pass-bg border-2 border-surface-light flex items-center justify-center z-10 shrink-0">
+<span class="material-symbols-outlined text-[12px] text-status-pass-text" data-icon="check">check</span>
+</div>
+<div>
+<p class="font-label-sm text-on-surface-variant">2023-10-27 14:32:05</p>
+<p class="font-body-md text-on-surface">完成所有 24 项参数比对，结果：PASS</p>
+</div>
+</div>
+</div>
+</details>
+</div>
+</section>
+</main>
+<!-- Bottom Stepper Bar (Custom Layout based on JSON) -->
+<footer class="bg-surface-container dark:bg-inverse-surface font-body-md text-body-md border-t border-outline-variant dark:border-on-surface-variant shadow-sm fixed bottom-0 left-0 w-full flex justify-between items-center py-3 px-6 z-50">
+<div class="flex items-center gap-4 hidden md:flex">
+<div class="flex flex-col items-center justify-center text-status-pass-text px-4 py-1.5 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">check_circle</span>
+<span class="text-[10px] font-bold">上传文档</span>
+</div>
+<div class="w-4 h-[1px] bg-outline-variant"></div>
+<div class="flex flex-col items-center justify-center text-status-pass-text px-4 py-1.5 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">check_circle</span>
+<span class="text-[10px] font-bold">核对数据</span>
+</div>
+<div class="w-4 h-[1px] bg-outline-variant"></div>
+<div class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-primary dark:text-on-primary rounded-xl px-4 py-1.5 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">rule</span>
+<span class="text-[10px] font-bold">比对标准</span>
+</div>
+<div class="w-4 h-[1px] bg-outline-variant"></div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1.5 opacity-60 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">inventory_2</span>
+<span class="text-[10px]">inventory_2</span>
+</div>
+</div>
+<div class="flex items-center gap-3 ml-auto">
+<button class="px-4 py-2 border border-surface-variant rounded text-on-surface font-medium hover:bg-surface-container transition-colors text-xs opacity-60 hover:opacity-100 hidden sm:block">
+                返回上一步
+            </button>
+<button class="px-5 py-2 bg-primary text-on-primary rounded font-bold hover:bg-primary-fixed-variant transition-colors text-xs flex items-center gap-1">
+                比对通过，生成质检报告 <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</footer>
+<div class="fixed inset-0 z-[100] flex justify-end">
+<!-- Overlay Mask -->
+<div class="fixed inset-0 bg-on-surface/40 backdrop-blur-sm"></div>
+<!-- Drawer Body -->
+<div class="relative w-[480px] h-full bg-surface-light border-l border-border-light shadow-2xl flex flex-col">
+<!-- Header -->
+<div class="p-6 border-b border-border-light">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-10 h-10 rounded-lg bg-status-hitl-bg flex items-center justify-center text-status-hitl-text">
+<span class="material-symbols-outlined text-[28px]">warning</span>
+</div>
+<div>
+<div class="inline-flex items-center px-2 py-0.5 rounded bg-status-hitl-bg text-status-hitl-text text-[12px] font-bold mb-1">
+            ⚠️ 质检任务已挂起 - 需要人工确认 (HITL Interrupt)
+          </div>
+<h2 class="font-headline-sm text-on-surface">任务编号: #TK-20231027-04</h2>
+</div>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant text-sm">
+<span class="material-symbols-outlined text-[18px]">account_tree</span>
+<span class="">阶段：牌号消歧与抽取置信度复核</span>
+</div>
+</div>
+<!-- Content Area -->
+<div class="flex-grow overflow-y-auto p-6 space-y-6">
+<!-- Diagnostics Section -->
+<div class="space-y-3">
+<h3 class="font-label-sm text-on-surface-variant uppercase tracking-wider">诊断报告 (Diagnostics)</h3>
+<div class="bg-surface-container-low border border-border-light rounded-lg p-4">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-status-hitl-text">help</span>
+<div>
+<div class="font-bold text-on-surface">未知材料牌号 (Unknown Grade Ambiguity)</div>
+<p class="text-sm text-on-surface-variant mt-1">检测到非标别名 <code class="font-label-mono bg-surface-container-high px-1 rounded">SUS304-HT</code>，当前别名库中未匹配到唯一映射。</p>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low border border-border-light rounded-lg p-4">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-status-fail-text">visibility_off</span>
+<div>
+<div class="font-bold text-on-surface">低置信度关键指标 (Low OCR Confidence)</div>
+<p class="text-sm text-on-surface-variant mt-1">指标 <span class="font-label-mono">Carbon (C)</span> 抽取置信度仅为 <span class="text-status-fail-text font-bold">62%</span>，低于系统阈值 (85%)。</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Correction Form -->
+<div class="space-y-4">
+<h3 class="font-label-sm text-on-surface-variant uppercase tracking-wider">人工修正 (Correction)</h3>
+<!-- Grade Mapper -->
+<div class="space-y-2">
+<label class="block text-sm font-medium text-on-surface">牌号映射建议</label>
+<div class="relative">
+<input class="w-full border border-outline-variant rounded p-2 text-sm focus:ring-primary focus:border-primary" type="text" value="06Cr19Ni10/S30408">
+<div class="absolute right-2 top-2 text-status-pass-text text-xs font-bold">96% 匹配</div>
+</div>
+<div class="flex items-center gap-2 mt-2">
+<input class="rounded border-outline-variant text-primary focus:ring-primary" id="persist-alias" type="checkbox">
+<label class="text-xs text-on-surface-variant" for="persist-alias">将该别名映射持久化保存至标准别名知识库</label>
+</div>
+</div>
+<!-- Image Snippet Review -->
+<div class="space-y-2">
+<label class="block text-sm font-medium text-on-surface">指标实测值复核 (C)</label>
+<div class="grid grid-cols-2 gap-2 border border-border-light rounded overflow-hidden">
+<div class="bg-surface-container-highest h-24 flex items-center justify-center text-xs text-on-surface-variant italic">
+              [MTC 原始切片预览]
+            </div>
+<div class="p-3 bg-surface-light flex flex-col justify-center">
+<span class="text-[10px] text-on-surface-variant mb-1">修正值 (%)</span>
+<input class="font-data-display text-lg w-full border-b border-primary focus:outline-none" type="text" value="0.042">
+</div>
+</div>
+</div>
+<!-- Waiver Switch -->
+<div class="pt-4 border-t border-border-light">
+<div class="flex items-center justify-between mb-3">
+<span class="text-sm font-medium text-on-surface">技术协议特批放行 (Waiver)</span>
+<div class="w-10 h-5 bg-primary rounded-full relative cursor-pointer">
+<div class="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div>
+</div>
+</div>
+<div class="space-y-3">
+<input class="w-full border border-outline-variant rounded p-2 text-sm" placeholder="特批放行依据/协议编号" type="text">
+<div class="border-2 border-dashed border-outline-variant rounded h-20 flex items-center justify-center text-xs text-on-surface-variant">
+              电子签名区域 (Electronic Signature)
+            </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer -->
+<div class="p-6 border-t border-border-light bg-surface-container-lowest flex gap-3">
+<button class="flex-1 px-4 py-2.5 border border-outline-variant text-on-surface-variant rounded font-medium hover:bg-surface-container transition-colors text-sm">
+        取消并保持挂起
+      </button>
+<button class="flex-1 px-4 py-2.5 bg-status-hitl-text text-on-primary rounded font-bold hover:opacity-90 transition-colors text-sm">
+        确认修正并继续</button>
+</div>
+</div>
+</div>
+
+</body></html>

@@ -2,31 +2,33 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { Header } from '@/components/Header.tsx';
-import { UploadZone } from '@/components/UploadZone.tsx';
-import { CertificateViewer } from '@/components/CertificateViewer.tsx';
-import { ComplianceMatrix } from '@/components/ComplianceMatrix.tsx';
-import { AuditTraceTimeline } from '@/components/AuditTraceTimeline.tsx';
+import { WaterfallWorkbench } from '@/components/WaterfallWorkbench.tsx';
+import { StandardExplorer } from '@/components/StandardExplorer.tsx';
+import { AuditLedger } from '@/components/AuditLedger.tsx';
+import { AdminConsole } from '@/components/AdminConsole.tsx';
 import { HitlDrawer } from '@/components/HitlDrawer.tsx';
-import { ExportReportModal } from '@/components/ExportReportModal.tsx';
 import { apiClient, PresetSampleDto, StandardOverviewDto } from '@/lib/api-client.ts';
 import { AuditReport } from '@/schemas/report.schema.ts';
 import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions } from '@/workflow/state.interface.ts';
-import { AlertCircle } from 'lucide-react';
 
 /**
  * ============================================================================
- * NormScale 物资验收决策看板主工作台 (Main Dashboard Page)
+ * NormScale 质量证明书智能合规检验系统主页面 (Main Dashboard Page)
+ * 采用全新 MD3 / Stitch 工业设计系统规范，支持受控平滑步进滑动与明暗双模切换
  * ============================================================================
  */
 export default function DashboardPage() {
+  const [activeTab, setActiveTab] = useState<'workbench' | 'standards' | 'ledger' | 'admin'>('workbench');
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
   const [standardsData, setStandardsData] = useState<{
     total_standards: number;
     total_slices: number;
     standards: StandardOverviewDto[];
   }>();
   const [samples, setSamples] = useState<PresetSampleDto[]>([]);
-  const [selectedSampleId, setSelectedSampleId] = useState<string>('s30408_messy_sample');
-  const [options, setOptions] = useState<WorkflowOptions>({
+  const [selectedSampleId, setSelectedSampleId] = useState<string>('316l_kgf_sample');
+  const [options] = useState<WorkflowOptions>({
     minConfidenceThreshold: 0.8,
     skipSemanticReview: false,
   });
@@ -36,7 +38,6 @@ export default function DashboardPage() {
   const [currentReport, setCurrentReport] = useState<AuditReport>();
   const [hitlContext, setHitlContext] = useState<HitlInterruptContext>();
   const [isHitlOpen, setIsHitlOpen] = useState<boolean>(false);
-  const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // 1. 初始化加载标准库信息与预设样本
@@ -72,13 +73,10 @@ export default function DashboardPage() {
         setCurrentTaskId(res.taskId);
 
         if (res.status === 'suspended_hitl') {
-          // 触发人机协同挂起，弹出抽屉等待质检员介入
           setHitlContext(res.hitlContext);
           setIsHitlOpen(true);
-          // 若有部分数据，仍可呈现中间状态
           if (res.finalReport) setCurrentReport(res.finalReport);
         } else if (res.status === 'completed' && res.finalReport) {
-          // 正常完成流转
           setCurrentReport(res.finalReport);
           setHitlContext(undefined);
           setIsHitlOpen(false);
@@ -95,9 +93,9 @@ export default function DashboardPage() {
     [options]
   );
 
-  // 页面初始挂载时自动触发一次首个样本的核验
+  // 页面初始挂载时自动触发一次 316L 样本核验
   useEffect(() => {
-    handleExecuteAudit('s30408_messy_sample');
+    handleExecuteAudit('316l_kgf_sample');
   }, [handleExecuteAudit]);
 
   // 3. 人机协同修正数据提交并恢复执行
@@ -123,55 +121,75 @@ export default function DashboardPage() {
     }
   };
 
+  const toggleTheme = () => {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    if (typeof document !== 'undefined') {
+      if (nextTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+        document.documentElement.classList.remove('light');
+      } else {
+        document.documentElement.classList.add('light');
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  };
+
+  const handleLoadSampleToWorkbench = (sampleId: string) => {
+    setActiveTab('workbench');
+    handleExecuteAudit(sampleId);
+  };
+
   return (
-    <div className="flex min-h-screen flex-col bg-[#090d16] text-slate-100">
+    <div className={`h-screen w-screen overflow-hidden flex flex-col ${theme === 'dark' ? 'dark bg-bg-industrial-slate text-surface-bright' : 'light bg-bg-slate-mist text-on-surface'} transition-colors duration-200`}>
       {/* 顶部全局导航栏 */}
       <Header
         standardsData={standardsData}
         isAuditing={isAuditing}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onRefresh={() => handleExecuteAudit(selectedSampleId)}
-        onOpenExport={() => setIsExportOpen(true)}
       />
 
-      {/* 看板主体工作台区域 */}
-      <main className="mx-auto flex-1 w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
-        {/* 全局错误警告栏 */}
+      {/* 看板主体视图区域 */}
+      <main className="flex-1 w-full h-[calc(100vh-4rem)] overflow-hidden relative">
+        {/* 全局错误提示栏 */}
         {errorMessage && (
-          <div className="flex items-center space-x-2.5 rounded-xl border border-rose-800/60 bg-rose-950/30 p-4 text-sm text-rose-300">
-            <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl border border-red-300 dark:border-red-900 bg-status-fail-bg px-4 py-2.5 text-xs text-status-fail-text shadow-lg">
+            <span className="material-symbols-outlined text-base">error</span>
             <span className="font-medium">{errorMessage}</span>
           </div>
         )}
 
-        {/* 样本选择与控制栏 */}
-        <UploadZone
-          samples={samples}
-          selectedSampleId={selectedSampleId}
-          onSelectSample={id => handleExecuteAudit(id)}
-          options={options}
-          onOptionsChange={newOpts => {
-            setOptions(newOpts);
-            handleExecuteAudit(selectedSampleId, newOpts);
-          }}
-          disabled={isAuditing}
-        />
+        {/* 视图 1：受控垂直平滑滑动质检工作台 */}
+        {activeTab === 'workbench' && (
+          <WaterfallWorkbench
+            standardsData={standardsData}
+            samples={samples}
+            selectedSampleId={selectedSampleId}
+            onSelectSample={id => handleExecuteAudit(id)}
+            isAuditing={isAuditing}
+            currentReport={currentReport}
+            onOpenHitlDrawer={() => setIsHitlOpen(true)}
+            onTriggerAudit={() => handleExecuteAudit(selectedSampleId)}
+          />
+        )}
 
-        {/* 宽屏双列对比视图 */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* 左列 (42% / 5 列)：质保书结构化解析视图 */}
-          <div className="lg:col-span-5">
-            <CertificateViewer report={currentReport} isLoading={isAuditing} />
-          </div>
+        {/* 视图 2：历史质检台账明细 */}
+        {activeTab === 'ledger' && (
+          <AuditLedger onLoadSampleToWorkbench={handleLoadSampleToWorkbench} />
+        )}
 
-          {/* 右列 (58% / 7 列)：国家标准合规判定矩阵与审计时间轴 */}
-          <div className="lg:col-span-7 space-y-6">
-            <ComplianceMatrix report={currentReport} isLoading={isAuditing} />
-            <AuditTraceTimeline traces={currentReport?.audit_traces} isLoading={isAuditing} />
-          </div>
-        </div>
+        {/* 视图 3：国家标准知识库与规格切片浏览器 */}
+        {activeTab === 'standards' && <StandardExplorer />}
+
+        {/* 视图 4：系统管理与运维配置控制台 */}
+        {activeTab === 'admin' && <AdminConsole />}
       </main>
 
-      {/* 人机协同干预抽屉 */}
+      {/* 人机协同干预右侧 480px 抽屉 */}
       <HitlDrawer
         isOpen={isHitlOpen}
         onClose={() => setIsHitlOpen(false)}
@@ -179,13 +197,6 @@ export default function DashboardPage() {
         taskId={currentTaskId}
         onSubmitResume={handleResumeAudit}
         isSubmitting={isAuditing}
-      />
-
-      {/* 质检报告导出模态框 */}
-      <ExportReportModal
-        isOpen={isExportOpen}
-        onClose={() => setIsExportOpen(false)}
-        report={currentReport}
       />
     </div>
   );

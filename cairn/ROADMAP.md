@@ -7,53 +7,30 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 7 - NormScale 业务工作流与前端交互深度纵向贯通 (Deep Interactive UX & Real Workflow)**
+**当前焦点**：**Phase 8 - NormScale 专用的 MTC 质保书内建解析层设计与实现 (Native Parser & OCR BBox Engine)**
 - **待执行行动项清单（Next Steps）**：
-  1. **真实文件上传与原件视图 (Real Document Upload & PDF/Image Viewer)**：支持拖拽真实质保书文件，左侧呈现原件预览并与右侧结构化提取数据形成对照；
-  2. **标准切片与条款知识浏览器 (Standard Rule & Slice Explorer)**：提供独立的标准知识库查阅面板，支持质检员检索 GB/T 13296 全量 31 个钢级规则、GB/T 8170 进舍修约说明与 AST 公式；
-  3. **历史核验台账与任务回溯检索 (Audit Ledger & Task History)**：构建质检台账列表，支持按批号、炉号、日期、状态（PASS/FAIL/HITL）多维检索与历史报告回溯；
-  4. **深层 HITL 干预矩阵 (Comprehensive HITL & Exception Handling)**：支持单项实测值的手动覆写/修正、不合格指标特批豁免放行审批与质检工程师电子签章。
+  1. **内建版面分析与表格识别 (Layout Analysis & Table Structure Recognition)**：设计 NormScale 专用的 MTC 质保书版面分析引擎，提取多语言、多表格布局与坐标；
+  2. **OCR 文本定位与 BBox 坐标对齐 (Word-level BBox Alignment)**：将识别出的理化指标与 PDF/图片视窗建立精确像素坐标级关联，支撑前端 Stage 2 的 BBox 高亮交互；
+  3. **标准 Schema 契约数据直通**：直接产出符合 `certificate.schema.ts` 的结构化单据，作为后续全流程唯一的真理来源（Single Source of Truth）；
+  4. **可插拔多源适配**：保留外部解析源（如 DocEx）的兼容抽象接口。
 
 ## 里程碑 (Milestones)
 
 - [x] **Phase 1: 元模型与确定性规则核验引擎**
-  - 定义 Standard Meta-Schema、Certificate Meta-Schema 与 Audit Report Schema（TypeScript + Zod）
-  - 实现 GB/T 8170 数值修约、数值区间、安全 AST 动态公式求值器、OR/替代逻辑组比较器与漏检扫描器
-  - 构建 GB/T 13296-2023 黄金测试基准，Vitest 单元测试通过率 100%（51 项用例），覆盖率超 90%
 - [x] **Phase 2: 标准规则库存储、规格切片 (Specification Slice) 与离线入库管线**
-  - 架构升级：从单一牌号映射升级为通用规格切片（Specification Slice）存储与路由架构，统一支持牌号（钢管/板材）、性能等级（紧固件 8.8/10.9）、压力等级（法兰 PN16/Class 150）与胶料代号（密封圈 NBR 70）
-  - 实现基于文件与索引缓存的秒级标准规则检索器（`FileRuleStore`），支持多标准、多切片动态按需加载与 $O(1)$ 别名路由
-  - 接入文本条款向量/关键词全文检索层（`ClauseStore`，用于定性说明与工艺技术条款 RAG 检索）
-  - 构建《GB/T 13296-2023》全量 31 个钢级规则切片及表1/表2几何尺寸公差表，提供 `pnpm standard:validate` 离线校验工具（65 项测试全部通过）
 - [x] **Phase 3: 质保书提取与归一化适配层**
-  - 建立统一提取抽象接口 `ICertificateExtractor`，支持本地确定性 Mock、DocEx HTTP Client 与 Direct LLM 多后端适配
-  - 实现材料牌号消歧器 `GradeNormalizer`（联动 31 个切片别名字典秒级映射 SUS304/TP316L/904L/254SMO 等）
-  - 实现物理量工程单位换算器 `UnitNormalizer`（基于 BigNumber 实现 kgf/mm²、psi/ksi $\to$ MPa 零精度损失转换）
-  - 实现检验项名称映射 `PropertyKeyNormalizer`、定性结论清洗 `QualitativeNormalizer` 与尺寸解析 `DimensionNormalizer`
-  - 构建 `CertificateNormalizer` 归一化总控流水线，92 项单元测试 100% 通过
 - [x] **Phase 4: 领域日志系统、审计轨迹与性能度量**
-  - 构建 `ILogger` 门面与轻量级自然语言日志引擎，支持 `[EXTRACTOR]`、`[NORMALIZER]`、`[REPOSITORY]`、`[ENGINE]`、`[PERF]` 分级多色标签
-  - 实现微秒级 `PerformanceProfiler` 性能度量器，精确统计各阶段耗时（切片加载、牌号消歧、单位换算、规则比对等）
-  - 实现 `MemoryTraceCollector` 内存审计轨迹收集器，将自然语言决策轨迹与性能指标无缝注入 `AuditReport`
-  - 完成核心模块全链路日志埋点，19 个测试套件 98 项单元测试 100% 通过
 - [x] **Phase 5: LangGraph 状态图与人机协同编排**
-  - 定义 `QualityAuditStateAnnotation` 状态通道与序列化安全的 `traces` 累积通道
-  - 编排 7 大流水线节点（`Extract` $\to$ `Normalize` $\to$ `RetrieveStandard` $\to$ `DeterministicEval` $\to$ `SemanticReview` $\to$ `HumanReview` $\to$ `DecisionAggregator`）
-  - 实现基于 `interrupt()` 与 `MemorySaver` 的 HITL 人机协同断点挂起与质检员人工修正精准恢复机制
-  - 封装开箱即用的 `WorkflowEngine` 门面 API，21 个测试套件 104 项单测 100% 通过
 - [x] **Phase 6: API 服务层与物资验收决策看板原型**
-  - 开发 Next.js 15 App Router 接口体系（`/api/standards`, `/api/samples`, `/api/audit/submit`, `/api/audit/status/[taskId]`, `/api/audit/resume/[taskId]`）
-  - 构建宽屏双列交互看板 UI（左侧原始质保书结构化视图，右侧红/黄/绿合规判定矩阵与自然语言决策轨迹流）
-  - 构建基于 `framer-motion` 的 HITL 人机协同干预抽屉组件（支持牌号修正建议、实测值微调、特批放行与恢复流转）
-  - 编写 API Route 路由层集成测试，Next.js 15 生产级打包成功，22 个测试套件 108 项测试 100% 通过
-- [ ] **Phase 7: NormScale 业务工作流与前端交互深度纵向贯通**
-  - 真实 PDF/图像上传与原件视图对照
-  - 标准规则库切片与条款知识浏览器 (Standard Explorer)
-  - 历史核验台账与任务回溯检索 (Audit Ledger)
-  - 深度 HITL 干预矩阵（值覆写、指标特批放行、质检多级签章）
-- [ ] **Phase 8: DocEx 质保书专用抽取 REST API 服务构建与真机联调**
-  - 在 DocEx 项目端实现面向 MTC 的版面分析与结构化抽取 REST API 端点（`POST /api/v1/extract/mtc`）
-  - 激活 NormScale 侧 `HttpCertificateExtractor`，完成跨项目真实 PDF 提取与全流程真机联调
+- [x] **Phase 7: NormScale 业务工作流与全套前端页面深度纵向贯通**
+  - 纵向瀑布流质检工作台（`WaterfallWorkbench`，吸顶步骤锚点 01~04）
+  - 原件 BBox 坐标解析核对与归一化（产生 `CertificateExtract` 唯一真理数据）
+  - 标准规则库切片与条款知识浏览器 (`StandardExplorer`，31个钢级切片与 AST 公式)
+  - 历史质检台账明细与任务回溯 (`AuditLedger`)
+  - 系统管理与运维配置控制台 (`AdminConsole`，模型/日志/权限)
+  - 闭环模态框：物资合格放行单 (`PassReleaseModal`) 与不合格拒收处置通知书 (`RejectionNoticeModal`)
+  - 全站中文语境、低饱和度工业极简美学与明暗主题一键切换
+- [ ] **Phase 8: NormScale 专用的 MTC 质保书内建解析层设计与实现 (Native Parser & OCR BBox Engine)**
 - [ ] **Phase 9: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 7 后置)**
   - 扩充管材、板材、锻件等多品类标准规则库
   - 升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），对接生产级分布式向量库

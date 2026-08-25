@@ -1,0 +1,223 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>NormScale - 批量质保证书录入</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;family=Jetbrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">tailwind.config = {darkMode: "class", theme: {extend: {colors: {"on-background": "#181c20", background: "#f7f9ff", "surface-tint": "#006398", "surface-container-lowest": "#ffffff", "on-primary-container": "#fdfcff", "on-primary-fixed": "#001d31", "on-secondary-fixed-variant": "#38485d", "outline-variant": "#bfc7d2", "error-container": "#ffdad6", secondary: "#505f76", "primary-fixed": "#cce5ff", "status-missing-bg": "#FFFBEB", "secondary-fixed-dim": "#b7c8e1", "secondary-fixed": "#d3e4fe", "on-tertiary": "#ffffff", "primary-fixed-dim": "#93ccff", "on-secondary-fixed": "#0b1c30", "surface-container-low": "#f1f4fa", error: "#ba1a1a", "surface-container": "#ebeef4", "inverse-surface": "#2d3135", "inverse-on-surface": "#eef1f7", "status-hitl-bg": "#F5F3FF", "status-pass-text": "#047857", "on-tertiary-container": "#fffbff", "status-fail-bg": "#FEF2F2", "surface-variant": "#dfe3e8", "bg-industrial-slate": "#0B0F17", "bg-slate-mist": "#F8FAFC", "status-hitl-text": "#6D28D9", "primary-container": "#007bb9", "surface-bright": "#f7f9ff", surface: "#f7f9ff", "secondary-container": "#d0e1fb", "on-tertiary-fixed": "#2d1600", "surface-container-highest": "#dfe3e8", primary: "#006194", outline: "#707881", "on-secondary-container": "#54647a", "on-surface-variant": "#3f4850", "status-pass-bg": "#ECFDF5", "on-error-container": "#93000a", "on-primary": "#ffffff", "surface-dim": "#d7dae0", "surface-container-high": "#e5e8ee", "tertiary-fixed-dim": "#ffb875", "status-missing-text": "#B45309", "on-primary-fixed-variant": "#004b73", "on-error": "#ffffff", "on-surface": "#181c20", "on-tertiary-fixed-variant": "#6b3b00", tertiary: "#894d00", "tertiary-container": "#ac6200", "status-fail-text": "#B91C1C", "tertiary-fixed": "#ffdcc0", "on-secondary": "#ffffff", "inverse-primary": "#93ccff"}, borderRadius: {DEFAULT: "0.125rem", lg: "0.25rem", xl: "0.5rem", full: "0.75rem"}, spacing: {"sidebar-width": "480px", "cell-py": "0.5rem", "cell-px": "0.75rem", "card-p": "1rem", "panel-gap": "1rem"}, fontFamily: {"body-md": ["Inter"], caption: ["Inter"], "data-mono": ["JetBrains Mono"], "section-title": ["Inter"], "decision-hero": ["Inter"], "headline-lg": ["Inter"], headline: ["Inter"], display: ["Inter"], body: ["Inter"], label: ["Jetbrains Mono"]}, fontSize: {"body-md": ["13px", {lineHeight: "1.4", fontWeight: "400"}], caption: ["11px", {lineHeight: "1.4", fontWeight: "400"}], "data-mono": ["13px", {lineHeight: "1.5", fontWeight: "400"}], "section-title": ["16px", {lineHeight: "1.5", fontWeight: "500"}], "decision-hero": ["28px", {lineHeight: "1.2", fontWeight: "700"}], "headline-lg": ["24px", {lineHeight: "1.5", fontWeight: "600"}]}}}};</script>
+</head>
+<body class="bg-bg-slate-mist text-on-surface font-body-md h-screen flex flex-col overflow-hidden">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-bg-industrial-slate font-body-md text-body-md border-b border-outline-variant dark:border-on-surface-variant flex justify-between items-center w-full px-6 h-16 shrink-0 z-10">
+<div class="flex items-center gap-8">
+<div class="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary-fixed-dim tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" style="font-variation-settings: 'FILL' 1;">precision_manufacturing</span>
+                NormScale <span class="text-on-surface-variant font-normal text-sm ml-2 hidden md:inline">| 工业质保证书合规检验</span>
+</div>
+<nav class="hidden md:flex gap-6 items-center h-full pt-1">
+<a class="text-primary dark:text-primary-fixed-dim font-bold border-b-2 border-primary dark:border-primary-fixed-dim pb-1 hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center" href="#">工作台</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">历史检验台账</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">标准库</a>
+<a class="text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors h-full flex items-center pb-[2px]" href="#">系统管理</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">light_mode</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="flex items-center gap-3 border-l border-outline-variant pl-4 ml-2">
+<div class="text-right hidden md:block">
+<div class="text-on-surface font-medium text-xs">高级质检工程师</div>
+<div class="text-on-surface-variant text-[10px]">当前在线</div>
+</div>
+<div class="w-8 h-8 rounded-full bg-primary-container text-primary flex items-center justify-center font-bold">
+                    SQE
+                </div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-auto p-4 md:p-6 pb-24">
+<!-- Header -->
+<div class="mb-6 flex justify-between items-end">
+<div>
+<h1 class="font-section-title text-section-title text-on-surface mb-1">批量质保证书录入</h1>
+<p class="text-on-surface-variant font-caption text-caption">上传材料质量证明书，进行自动化 OCR 数据提取与标准核验。</p>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 border border-outline-variant rounded bg-surface-container-lowest text-on-surface font-medium hover:bg-surface-container-low transition-colors text-xs flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">history</span> 查看近期批次
+                </button>
+</div>
+</div>
+<!-- Top Half: Dual Column -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-panel-gap mb-panel-gap h-[400px]">
+<!-- Left: Dropzone -->
+<div class="bg-surface-container-lowest border border-surface-variant rounded-lg p-card-p flex flex-col shadow-sm">
+<div class="flex justify-between items-center mb-4">
+<h2 class="font-section-title text-section-title text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">upload_file</span>文档上传区
+                    </h2>
+<span class="bg-primary-container text-primary font-caption text-caption px-2 py-0.5 rounded">Step 1</span>
+</div>
+<!-- Config Form -->
+<div class="mb-4 grid grid-cols-2 gap-4 p-3 bg-surface-container-low rounded border border-surface-variant">
+<div class="col-span-2 flex items-center gap-2">
+<input checked="" class="rounded border-outline text-primary focus:ring-primary h-3 w-3" id="apply-config" placeholder="on" type="checkbox" value="">
+<label class="font-medium text-xs text-on-surface" for="apply-config">应用项目配置</label>
+</div>
+<div>
+<label class="block text-[10px] text-on-surface-variant mb-1 uppercase tracking-wider">项目背景</label>
+<select class="w-full text-xs border-outline-variant rounded bg-surface-container-lowest py-1.5 px-2 focus:ring-primary focus:border-primary">
+<option>Area Optimization (26XXX-0888)</option>
+<option>Main Line Expansion (27YYY-0111)</option>
+</select>
+</div>
+<div>
+<label class="block text-[10px] text-on-surface-variant mb-1 uppercase tracking-wider">材料分类</label>
+<select class="w-full text-xs border-outline-variant rounded bg-surface-container-lowest py-1.5 px-2 focus:ring-primary focus:border-primary"><option>不锈钢管材</option><option>碳钢板材</option><option>合金法兰</option></select>
+</div>
+</div>
+<!-- Drop Area -->
+<div class="flex-1 border-2 border-dashed border-outline-variant bg-surface-container-low/50 hover:bg-surface-container-low transition-colors rounded-lg flex flex-col items-center justify-center p-6 text-center cursor-pointer group">
+<div class="w-12 h-12 rounded-full bg-primary-container text-primary flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined">add_photo_alternate</span>
+</div>
+<div class="font-medium text-on-surface mb-1">将文档拖拽至此处</div>
+<div class="font-caption text-caption text-on-surface-variant">支持 PDF, PNG, JPG, TIFF, DOCX (单文件最大 50MB)</div>
+<button class="mt-4 px-4 py-1.5 bg-primary text-on-primary rounded font-medium text-xs hover:bg-primary-fixed-variant transition-colors">
+                        浏览文件
+                    </button>
+</div>
+</div>
+<!-- Right: Queue -->
+<div class="bg-surface-container-lowest border border-surface-variant rounded-lg p-card-p flex flex-col shadow-sm">
+<div class="flex justify-between items-center mb-4">
+<h2 class="font-section-title text-section-title text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">queue_play_next</span>
+                        待处理质保书队列
+                    </h2>
+<span class="bg-surface-container text-on-surface-variant font-caption text-caption px-2 py-0.5 rounded">0 Items</span>
+</div>
+<!-- Empty State -->
+<div class="flex-1 flex flex-col items-center justify-center border border-dashed border-surface-variant rounded-lg bg-surface-container-lowest">
+<span class="material-symbols-outlined text-4xl text-outline-variant mb-3 opacity-50">description</span>
+<p class="text-on-surface-variant text-center max-w-[200px] text-xs">暂无待处理的质保书。<br>请从左侧上传或从下方历史中复用。</p>
+</div>
+</div>
+</div>
+<!-- Bottom Half: History Cache -->
+<div>
+<div class="flex justify-between items-center mb-3">
+<h3 class="font-section-title text-section-title text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">history</span>
+                    历史缓存
+                </h3>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-2 top-1.5 text-outline-variant text-[16px]">search</span>
+<input class="pl-8 pr-2 py-1 text-xs border-outline-variant rounded bg-surface-container-lowest focus:ring-primary focus:border-primary w-48" placeholder="搜索缓存..." type="text">
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest border border-surface-variant rounded p-3 flex items-center justify-between hover:border-primary-fixed-dim transition-colors group cursor-pointer shadow-sm">
+<div class="flex items-center gap-3 overflow-hidden">
+<div class="w-6 h-6 shrink-0 flex items-center justify-center"><img alt="PDF Icon" class="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBWDQEd4TSvZwe9d5R1BlSd7r6sTVh4QJKPHWYgTltpIo_KaIKuE0l68T3KgKQ-7Bnszdx5e8-I-pJiXdMM8A4zQAgEaKl2X6gWVOfRQMkKSw4VF65e07AUDue_HNwyZChGjwDfut-M-iaPKPGmIsxhSIj6NDBXkHqKDwGKN23YnIeX_xu6RiQYgsRvw4XzqupjPaaEDrXVZ6oZHorc8JMeenTKuImX2d81yo1i4kr1s7GGd8kRgWlH-xcUd4Uv1jMD7g"></div>
+<div class="overflow-hidden">
+<div class="font-data-mono text-data-mono text-on-surface truncate w-full" title="Baosteel_S30408_Tube.pdf">Baosteel_S30408_Tube.pdf</div>
+<div class="text-[10px] text-on-surface-variant">Uploaded 2 hrs ago • 1.2 MB</div>
+</div>
+</div>
+<button class="text-outline-variant hover:text-error opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+</button>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest border border-surface-variant rounded p-3 flex items-center justify-between hover:border-primary-fixed-dim transition-colors group cursor-pointer shadow-sm">
+<div class="flex items-center gap-3 overflow-hidden">
+<div class="w-6 h-6 shrink-0 flex items-center justify-center"><img alt="PDF Icon" class="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAT5Ti8ij1mmHGF6iCo9R62J7K3ZyP8f5hzCpflkbQA7RGk4Fkq8u2-4P97mcPHgGp7vdMFBojlgBQAc2Bd1MKt7gA21PIKYLFO9DhkftXNxPVV6dbLkJuBvUOZmzhre4GfSxF5eRscchHlm2akRb_T1EDlLK10TZ2BuivyZj6ooxeGc8sDcXFWBunEwAlf9oBuQUq9s7t6bGZLNx9Wp_tdtPSKY_G-yayXUZ78xOC3NxZ3x3ogR4q-L993PKm6ti4kXQ"></div>
+<div class="overflow-hidden">
+<div class="font-data-mono text-data-mono text-on-surface truncate w-full" title="Tisco_06Cr19Ni10_Plate.pdf">Tisco_06Cr19Ni10_Plate.pdf</div>
+<div class="text-[10px] text-on-surface-variant">Uploaded 5 hrs ago • 3.4 MB</div>
+</div>
+</div>
+<button class="text-outline-variant hover:text-error opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+</button>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest border border-surface-variant rounded p-3 flex items-center justify-between hover:border-primary-fixed-dim transition-colors group cursor-pointer shadow-sm">
+<div class="flex items-center gap-3 overflow-hidden">
+<div class="w-6 h-6 shrink-0 flex items-center justify-center"><img alt="PDF Icon" class="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDs1JKXCUmbNJx9_kxtSRXuNYKCYWuQQdQy2S9EL4CqI_1_hHG-AmQOHRtgwHqBqvTSXEENOqqiniEJNUM-YdlkAEniFPguvYodreZrJWqK_1wQ0ilRM1XYcVl-KNrxhF_9lAK3ZYjAyg2bgXMtYpy4p6GMSBnIjr9vlx6mfHK7ffgm4_X4bj-n2EO9RzrEpUvrGTLE8cBh1lEeJaR6-j7XX3AgMlCw01oRCUe0b8lhxOucu5rtgAztjPaCoBo6gsn7Gg"></div>
+<div class="overflow-hidden">
+<div class="font-data-mono text-data-mono text-on-surface truncate w-full" title="Wisco_Q345R_Vessel.pdf">Wisco_Q345R_Vessel.pdf</div>
+<div class="text-[10px] text-on-surface-variant">Uploaded 1 day ago • 800 KB</div>
+</div>
+</div>
+<button class="text-outline-variant hover:text-error opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+</button>
+</div>
+<!-- Card 4 -->
+</div>
+</div>
+</main>
+<!-- BottomNavBar (JSON based semantic shell override) -->
+<footer class="bg-surface-container dark:bg-inverse-surface font-body-md text-body-md border-t border-outline-variant dark:border-on-surface-variant shadow-sm fixed bottom-0 left-0 w-full flex justify-between items-center py-3 px-6 z-50">
+<!-- Stepper -->
+<div class="flex items-center gap-4 hidden md:flex">
+<div class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-primary dark:text-on-primary rounded-xl px-4 py-1.5 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">upload_file</span>
+<span class="text-[10px] font-bold">上传文档</span>
+</div>
+<div class="w-4 h-[1px] bg-outline-variant"></div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1.5 opacity-60 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">fact_check</span>
+<span class="text-[10px]">核对数据</span>
+</div>
+<div class="w-4 h-[1px] bg-outline-variant"></div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1.5 opacity-60 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">rule</span>
+<span class="text-[10px]">比对标准</span>
+</div>
+<div class="w-4 h-[1px] bg-outline-variant"></div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1.5 opacity-60 min-w-[120px]">
+<span class="material-symbols-outlined text-[20px] mb-0.5">archive</span>
+<span class="text-[10px]">归档/导出</span>
+</div>
+</div>
+<!-- Mobile Nav representation -->
+<div class="md:hidden flex justify-around w-full gap-2">
+<div class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-primary dark:text-on-primary rounded-xl px-3 py-1.5">
+<span class="material-symbols-outlined text-[18px]">upload_file</span>
+<span class="text-[10px] font-bold hidden sm:block mt-0.5">Upload</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-3 py-1.5 opacity-60">
+<span class="material-symbols-outlined text-[18px]">fact_check</span>
+<span class="text-[10px] hidden sm:block mt-0.5">Verify Data</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-3 py-1.5 opacity-60">
+<span class="material-symbols-outlined text-[18px]">rule</span>
+<span class="text-[10px] hidden sm:block mt-0.5">Compliance</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-3 py-1.5 opacity-60">
+<span class="material-symbols-outlined text-[18px]">archive</span>
+<span class="text-[10px] hidden sm:block mt-0.5">Archive</span>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center gap-3 ml-auto">
+<button class="px-4 py-2 border border-surface-variant rounded text-on-surface font-medium hover:bg-surface-container transition-colors text-xs opacity-60 hover:opacity-100 hidden sm:block">
+                跳过核对
+            </button>
+<button class="px-5 py-2 bg-primary text-on-primary rounded font-bold hover:bg-primary-fixed-variant transition-colors text-xs flex items-center gap-1 opacity-50 cursor-not-allowed" disabled="">
+                下一步：核对结果 <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</footer>
+</body></html>

@@ -4,57 +4,128 @@
 
 @layer base {
   :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 6.5%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 6.5%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --border: 217.2 32.6% 17.5%;
+    --primary: 0 97 148;
+    --background: 247 249 255;
+    --foreground: 24 28 32;
   }
 
-  body {
-    background-color: #090d16;
-    color: #f1f5f9;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  html.dark {
+    --background: 11 15 23;
+    --foreground: 248 250 252;
+  }
+
+  * {
+    box-sizing: border-box;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  body {
+    font-family: 'Inter', sans-serif;
+  }
 }
 
-/* 自定义工业级深色精致滚动条 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Material Symbols Outlined Icon Font Defaults */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined' !important;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+  user-select: none;
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+.material-symbols-outlined.fill-1 {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(51, 65, 85, 0.7);
+/* 拟真 PDF 纸张材质与投影效果 */
+.paper-texture {
+  background-color: #ffffff;
+  background-image: radial-gradient(#e5e8ee 0.75px, transparent 0.75px);
+  background-size: 16px 16px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -2px rgba(0, 0, 0, 0.04);
+}
+
+.dark .paper-texture {
+  background-color: #131b26;
+  background-image: radial-gradient(#243247 0.75px, transparent 0.75px);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+
+/* OCR BBox 交互式标注框 */
+.ocr-box {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  position: absolute;
+  pointer-events: auto;
+  border-radius: 2px;
+}
+
+.ocr-box-yellow {
+  background-color: rgba(254, 240, 138, 0.35);
+  border: 1px dashed #ca8a04;
+}
+
+.ocr-box-yellow:hover, .ocr-box-yellow.active {
+  background-color: rgba(250, 204, 21, 0.55);
+  border: 1.5px solid #a16207;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.3);
+  z-index: 20;
+}
+
+.ocr-box-blue {
+  background-color: rgba(204, 229, 255, 0.35);
+  border: 1px dashed #006194;
+}
+
+.ocr-box-blue:hover, .ocr-box-blue.active {
+  background-color: rgba(147, 204, 255, 0.55);
+  border: 1.5px solid #006194;
+  box-shadow: 0 0 0 2px rgba(0, 97, 148, 0.3);
+  z-index: 20;
+}
+
+/* 隐藏外层滚动条，通过程序化平滑滑动 */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 步进容器内部细滚动条 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #bfc7d2;
   border-radius: 9999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(71, 85, 105, 0.9);
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #707881;
 }
 
-/* 打印与 PDF 导出排版样式 */
-@media print {
-  body {
-    background: #ffffff !important;
-    color: #000000 !important;
-  }
-  .no-print {
-    display: none !important;
-  }
-  .print-only {
-    display: block !important;
-  }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }

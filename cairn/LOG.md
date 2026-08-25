@@ -4,6 +4,24 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-08-25 · 完成 NormScale 前端 1:1 像素精细化重构与受控步进平滑滑动交互
+
+- 全面引入 Google Material Symbols Outlined 图标字体与 JetBrains Mono / Inter 字体体系。
+- 注入 MD3 表面层级配色系统（`#f7f9ff`, `#ffffff`, `#006194`, `#ebeef4`），彻底解决色差与灰度扁平问题。
+- 实现 Step 1~4 受控垂直平滑滑动机制（`transition-transform 500ms`），锁定非自由全局滚轮脱焦，通过底部固定 Stepper Bar 与操作按钮精准流转。
+- 1:1 还原设计稿 1、2、3、4、5 与 HITL 抽屉全部细节（A4 纸张、PASS/REJECT 水印、OCR BBox、2x2 导出卡片、AST 公式框）。
+- `pnpm typecheck`、108 项测试与 `pnpm build` 100% 验证通过。
+- 详细验收参见：[docs/015_walkthrough_frontend_refactor.md](file:///Users/shiromaple/Github/NormScale/docs/015_walkthrough_frontend_refactor.md)。
+
+## 2026-08-24 · 完成 Phase 7 全套前端页面、纵向瀑布流工作台与四大主视图落地
+
+- 落地纵向瀑布流质检工作台（`WaterfallWorkbench`），实现吸顶步骤锚点导航（`01 批量上传` $\to$ `02 原件 BBox 解析对齐` $\to$ `03 标准绑定` $\to$ `04 国家标准合规比对与裁决`）。
+- 严守领域模型单一真理原则：BBox 坐标核验隔离在 Stage 2，Stage 4 纯粹比对 `CertificateExtract` 标准真值与国家标准切片。
+- 构建合格放行单（`PassReleaseModal`）与不合格拒收处置通知书（`RejectionNoticeModal`）两大公文级模态框。
+- 构建国家标准知识库浏览器（`StandardExplorer`，31个切片检索）与系统管理控制台（`AdminConsole`，模型配置/日志流/权限）。
+- 全站实现纯正中文语境、低饱和度工业极简美学与明暗双模一键切换。`pnpm typecheck` 0 错误，全量 108 项测试 100% 通过，`pnpm build` 生产打包成功。
+- 详细实施与验证总结参见：[docs/013_implementation_plan_phase_7.md](file:///Users/shiromaple/Github/NormScale/docs/013_implementation_plan_phase_7.md) 与 [docs/014_walkthrough_phase_7.md](file:///Users/shiromaple/Github/NormScale/docs/014_walkthrough_phase_7.md)。
+
 ## 2026-08-23 · 完成基于 Stitch (Gemini 3.1 Pro) 的 UI/UX 高保真设计与规范沉淀
 
 - 使用 `mcp:stitch` 与 `GEMINI_3_1_PRO` 模型完成 NormScale 工业级设计系统与两大核心屏幕设计。

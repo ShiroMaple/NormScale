@@ -1,98 +1,120 @@
 'use client';
 
 import React from 'react';
-import { ShieldCheck, Activity, Database, Download, RefreshCw } from 'lucide-react';
 import { StandardOverviewDto } from '@/lib/api-client.ts';
 
 interface HeaderProps {
-  standardsData?: { total_standards: number; total_slices: number; standards: StandardOverviewDto[] };
+  standardsData?: {
+    total_standards: number;
+    total_slices: number;
+    standards: StandardOverviewDto[];
+  };
   isAuditing?: boolean;
+  activeTab?: 'workbench' | 'standards' | 'ledger' | 'admin';
+  onTabChange?: (tab: 'workbench' | 'standards' | 'ledger' | 'admin') => void;
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
   onRefresh?: () => void;
-  onOpenExport?: () => void;
 }
 
 /**
  * ============================================================================
- * 看板顶部导航栏组件 (Header Component)
+ * 全局导航栏组件 (TopNavBar - 1:1 像素级还原 Stitch 工业设计规范)
  * ============================================================================
  */
 export const Header: React.FC<HeaderProps> = ({
-  standardsData,
-  isAuditing,
-  onRefresh,
-  onOpenExport,
+  activeTab = 'workbench',
+  onTabChange,
+  theme = 'light',
+  onToggleTheme,
 }) => {
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* 系统标志与主标题 */}
-        <div className="flex items-center space-x-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-700/50 text-cyan-400">
-            <ShieldCheck className="h-6 w-6" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="text-base font-bold tracking-tight text-slate-100">
-                NormScale
-              </span>
-              <span className="rounded border border-slate-700 bg-slate-800/60 px-1.5 py-0.5 text-xs font-medium text-slate-300">
-                v0.1.0
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              工业质量证明书智能合规核验引擎与物资验收决策看板
-            </p>
-          </div>
+    <header className="bg-surface-container-lowest dark:bg-bg-industrial-slate font-body-md text-body-md border-b border-outline-variant/60 dark:border-border-dark flex justify-between items-center w-full px-6 h-16 shrink-0 z-30 select-none shadow-xs">
+      {/* 左侧 Logo 与四个全局视图导航 Tab */}
+      <div className="flex items-center gap-8 h-full">
+        {/* 系统标题 Logo */}
+        <div
+          onClick={() => onTabChange && onTabChange('workbench')}
+          className="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary-fixed-dim tracking-tight flex items-center gap-2.5 cursor-pointer"
+        >
+          <span
+            className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-2xl fill-1"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            precision_manufacturing
+          </span>
+          <span className="text-xl font-bold tracking-tight">NormScale</span>
+          <span className="text-on-surface-variant dark:text-secondary-fixed-dim font-normal text-xs ml-2 hidden md:inline opacity-80 border-l border-outline-variant dark:border-border-dark pl-3">
+            工业质保证书合规检验
+          </span>
         </div>
 
-        {/* 状态指示与全局动作栏 */}
-        <div className="flex items-center space-x-4">
-          {/* 标准库装载状态指标 */}
-          <div className="hidden sm:flex items-center space-x-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300">
-            <Database className="h-4 w-4 text-cyan-400" />
-            <span>
-              已装载{' '}
-              <strong className="font-semibold text-slate-100">
-                {standardsData?.total_standards || 1}
-              </strong>{' '}
-              部标准 ·{' '}
-              <strong className="font-semibold text-cyan-400 font-mono">
-                {standardsData?.total_slices || 31}
-              </strong>{' '}
-              个规格切片
-            </span>
+        {/* 顶部主导航 Tab */}
+        <nav className="hidden md:flex gap-6 items-center h-full pt-1">
+          {[
+            { id: 'workbench', label: '工作台' },
+            { id: 'ledger', label: '历史检验台账' },
+            { id: 'standards', label: '标准库' },
+            { id: 'admin', label: '系统管理' },
+          ].map(item => {
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onTabChange && onTabChange(item.id as typeof activeTab)}
+                className={`h-full flex items-center text-xs transition-colors relative font-medium ${
+                  isActive
+                    ? 'text-primary dark:text-primary-fixed-dim font-bold border-b-2 border-primary dark:border-primary-fixed-dim'
+                    : 'text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim'
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* 右侧动作区：主题切换、通知铃铛、质检员 SQE 头像 */}
+      <div className="flex items-center gap-4">
+        {/* 明暗风格切换按钮 */}
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          title="切换明暗主题风格"
+          className="text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim p-1.5 rounded-lg hover:bg-surface-container-low dark:hover:bg-surface-dark transition-colors flex items-center justify-center"
+        >
+          <span className="material-symbols-outlined text-xl">
+            {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+          </span>
+        </button>
+
+        {/* 通知铃铛 */}
+        <button
+          type="button"
+          title="系统通知"
+          className="text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim p-1.5 rounded-lg hover:bg-surface-container-low dark:hover:bg-surface-dark transition-colors relative flex items-center justify-center"
+        >
+          <span className="material-symbols-outlined text-xl">notifications</span>
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest" />
+        </button>
+
+        {/* 分割线 */}
+        <div className="h-6 w-[1px] bg-outline-variant/60 dark:bg-border-dark mx-1" />
+
+        {/* 质检员认证头像与职务 */}
+        <div className="flex items-center gap-3">
+          <div className="text-right hidden sm:block">
+            <div className="text-xs font-bold leading-none text-on-surface dark:text-surface-bright">高级质检工程师</div>
+            <div className="text-[10px] text-on-surface-variant dark:text-secondary-fixed-dim leading-tight mt-1 flex items-center justify-end gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-status-pass-text" />
+              <span>当前在线</span>
+            </div>
           </div>
-
-          {/* 运行状态指示器 */}
-          <div className="flex items-center space-x-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300">
-            <Activity className={`h-4 w-4 ${isAuditing ? 'animate-spin text-cyan-400' : 'text-emerald-400'}`} />
-            <span>{isAuditing ? '状态机执行中...' : '运行就绪'}</span>
+          <div className="h-8 w-8 rounded-full bg-primary dark:bg-primary-container text-on-primary flex items-center justify-center font-bold text-xs shadow-xs tracking-wider">
+            SQE
           </div>
-
-          {/* 刷新与导出按钮 */}
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={isAuditing}
-              aria-label="刷新状态"
-              className="flex items-center space-x-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-sm font-medium text-slate-200 transition-all duration-150 hover:bg-slate-700 hover:text-white active:scale-95 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isAuditing ? 'animate-spin' : ''}`} />
-              <span className="hidden md:inline">重置</span>
-            </button>
-          )}
-
-          {onOpenExport && (
-            <button
-              type="button"
-              onClick={onOpenExport}
-              className="flex items-center space-x-1.5 rounded-lg border border-cyan-600/40 bg-cyan-950/40 px-3.5 py-1.5 text-sm font-medium text-cyan-300 transition-all duration-150 hover:bg-cyan-900/60 hover:text-cyan-100 active:scale-95"
-            >
-              <Download className="h-4 w-4" />
-              <span>导出报告</span>
-            </button>
-          )}
         </div>
       </div>
     </header>
