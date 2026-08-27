@@ -4,6 +4,104 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-08-26 · 批次号左对齐与材料牌号匹配度标识移入标题行优化
+
+- 基础元数据网格微调：将批次号输入框由右对齐优化为左对齐紧随标签；
+- 材料牌号空间优化：将“匹配度 99%”徽标从输入框内部移入“材料牌号 (Material Grade)”标题行右侧，输入框独占整行宽度，完美完整呈现长牌号字符串（如 `022Cr17Ni12Mo2 (S31603)`）无遮挡。
+- 浏览器实机截图验证与全量测试套件 100% 通过。
+
+## 2026-08-26 · Step 2 基础元数据 4x3 统一网格重构与实测表格精细化调优
+
+- 基础元数据重构为严格的 4 行 3 列统一响应式网格：第 1 行由左至右对齐“标题”、“批次号编辑”、“OCR 置信度徽标”，第 2-4 行容纳 9 项核心元数据，实现全网格垂直对齐。
+- 实测数据页签精简化：去除页签内多余图标及右侧多余统计文案，仅保留类别名与动态计数 Badge。
+- 表格列宽与换行修复：为“类别”列设置固定宽与 `whitespace-nowrap`，彻底解决“化学成分”等文本折行问题。
+- 置信度展示优化：低置信度数据直接在置信度单元格就地使用琥珀色高亮徽标（如 `82% ⚠️`）提示，省去冗余文本，极大释放表格横向空间。
+- 浏览器实机验证与 108 项测试 100% 通过。
+
+## 2026-08-26 · 落地批次号双向同步联动、3x3 元数据网格与全景总览+动态分类页签
+
+- 扩展 `src/schemas/certificate.schema.ts` 契约，新增 `construction_number: z.string().optional()`（施工号/工程项目编号）。
+- 基础元数据重构：将“批次号”单独拎出置于“OCR 置信度”左侧，支持就地编辑并双向实时同步上方全局选择器与 Session 树；主体 9 个元数据字段重构为 3×3 紧凑响应式网格。
+- 提取数据重构：落地“全部实测项总览”平铺视图，并依据 `standard.schema.ts` 9 大标准类别动态渲染页签（无数据类别自动隐藏，带数量 Badge），支持各专业视图深度复核。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · Step 2 字段全面汉化与基于 certificate.schema.ts 的完整性补全
+
+- 全面汉化“化学成分提取核对”与“力学与工艺条款核对”所有表头与字段标签，保留专业代号（$R_m$、$R_{p0.2}$、$A$、Hardness 等）。
+- 依据 `src/schemas/certificate.schema.ts` 补全核心追溯与前置条件元数据：新增“质保书编号 (Certificate No)”与“交货热处理状态 (Delivery State)”。
+- 在力学选项卡中补充展示“工艺试验与无损检测条款 (压扁试验、晶间腐蚀 Method E、无损检测 NDT 声称等级)”与 AST 免检提示，与 Step 3 规则比对完全闭环呼应。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · 彻底解耦 OCR 置信度与材料牌号匹配度数据模型
+
+- 在 `BatchSpecimen` 模型中正式拆分出 `ocrConfidence`（Stage 1 图像视觉抽取置信度）与 `gradeMatchConfidence`（Stage 2 牌号国标别名消歧匹配度）。
+- 修正 Step 2 界面数据绑定：“当前批次 OCR 置信度”徽章与“牌号匹配度”胶囊分别消费对应独立指标。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · 简化 Session ID 展示并迁移 OCR 置信度徽章至元数据卡片
+
+- 简化 Session ID 显示为末尾短 UUID（如 `#8F9C2E1A`），Hover 时展示完整全局唯一 ID，杜绝小屏幕与 1440px 容器内的折行挤压。
+- 优化选择器卡片内部宽度与间距，保持单行紧凑排版。
+- 将 `OCR 置信度` 徽章移至 Step 2 右侧“基础元数据提取核对”卡片标题右侧并排呈现。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · 落地“标题行 + 下方独立选择器卡片”双层空间布局
+
+- 根据用户示意图完成 1:1 像素级还原：上方为主标题行（左侧步骤标题，中间对齐批次正上方呈现 `OCR 置信度` 徽章，右侧可选 HITL 抽屉按钮），下方为白底圆角选择器卡片。
+- Step 2 阶段显式展示 `OCR 置信度: 98%` 徽章，Step 3/Step 4 保持纯净聚焦。
+- 批次号突出高亮（`border-2 border-primary ring-2 ring-primary/25`），下一批次按钮可用时应用主色提醒。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · 融合步骤主标题至批次选择器统一容器并优化批次视觉焦点
+
+- 将各步骤主标题（如 `Step2 解析数据核对`、`Step3 标准规则比对`、`Step4 报告归档与导出`）上移并与两层树选择器合入同一个高质感卡片容器 [`BatchContextBar.tsx`](file:///Users/shiromaple/Github/NormScale/src/components/BatchContextBar.tsx)。
+- 大幅强化当前 Focus 批次号的视觉权重（字号微扩、强调边框 `border-2 border-primary` 与 `ring-2 ring-primary/25` 高亮），方便检验员一眼锁定当前批次。
+- Step 2 阶段将状态标签从 `PASS` 改为 `SUCCESS`（代表 OCR/文档解析成功），`FAIL` 代表解析失败。
+- 批次级 `OCR 置信度` 徽章直接与批次号选择器并排定位展示。
+- “下一批次”按钮在可用状态下自动应用系统主强调主题色（`bg-primary text-on-primary`）提醒流转。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · 引入作业会话 (Session) 两层树架构与统一批次级联选择条
+
+- 确立 `Session (全局唯一高熵 UUID)` $\to$ `Document (物理文件)` $\to$ `Batch/Specimen (炉批试样)` 两层树状作业模型。
+- Session ID 升级为：`SESS-${YYYYMMDD}-${HHMMSS}-${8位高熵随机UUID}`，杜绝多用户毫秒级并发碰撞。
+- 在 Step 2（核对数据）、Step 3（比对标准）、Step 4（归档导出）顶部挂载统一两层树状批次级联选择条 [`BatchContextBar.tsx`](file:///Users/shiromaple/Github/NormScale/src/components/BatchContextBar.tsx)。
+- Step 1 取消次级幽灵按钮，将新建 Session 入口收窄至底部唯一主动作按钮；历史台账 [`AuditLedger.tsx`](file:///Users/shiromaple/Github/NormScale/src/components/AuditLedger.tsx) 升级为按 Session 聚合并支持一键反显回载至工作台。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · Step 1 动作区新增“跳过解析，直接比对”次级幽灵按钮
+
+- 在 Step 1 底部动作栏的主按钮左侧新增次级幽灵按钮（`fast_forward` 图标与边框风格）。
+- 点击直接跳转至 Step 3 标准切片规则比对阶段，满足快速校验场景。
+- `pnpm typecheck` 与 108 项测试 100% 通过。
+
+## 2026-08-26 · 支持待处理文档卡片 Hover 移出/取消与历史缓存联动
+
+- 待处理文档卡片右上角增加 Hover 出现的 `×` 快捷操作按钮（`close`）。
+- 未上传完成的文档支持一键“取消上传”；已上传完成（就绪）的文档支持“移出待处理队列”，并无缝保留/补充至下方“历史已缓存文档”列表中供一键复用。
+- 点击历史已缓存文档支持快速恢复至待处理队列并自动流转。
+- `pnpm typecheck` 与 108 项测试 100% 验证通过。
+
+## 2026-08-26 · 优化上传文档页面布局与底部导航栏 1440px 定宽居中
+
+- 底部导航栏设置为定宽 1440px 居中（`w-[1440px] max-w-full mx-auto`）。
+- 移除 Step 1 页面冗余的“查看近期批次”按钮与“搜索缓存凭证”控件。
+- 重构待处理质保书队列为 DocEx 物理文档卡片风格（显示 PDF 图标、文档名称与“就绪”传输状态，支持一个文档承载单/多批次）。
+- 移除 Step 1 内部重复的“开始执行智能核验流转”按钮，统一由底部 Stepper 动作流转。
+- `pnpm typecheck` 与 108 项测试 100% 通过。
+
+## 2026-08-25 · 修复暗色模式下力学条款与定性条款容器背景对比度缺陷
+
+- 修复 `WaterfallWorkbench.tsx` 中 Step 2 力学性能子 Tab 与 Step 3 模块 C 定性条款容器缺少 `dark:bg-surface-dark-low` 和暗色文字类导致文字背景泛白混淆的问题。
+- 修复 `StandardExplorer.tsx` 中工艺条款与 AST 动态公式容器的暗色模式样式映射。
+- `pnpm typecheck` 与 108 项单元/集成测试持续 100% 验证通过。
+
+## 2026-08-25 · 沉淀完整的中文工业设计系统规范文档 (docs/DESIGN.md)
+
+- 整理并输出了 NormScale 完整设计哲学、MD3 表面层级配色体系（冷蓝底与高反差白卡片）、状态语义色、双字体规范（Inter + JetBrains Mono）、Material Symbols 图标映射表。
+- 规范了受控垂直步进滑动容器与常驻 Stepper Bar 交互模型，以及 Step 1~4 和 HITL 抽屉的设计资产。
+- 详细规范参见：[docs/DESIGN.md](file:///Users/shiromaple/Github/NormScale/docs/DESIGN.md)。
+
 ## 2026-08-25 · 完成 NormScale 前端 1:1 像素精细化重构与受控步进平滑滑动交互
 
 - 全面引入 Google Material Symbols Outlined 图标字体与 JetBrains Mono / Inter 字体体系。

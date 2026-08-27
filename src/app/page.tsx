@@ -10,6 +10,7 @@ import { HitlDrawer } from '@/components/HitlDrawer.tsx';
 import { apiClient, PresetSampleDto, StandardOverviewDto } from '@/lib/api-client.ts';
 import { AuditReport } from '@/schemas/report.schema.ts';
 import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions } from '@/workflow/state.interface.ts';
+import { InspectionSession } from '@/types/session.ts';
 
 /**
  * ============================================================================
@@ -135,9 +136,11 @@ export default function DashboardPage() {
     }
   };
 
-  const handleLoadSampleToWorkbench = (sampleId: string) => {
+  const [loadedSession, setLoadedSession] = useState<InspectionSession | null>(null);
+
+  const handleLoadSessionToWorkbench = (sess: InspectionSession) => {
+    setLoadedSession(sess);
     setActiveTab('workbench');
-    handleExecuteAudit(sampleId);
   };
 
   return (
@@ -174,12 +177,13 @@ export default function DashboardPage() {
             currentReport={currentReport}
             onOpenHitlDrawer={() => setIsHitlOpen(true)}
             onTriggerAudit={() => handleExecuteAudit(selectedSampleId)}
+            loadedSession={loadedSession}
           />
         )}
 
         {/* 视图 2：历史质检台账明细 */}
         {activeTab === 'ledger' && (
-          <AuditLedger onLoadSampleToWorkbench={handleLoadSampleToWorkbench} />
+          <AuditLedger onLoadSessionToWorkbench={handleLoadSessionToWorkbench} />
         )}
 
         {/* 视图 3：国家标准知识库与规格切片浏览器 */}

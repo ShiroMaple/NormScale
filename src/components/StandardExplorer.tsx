@@ -335,7 +335,7 @@ export const StandardExplorer: React.FC = () => {
                 {selectedSlice.aliases.map((alias, idx) => (
                   <span
                     key={idx}
-                    className="rounded border border-outline-variant/60 bg-surface-container-low px-2 py-0.5 text-[11px] font-mono text-on-surface-variant"
+                    className="rounded border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low px-2 py-0.5 text-[11px] font-mono text-on-surface-variant dark:text-outline-variant"
                   >
                     {alias}
                   </span>
@@ -344,7 +344,7 @@ export const StandardExplorer: React.FC = () => {
             </div>
 
             {/* 4 个技术选项卡 */}
-            <div className="flex items-center gap-2 border-b border-outline-variant/40 pb-2">
+            <div className="flex items-center gap-2 border-b border-outline-variant/40 dark:border-border-dark pb-2">
               {[
                 { id: 'chemical', label: '化学成分限值表' },
                 { id: 'mechanical', label: '力学与硬度指标' },
@@ -368,7 +368,7 @@ export const StandardExplorer: React.FC = () => {
 
             {/* 选项卡 1：化学成分 */}
             {activeTab === 'chemical' && (
-              <div className="rounded-xl border border-outline-variant/40 overflow-hidden">
+              <div className="rounded-xl border border-outline-variant/40 dark:border-border-dark overflow-hidden">
                 <table className="w-full text-left text-xs font-mono">
                   <thead className="bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant border-b uppercase">
                     <tr>
@@ -378,13 +378,13 @@ export const StandardExplorer: React.FC = () => {
                       <th className="px-4 py-2.5">GB/T 8170 进舍修约规则</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-outline-variant/20">
+                  <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
                     {selectedSlice.chemical.map((chem, idx) => (
-                      <tr key={idx} className="hover:bg-surface-container-low/40">
+                      <tr key={idx} className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40">
                         <td className="px-4 py-2.5 font-sans font-medium text-on-surface dark:text-surface-bright">{chem.element}</td>
-                        <td className="px-4 py-2.5 text-primary font-bold">{chem.symbol}</td>
+                        <td className="px-4 py-2.5 text-primary dark:text-primary-fixed-dim font-bold">{chem.symbol}</td>
                         <td className="px-4 py-2.5 font-bold text-on-surface dark:text-surface-bright">{chem.limit}</td>
-                        <td className="px-4 py-2.5 text-on-surface-variant font-sans">{chem.rounding}</td>
+                        <td className="px-4 py-2.5 text-on-surface-variant dark:text-outline-variant font-sans">{chem.rounding}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -395,27 +395,27 @@ export const StandardExplorer: React.FC = () => {
             {/* 选项卡 2：力学指标 */}
             {activeTab === 'mechanical' && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono">
-                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low dark:bg-surface-dark-low p-4">
-                  <span className="text-xs text-on-surface-variant block mb-1">抗拉强度下限 (Rm)</span>
-                  <span className="text-2xl font-bold text-primary">
+                <div className="rounded-xl border border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low p-4">
+                  <span className="text-xs text-on-surface-variant dark:text-outline-variant block mb-1">抗拉强度下限 (Rm)</span>
+                  <span className="text-2xl font-bold text-primary dark:text-primary-fixed-dim">
                     ≥ {selectedSlice.mechanical.tensile_rm_min}{' '}
-                    <span className="text-xs text-on-surface-variant">MPa</span>
+                    <span className="text-xs text-on-surface-variant dark:text-outline-variant">MPa</span>
                   </span>
                 </div>
 
-                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low dark:bg-surface-dark-low p-4">
-                  <span className="text-xs text-on-surface-variant block mb-1">规定塑性延伸强度 (Rp0.2)</span>
-                  <span className="text-2xl font-bold text-primary">
+                <div className="rounded-xl border border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low p-4">
+                  <span className="text-xs text-on-surface-variant dark:text-outline-variant block mb-1">规定塑性延伸强度 (Rp0.2)</span>
+                  <span className="text-2xl font-bold text-primary dark:text-primary-fixed-dim">
                     ≥ {selectedSlice.mechanical.yield_rp02_min}{' '}
-                    <span className="text-xs text-on-surface-variant">MPa</span>
+                    <span className="text-xs text-on-surface-variant dark:text-outline-variant">MPa</span>
                   </span>
                 </div>
 
-                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low dark:bg-surface-dark-low p-4">
-                  <span className="text-xs text-on-surface-variant block mb-1">断后伸长率 (A)</span>
-                  <span className="text-2xl font-bold text-primary">
+                <div className="rounded-xl border border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low p-4">
+                  <span className="text-xs text-on-surface-variant dark:text-outline-variant block mb-1">断后伸长率 (A)</span>
+                  <span className="text-2xl font-bold text-primary dark:text-primary-fixed-dim">
                     ≥ {selectedSlice.mechanical.elongation_a_min}{' '}
-                    <span className="text-xs text-on-surface-variant">%</span>
+                    <span className="text-xs text-on-surface-variant dark:text-outline-variant">%</span>
                   </span>
                 </div>
               </div>
@@ -424,29 +424,29 @@ export const StandardExplorer: React.FC = () => {
             {/* 选项卡 3：工艺条款 */}
             {activeTab === 'process' && (
               <div className="space-y-3 font-mono text-xs">
-                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4">
-                  <h4 className="font-bold text-primary mb-1">第 6.4.1 条：压扁试验规范</h4>
-                  <p className="text-on-surface leading-relaxed">{selectedSlice.process.flattening}</p>
+                <div className="rounded-xl border border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low p-4">
+                  <h4 className="font-bold text-primary dark:text-primary-fixed-dim mb-1">第 6.4.1 条：压扁试验规范</h4>
+                  <p className="text-on-surface dark:text-surface-bright leading-relaxed">{selectedSlice.process.flattening}</p>
                 </div>
-                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4">
-                  <h4 className="font-bold text-primary mb-1">第 6.5 条：承压致密性与无损检验</h4>
-                  <p className="text-on-surface leading-relaxed">{selectedSlice.process.ndt}</p>
+                <div className="rounded-xl border border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low p-4">
+                  <h4 className="font-bold text-primary dark:text-primary-fixed-dim mb-1">第 6.5 条：承压致密性与无损检验</h4>
+                  <p className="text-on-surface dark:text-surface-bright leading-relaxed">{selectedSlice.process.ndt}</p>
                 </div>
               </div>
             )}
 
             {/* 选项卡 4：AST 公式 */}
             {activeTab === 'formula' && (
-              <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-5 space-y-3">
+              <div className="rounded-xl border border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low p-5 space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-on-primary shadow-xs">
                     <span className="material-symbols-outlined text-2xl">calculate</span>
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-on-surface">
+                    <h3 className="text-sm font-bold text-on-surface dark:text-surface-bright">
                       {selectedSlice.dynamic_formula ? selectedSlice.dynamic_formula.formula_name : '标准静态公差约束'}
                     </h3>
-                    <p className="text-xs text-on-surface-variant">
+                    <p className="text-xs text-on-surface-variant dark:text-outline-variant">
                       基于抽象语法树 (AST) 编译的高性能动态公差求解器
                     </p>
                   </div>

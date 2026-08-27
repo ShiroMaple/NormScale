@@ -34,6 +34,7 @@ export type Quantity = z.infer<typeof QuantitySchema>;
 // 校验质保书表头核心追溯与交付状态信息（涵盖编号、标准、牌号、炉批号、工艺等关键核验上下文）
 export const CertificateHeaderSchema = z.object({
   certificate_no: z.string(),                               // 质保书编号 / 材质单号（例如："MTC-2024-05882"）
+  construction_number: z.string().optional(),               // 施工号 / 工程项目编号（例如："26XXX-0888"、"PJ-2026-H01"）
   supplier_name: z.string().optional(),                     // 生产供方/制造厂名称（例如："宝钢特钢有限公司"）
   customer_name: z.string().optional(),                     // 订货需方/买方名称（例如："哈尔滨锅炉厂有限责任公司"）
   issue_date: z.string().optional(),                        // 签发日期（格式：YYYY-MM-DD，例如："2024-03-15"）

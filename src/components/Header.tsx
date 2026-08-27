@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
             precision_manufacturing
           </span>
           <span className="text-xl font-bold tracking-tight">NormScale</span>
-          <span className="text-on-surface-variant dark:text-secondary-fixed-dim font-normal text-xs ml-2 hidden md:inline opacity-80 border-l border-outline-variant dark:border-border-dark pl-3">
+          <span className="text-on-surface-variant dark:text-secondary-fixed-dim font-normal text-xl ml-2 hidden md:inline opacity-80 border-l border-outline-variant dark:border-border-dark pl-3">
             工业质保证书合规检验
           </span>
         </div>
@@ -63,11 +63,10 @@ export const Header: React.FC<HeaderProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => onTabChange && onTabChange(item.id as typeof activeTab)}
-                className={`h-full flex items-center text-xs transition-colors relative font-medium ${
-                  isActive
-                    ? 'text-primary dark:text-primary-fixed-dim font-bold border-b-2 border-primary dark:border-primary-fixed-dim'
-                    : 'text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim'
-                }`}
+                className={`h-full flex items-center text-lg transition-colors relative font-medium ${isActive
+                  ? 'text-primary dark:text-primary-fixed-dim font-bold border-b-2 border-primary dark:border-primary-fixed-dim'
+                  : 'text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim'
+                  }`}
               >
                 {item.label}
               </button>
@@ -76,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
       </div>
 
-      {/* 右侧动作区：主题切换、通知铃铛、质检员 SQE 头像 */}
+      {/* 右侧动作区：主题切换、通知铃铛、默认用户 ZPJE 头像 */}
       <div className="flex items-center gap-4">
         {/* 明暗风格切换按钮 */}
         <button
@@ -106,14 +105,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* 质检员认证头像与职务 */}
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <div className="text-xs font-bold leading-none text-on-surface dark:text-surface-bright">高级质检工程师</div>
+            <div className="text-xs font-bold leading-none text-on-surface dark:text-surface-bright">默认用户</div>
             <div className="text-[10px] text-on-surface-variant dark:text-secondary-fixed-dim leading-tight mt-1 flex items-center justify-end gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-status-pass-text" />
               <span>当前在线</span>
             </div>
           </div>
           <div className="h-8 w-8 rounded-full bg-primary dark:bg-primary-container text-on-primary flex items-center justify-center font-bold text-xs shadow-xs tracking-wider">
-            SQE
+            ZPJE
           </div>
         </div>
       </div>

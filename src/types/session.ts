@@ -1,0 +1,344 @@
+/**
+ * NormScale 质量证明书作业会话 (Inspection Session) 与两层树状数据模型
+ * 
+ * 层级关系：
+ * Session (作业会话根节点，全局唯一 UUID)
+ *   └─ SessionDocument (第 1 层：物理输入文档)
+ *        └─ BatchSpecimen (第 2 层：各文档包含的炉批号/试样检验原子)
+ */
+
+export interface ChemicalElementResult {
+  element: string;
+  value: string;
+  confidence: string;
+  status: 'ok' | 'warn';
+  note?: string;
+}
+
+export interface BatchSpecimen {
+  batchNo: string;             // 检验批号/试样号，如 "HT-2026-0881"
+  subBatchIndex: number;       // 在文档中的试样序号 (1-indexed)
+  certificateNo?: string;      // 质保书编号 / 材质单号，如 "MTC-2026-0881"
+  constructionNo?: string;     // 施工号 / 工程项目编号，如 "26XXX-0888"
+  productName?: string;        // 产品品名，如 "锅炉、热交换器用不锈钢无缝钢管"
+  grade: string;               // 材料牌号，如 "022Cr17Ni12Mo2 (S31603)"
+  standard: string;            // 声称执行标准，如 "GB/T 13296-2023"
+  supplier: string;            // 供货厂家名称
+  dimensions: string;          // 交货规格，如 "OD 25.0mm × WT 2.0mm × L 6000mm"
+  heatNo: string;              // 冶炼炉号
+  deliveryState?: string;      // 交货热处理状态，如 "固溶热处理 (Solution Treated)"
+  verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
+  verdictSummary: string;      // 判定依据简述
+  ocrConfidence: number;       // 综合 OCR 视觉解析置信度 (0~100)
+  gradeMatchConfidence: number;// 材料牌号标准消歧匹配度 (0~100)
+  
+  // 模块 A: 化学成分
+  chemical: ChemicalElementResult[];
+  
+  // 模块 B: 力学与物理性能
+  mechanical: {
+    tensile_rm: string;        // 抗拉强度实测与换算值
+    yield_rp02: string;        // 屈服强度实测与换算值
+    elongation_a: string;      // 断后伸长率
+    hardness?: string;         // 硬度 (HRB/HBW)
+    astFormulaNote?: string;   // AST 公式免检提示 (如涡流探伤免做水压)
+  };
+  
+  // 模块 C: 工艺与定性条款
+  process: {
+    flattening: 'PASS' | 'FAIL';
+    intergranularCorrosion: 'PASS' | 'FAIL';
+    ndt: string;
+  };
+  
+  // 归档存证字段
+  reportNo: string;            // 质检报告号，如 "QA-20260826-0881"
+  sha256Hash: string;          // 存证哈希
+  inspector: string;           // 检验员 ID
+}
+
+export interface SessionDocument {
+  docId: string;               // 文档 ID，如 "doc_01"
+  filename: string;            // 物理文件名，如 "Baosteel_S30408_Tube_MTC.pdf"
+  fileSize: string;            // 文件大小，如 "1.2 MB"
+  uploadTime: string;          // 上传时间
+  ocrStatus: 'DONE' | 'PROCESSING' | 'PENDING';
+  pageCount: number;           // 页数
+  batches: BatchSpecimen[];    // 文档内包含的各炉批号/试样
+}
+
+export interface InspectionSession {
+  sessionId: string;           // 全局唯一 Session ID，如 "SESS-20260826-154530-9B4F2C8A"
+  createdAt: string;           // 创建时间 ISO 字符串
+  title: string;               // 会话描述 / 项目背景
+  totalDocuments: number;
+  totalBatches: number;
+  passedBatches: number;
+  failedBatches: number;
+  hitlBatches: number;
+  documents: SessionDocument[];
+}
+
+/**
+ * 全局唯一工业级 Session ID 生成器
+ * 采用：时间戳 (年月日-时分秒) + 8位高熵随机UUID，杜绝多用户毫秒级并发碰撞
+ */
+export function generateSessionId(): string {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '');
+  const randomSuffix = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID().slice(0, 8).toUpperCase()
+    : Math.random().toString(36).substring(2, 10).toUpperCase();
+  return `SESS-${dateStr}-${timeStr}-${randomSuffix}`;
+}
+
+/**
+ * 默认初始化的预置两层树作业会话（包含 3 份文档，5 个真实工业炉批）
+ */
+export const DEFAULT_INSPECTION_SESSION: InspectionSession = {
+  sessionId: 'SESS-20260826-143000-8F9C2E1A',
+  createdAt: '2026-08-26 14:30:00',
+  title: 'Area Optimization (26XXX-0888) · 锅炉与承压管道集中入库质检',
+  totalDocuments: 3,
+  totalBatches: 5,
+  passedBatches: 4,
+  failedBatches: 1,
+  hitlBatches: 0,
+  documents: [
+    {
+      docId: 'doc_baosteel_01',
+      filename: 'Baosteel_S30408_BoilerTube_MTC.pdf',
+      fileSize: '1.2 MB',
+      uploadTime: '2026-08-26 14:30',
+      ocrStatus: 'DONE',
+      pageCount: 3,
+      batches: [
+        {
+          batchNo: 'HT-2026-0881',
+          subBatchIndex: 1,
+          certificateNo: 'MTC-2026-0881',
+          constructionNo: '26XXX-0888',
+          productName: '锅炉、热交换器用不锈钢无缝钢管',
+          grade: '022Cr17Ni12Mo2 (S31603)',
+          standard: 'GB/T 13296-2023',
+          supplier: '宝武特种钢管实业有限公司',
+          dimensions: 'OD 25.0mm × WT 2.0mm × L 6000mm',
+          heatNo: 'HT-2026-0881',
+          deliveryState: '固溶热处理 (Solution Treated)',
+          verdict: 'PASS',
+          verdictSummary: '全项符合 GB/T 13296-2023 锅炉管执行标准 (化学成分与力学全项合格)',
+          ocrConfidence: 98,
+          gradeMatchConfidence: 99,
+          chemical: [
+            { element: 'C', value: '0.025', confidence: '99%', status: 'ok' },
+            { element: 'Si', value: '0.45', confidence: '98%', status: 'ok' },
+            { element: 'Mn', value: '1.20', confidence: '97%', status: 'ok' },
+            { element: 'P', value: '0.035', confidence: '82%', status: 'warn', note: '需人工核实' },
+            { element: 'S', value: '0.008', confidence: '96%', status: 'ok' },
+            { element: 'Ni', value: '10.20', confidence: '99%', status: 'ok' },
+            { element: 'Cr', value: '16.80', confidence: '98%', status: 'ok' },
+            { element: 'Mo', value: '2.05', confidence: '97%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '58.5 kgf/mm² (573.68 MPa)',
+            yield_rp02: '24.5 kgf/mm² (240.26 MPa)',
+            elongation_a: '45.0 %',
+            hardness: '85.0 HRB',
+            astFormulaNote: '已完成涡流探伤(E3H)合格 → 依据 6.5.2 条款免做水压',
+          },
+          process: {
+            flattening: 'PASS',
+            intergranularCorrosion: 'PASS',
+            ndt: '涡流探伤 (ET) 合格',
+          },
+          reportNo: 'QA-20260826-0881',
+          sha256Hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          inspector: 'OP-9921 (QA)',
+        },
+        {
+          batchNo: 'HT-2026-0882',
+          subBatchIndex: 2,
+          certificateNo: 'MTC-2026-0882',
+          constructionNo: '26XXX-0888',
+          productName: '锅炉、热交换器用不锈钢无缝钢管',
+          grade: '022Cr17Ni12Mo2 (S31603)',
+          standard: 'GB/T 13296-2023',
+          supplier: '宝武特种钢管实业有限公司',
+          dimensions: 'OD 32.0mm × WT 2.5mm × L 6000mm',
+          heatNo: 'HT-2026-0882',
+          deliveryState: '固溶热处理 (Solution Treated)',
+          verdict: 'PASS',
+          verdictSummary: '全项符合 GB/T 13296-2023 执行标准',
+          ocrConfidence: 96,
+          gradeMatchConfidence: 99,
+          chemical: [
+            { element: 'C', value: '0.022', confidence: '98%', status: 'ok' },
+            { element: 'Si', value: '0.40', confidence: '97%', status: 'ok' },
+            { element: 'Mn', value: '1.15', confidence: '99%', status: 'ok' },
+            { element: 'P', value: '0.028', confidence: '95%', status: 'ok' },
+            { element: 'S', value: '0.006', confidence: '96%', status: 'ok' },
+            { element: 'Ni', value: '10.50', confidence: '98%', status: 'ok' },
+            { element: 'Cr', value: '17.10', confidence: '97%', status: 'ok' },
+            { element: 'Mo', value: '2.10', confidence: '99%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '59.0 kgf/mm² (578.59 MPa)',
+            yield_rp02: '25.0 kgf/mm² (245.17 MPa)',
+            elongation_a: '44.0 %',
+            hardness: '86.0 HRB',
+            astFormulaNote: '已完成涡流探伤(E3H)合格 → 依据 6.5.2 条款免做水压',
+          },
+          process: {
+            flattening: 'PASS',
+            intergranularCorrosion: 'PASS',
+            ndt: '超声探伤 (UT) 合格',
+          },
+          reportNo: 'QA-20260826-0882',
+          sha256Hash: 'a7b8c91208fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b123',
+          inspector: 'OP-9921 (QA)',
+        },
+      ],
+    },
+    {
+      docId: 'doc_tisco_02',
+      filename: 'Tisco_06Cr19Ni10_PressurePlate_MTC.pdf',
+      fileSize: '3.4 MB',
+      uploadTime: '2026-08-26 14:31',
+      ocrStatus: 'DONE',
+      pageCount: 2,
+      batches: [
+        {
+          batchNo: 'TS-2026-9901',
+          subBatchIndex: 1,
+          certificateNo: 'MTC-TS-9901',
+          constructionNo: '26XXX-0888',
+          productName: '承压设备用奥氏体不锈钢无缝管',
+          grade: '06Cr19Ni10 (S30408)',
+          standard: 'GB/T 13296-2023',
+          supplier: '太原钢铁不锈钢股份有限公司',
+          dimensions: 'OD 50.0mm × WT 3.0mm × L 4000mm',
+          heatNo: 'TS-2026-9901',
+          deliveryState: '固溶酸洗 (Solution Annealed & Pickled)',
+          verdict: 'FAIL',
+          verdictSummary: '一票否决：缺失压扁试验与晶间腐蚀出厂强制检验报告',
+          ocrConfidence: 94,
+          gradeMatchConfidence: 98,
+          chemical: [
+            { element: 'C', value: '0.065', confidence: '98%', status: 'ok' },
+            { element: 'Si', value: '0.50', confidence: '97%', status: 'ok' },
+            { element: 'Mn', value: '1.40', confidence: '96%', status: 'ok' },
+            { element: 'P', value: '0.030', confidence: '95%', status: 'ok' },
+            { element: 'S', value: '0.010', confidence: '98%', status: 'ok' },
+            { element: 'Ni', value: '8.20', confidence: '97%', status: 'ok' },
+            { element: 'Cr', value: '18.30', confidence: '99%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '52.0 kgf/mm² (509.95 MPa)',
+            yield_rp02: '21.0 kgf/mm² (205.94 MPa)',
+            elongation_a: '40.0 %',
+            hardness: '82.0 HRB',
+          },
+          process: {
+            flattening: 'FAIL',
+            intergranularCorrosion: 'FAIL',
+            ndt: '未检出',
+          },
+          reportNo: 'QA-REJECT-20260826-01',
+          sha256Hash: 'f4e3d2c198fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b789',
+          inspector: 'OP-9921 (QA)',
+        },
+        {
+          batchNo: 'TS-2026-9902',
+          subBatchIndex: 2,
+          certificateNo: 'MTC-TS-9902',
+          constructionNo: '26XXX-0888',
+          productName: '承压设备用奥氏体不锈钢无缝管',
+          grade: '06Cr19Ni10 (S30408)',
+          standard: 'GB/T 13296-2023',
+          supplier: '太原钢铁不锈钢股份有限公司',
+          dimensions: 'OD 50.0mm × WT 3.0mm × L 4000mm',
+          heatNo: 'TS-2026-9902',
+          deliveryState: '固溶酸洗 (Solution Annealed & Pickled)',
+          verdict: 'PASS',
+          verdictSummary: '符合 GB/T 13296 执行标准',
+          ocrConfidence: 97,
+          gradeMatchConfidence: 99,
+          chemical: [
+            { element: 'C', value: '0.055', confidence: '99%', status: 'ok' },
+            { element: 'Si', value: '0.45', confidence: '98%', status: 'ok' },
+            { element: 'Mn', value: '1.30', confidence: '97%', status: 'ok' },
+            { element: 'P', value: '0.025', confidence: '96%', status: 'ok' },
+            { element: 'S', value: '0.008', confidence: '98%', status: 'ok' },
+            { element: 'Ni', value: '8.50', confidence: '99%', status: 'ok' },
+            { element: 'Cr', value: '18.50', confidence: '98%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '54.0 kgf/mm² (529.56 MPa)',
+            yield_rp02: '22.5 kgf/mm² (220.65 MPa)',
+            elongation_a: '42.0 %',
+            hardness: '84.0 HRB',
+          },
+          process: {
+            flattening: 'PASS',
+            intergranularCorrosion: 'PASS',
+            ndt: '涡流探伤 (ET) 合格',
+          },
+          reportNo: 'QA-20260826-9902',
+          sha256Hash: 'b6c5d4e398fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b456',
+          inspector: 'OP-9921 (QA)',
+        },
+      ],
+    },
+    {
+      docId: 'doc_wisco_03',
+      filename: 'Wisco_Q345R_Custom_Specimen.pdf',
+      fileSize: '800 KB',
+      uploadTime: '2026-08-26 14:32',
+      ocrStatus: 'DONE',
+      pageCount: 1,
+      batches: [
+        {
+          batchNo: 'WS-2026-0311',
+          subBatchIndex: 1,
+          certificateNo: 'MTC-WS-0311',
+          constructionNo: '26XXX-0888',
+          productName: '特种承压热交换不锈钢薄壁管',
+          grade: '022Cr17Ni12Mo2 (S31603)',
+          standard: 'GB/T 13296-2023',
+          supplier: '武汉特种承压材料制造厂',
+          dimensions: 'OD 19.0mm × WT 1.5mm × L 5000mm',
+          heatNo: 'WS-2026-0311',
+          deliveryState: '光亮退火 (Bright Annealed)',
+          verdict: 'PASS',
+          verdictSummary: '全项检验合格，壁厚 < 1.7mm 免做硬度检验',
+          ocrConfidence: 99,
+          gradeMatchConfidence: 100,
+          chemical: [
+            { element: 'C', value: '0.020', confidence: '99%', status: 'ok' },
+            { element: 'Si', value: '0.40', confidence: '98%', status: 'ok' },
+            { element: 'Mn', value: '1.10', confidence: '98%', status: 'ok' },
+            { element: 'P', value: '0.022', confidence: '97%', status: 'ok' },
+            { element: 'S', value: '0.005', confidence: '99%', status: 'ok' },
+            { element: 'Ni', value: '10.80', confidence: '98%', status: 'ok' },
+            { element: 'Cr', value: '17.30', confidence: '99%', status: 'ok' },
+            { element: 'Mo', value: '2.20', confidence: '98%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '60.0 kgf/mm² (588.40 MPa)',
+            yield_rp02: '26.0 kgf/mm² (254.97 MPa)',
+            elongation_a: '46.0 %',
+          },
+          process: {
+            flattening: 'PASS',
+            intergranularCorrosion: 'PASS',
+            ndt: '超声探伤 (UT) 合格',
+          },
+          reportNo: 'QA-20260826-0311',
+          sha256Hash: 'c8d7e6f598fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b321',
+          inspector: 'OP-9921 (QA)',
+        },
+      ],
+    },
+  ],
+};
