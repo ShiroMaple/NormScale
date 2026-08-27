@@ -626,9 +626,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <div
                             key={pageNum}
                             id={`pdf-page-${pageNum}`}
-                            className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${
-                              isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
-                            }`}
+                            className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
+                              }`}
                             style={{
                               width: `${460 * (zoomLevel / 100)}px`,
                               maxWidth: '100%',
@@ -1194,7 +1193,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                           </span>
                                         </td>
                                         <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
-                                        
+
                                         {/* 1. 提取测得值 / 试验结果（独立 BBox 联动，无图标与边框） */}
                                         <td className="px-3.5 py-2.5">
                                           <span
@@ -1577,7 +1576,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                   {/* 化学成分实测值瓦片 */}
                   <div>
-                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-2 font-medium">化学成分实测值 (%)</span>
+                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-2 font-medium">化学成分 (%)</span>
                     <div className="grid grid-cols-4 gap-2 font-mono">
                       {currentBatch.chemical.slice(0, 8).map(tile => (
                         <div key={tile.element} className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-center">
@@ -1590,7 +1589,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                   {/* 力学性能实测值瓦片 */}
                   <div>
-                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-2 font-medium">力学性能实测值</span>
+                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-2 font-medium">力学性能</span>
                     <div className="grid grid-cols-2 gap-2 font-mono">
                       <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2.5">
                         <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block">Rm</span>
@@ -1677,7 +1676,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
                           <tr>
                             <th className="px-3 py-2">指标</th>
-                            <th className="px-3 py-2">实测值</th>
+                            <th className="px-3 py-2">测量值</th>
                             <th className="px-3 py-2">标准范围 [Min, Max]</th>
                             <th className="px-3 py-2">偏差量</th>
                             <th className="px-3 py-2">状态</th>
