@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuditReport } from '@/schemas/report.schema.ts';
 import { PresetSampleDto, StandardOverviewDto } from '@/lib/api-client.ts';
 import {
@@ -11,6 +11,7 @@ import {
   generateSessionId,
 } from '@/types/session.ts';
 import { BatchContextBar } from './BatchContextBar.tsx';
+import { getZPJEBBoxes, FieldBBox } from '@/types/bbox.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -51,14 +52,32 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [selectedExportFormat, setSelectedExportFormat] = useState<string>('PDF');
   const [activeTabCategory, setActiveTabCategory] = useState<string>('all');
 
-  // 当前作业会话 (Session) 与当前 Focus 的文档 ID 及炉批号
+  // 当前作业会话 (Session) 与当前 Focus 的文档 ID 及炉批号 (默认首位选中真实《质保书.pdf》及其第 1 批次)
   const [session, setSession] = useState<InspectionSession>(loadedSession || DEFAULT_INSPECTION_SESSION);
   const [selectedDocId, setSelectedDocId] = useState<string>(
-    session.documents[0]?.docId || 'doc_baosteel_01'
+    session.documents[0]?.docId || 'doc_zpje_01'
   );
   const [selectedBatchNo, setSelectedBatchNo] = useState<string>(
-    session.documents[0]?.batches[0]?.batchNo || 'HT-2026-0881'
+    session.documents[0]?.batches[0]?.batchNo || 'Z26022C-DB7'
   );
+
+  // 源文档 OCR 视觉 BBox 与右侧解析字段双向联动状态
+  const [highlightedFieldId, setHighlightedFieldId] = useState<string | null>(null);
+  // 停顿满 1 秒后激活 200% 原位放大的字段 ID 与防晕倒计时器
+  const [magnifiedFieldId, setMagnifiedFieldId] = useState<string | null>(null);
+  const magnifyTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentDocPage, setCurrentDocPage] = useState<number>(1);
+  const pdfScrollContainerRef = useRef<HTMLDivElement>(null);
+  const rightScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // 组件卸载时安全清理定时器
+  useEffect(() => {
+    return () => {
+      if (magnifyTimerRef.current) {
+        clearTimeout(magnifyTimerRef.current);
+      }
+    };
+  }, []);
 
   // 批次号双向同步更新处理器 (同步更新 Session 和当前选中的批次号，使上方选择器联动变更)
   const handleUpdateBatchNo = (newBatchNo: string) => {
@@ -209,6 +228,116 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   const isPass = currentBatch.verdict === 'PASS';
   const isHitl = currentBatch.verdict === 'MANUAL_REVIEW';
+
+  // 计算当前文档/批次的 OCR BBox 字典
+  const bboxes: FieldBBox[] = currentDoc.docId === 'doc_zpje_01'
+    ? getZPJEBBoxes(currentBatch.batchNo)
+    : [];
+
+  // 1. 悬浮右侧字段：仅滚动左侧 PDF 视窗，绝不触发外部整页或右侧视窗滚动
+  const scrollToLeftBBox = (fieldId: string | null) => {
+    // 立即清空上一个防晕倒计时
+    if (magnifyTimerRef.current) {
+      clearTimeout(magnifyTimerRef.current);
+      magnifyTimerRef.current = null;
+    }
+
+    setHighlightedFieldId(fieldId);
+
+    // 若解除高亮，立即恢复 100% 比例
+    if (!fieldId) {
+      setMagnifiedFieldId(null);
+      return;
+    }
+
+    // 启动 1000ms 防晕倒计时：在同一字段停留满 1 秒后才激活 200% 放大
+    magnifyTimerRef.current = setTimeout(() => {
+      setMagnifiedFieldId(fieldId);
+    }, 1000);
+
+    if (!currentDoc.samplePages || currentDoc.samplePages.length === 0) return;
+
+    const box = bboxes.find(b => b.id === fieldId);
+    if (!box) return;
+
+    setCurrentDocPage(box.page);
+    const container = pdfScrollContainerRef.current;
+    if (!container) return;
+
+    const boxElem = document.getElementById(`bbox-${box.id}`);
+    const pageElem = document.getElementById(`pdf-page-${box.page}`);
+    const targetElem = boxElem || pageElem;
+    if (targetElem) {
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = targetElem.getBoundingClientRect();
+      const targetTopInContainer = targetRect.top - containerRect.top + container.scrollTop;
+      const targetScrollTop = targetTopInContainer - (container.clientHeight / 2) + (targetRect.height / 2);
+      container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+    }
+  };
+
+  // 别名保留以兼容现有调用
+  const handleFieldHover = scrollToLeftBBox;
+
+  // 2. 悬浮左侧 BBox：仅滚动右侧解析数据视窗，绝不触发外部整页或左侧视窗滚动
+  const scrollToRightField = (fieldId: string) => {
+    // 立即清空上一个防晕倒计时
+    if (magnifyTimerRef.current) {
+      clearTimeout(magnifyTimerRef.current);
+      magnifyTimerRef.current = null;
+    }
+
+    setHighlightedFieldId(fieldId);
+
+    // 左侧直接 hover BBox 停留满 1000ms 同样激活 200% 聚焦放大
+    magnifyTimerRef.current = setTimeout(() => {
+      setMagnifiedFieldId(fieldId);
+    }, 1000);
+
+    const container = rightScrollContainerRef.current;
+    if (!container) return;
+
+    let targetElem = document.getElementById(`right-field-${fieldId}`);
+    if (!targetElem && fieldId.startsWith('method_')) {
+      const baseId = fieldId.replace('method_', '');
+      if (baseId === 'tensile') targetElem = document.getElementById('right-field-mech_tensile');
+      else if (baseId === 'hardness') targetElem = document.getElementById('right-field-mech_hardness');
+      else if (baseId === 'grain') targetElem = document.getElementById('right-field-metallo_grain');
+      else targetElem = document.getElementById(`right-field-${baseId}`);
+    }
+
+    if (targetElem) {
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = targetElem.getBoundingClientRect();
+
+      // 判断该元素是否已经处于右侧视窗可视区域内（上下各留 40px 缓冲），若已可见则不重复跳动
+      const isVisible = (
+        targetRect.top >= containerRect.top + 40 &&
+        targetRect.bottom <= containerRect.bottom - 40
+      );
+
+      if (!isVisible) {
+        const targetTopInContainer = targetRect.top - containerRect.top + container.scrollTop;
+        const targetScrollTop = targetTopInContainer - (container.clientHeight / 2) + (targetRect.height / 2);
+        container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+      }
+    }
+  };
+
+  // 3. 左侧视窗工具栏翻页控制器：仅滚动左侧 PDF 视窗
+  const goToPage = (page: number) => {
+    const target = Math.max(1, Math.min(currentDoc.pageCount, page));
+    setCurrentDocPage(target);
+    const container = pdfScrollContainerRef.current;
+    if (!container) return;
+    const pageElem = document.getElementById(`pdf-page-${target}`);
+    if (pageElem) {
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = pageElem.getBoundingClientRect();
+      const targetTop = targetRect.top - containerRect.top + container.scrollTop;
+      container.scrollTo({ top: Math.max(0, targetTop - 10), behavior: 'smooth' });
+    }
+  };
 
   const goToStep = (stepIdx: number) => {
     if (stepIdx >= 0 && stepIdx <= 3) {
@@ -388,42 +517,44 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           {/* ========================================================================= */}
           {/* 步骤 2: 质检工作台 - 核对解析数据 (挂载统一标题与批次选择条) */}
           {/* ========================================================================= */}
-          <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar p-6 space-y-4">
-            <div className="max-w-[1440px] mx-auto w-full space-y-4">
+          <section className="w-full h-full shrink-0 overflow-hidden p-6 flex flex-col">
+            <div className="max-w-[1440px] mx-auto w-full h-full flex flex-col space-y-4 min-h-0">
 
-              {/* 顶部统一标题与两层树状批次选择条 */}
-              <BatchContextBar
-                stepTitle="步骤 2: 核对解析数据"
-                session={session}
-                selectedDocId={selectedDocId}
-                selectedBatchNo={selectedBatchNo}
-                onSelectDoc={setSelectedDocId}
-                onSelectBatch={(docId, batchNo) => {
-                  setSelectedDocId(docId);
-                  setSelectedBatchNo(batchNo);
-                }}
-                mode="extraction"
-                rightExtraAction={
-                  isHitl ? (
-                    <button
-                      type="button"
-                      onClick={onOpenHitlDrawer}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-status-hitl-bg text-status-hitl-text text-xs font-bold border border-purple-300 dark:border-purple-800 shadow-xs hover:opacity-90 transition-all"
-                    >
-                      <span className="material-symbols-outlined text-base">emergency_home</span>
-                      <span>打开 HITL 人工介入复核抽屉</span>
-                    </button>
-                  ) : undefined
-                }
-              />
+              {/* 顶部统一标题与两层树状批次选择条 (固定在顶部，不随内容滚动) */}
+              <div className="shrink-0 relative z-30">
+                <BatchContextBar
+                  stepTitle="步骤 2: 核对解析数据"
+                  session={session}
+                  selectedDocId={selectedDocId}
+                  selectedBatchNo={selectedBatchNo}
+                  onSelectDoc={setSelectedDocId}
+                  onSelectBatch={(docId, batchNo) => {
+                    setSelectedDocId(docId);
+                    setSelectedBatchNo(batchNo);
+                  }}
+                  mode="extraction"
+                  rightExtraAction={
+                    isHitl ? (
+                      <button
+                        type="button"
+                        onClick={onOpenHitlDrawer}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-status-hitl-bg text-status-hitl-text text-xs font-bold border border-purple-300 dark:border-purple-800 shadow-xs hover:opacity-90 transition-all"
+                      >
+                        <span className="material-symbols-outlined text-base">emergency_home</span>
+                        <span>打开 HITL 人工介入复核抽屉</span>
+                      </button>
+                    ) : undefined
+                  }
+                />
+              </div>
 
-              {/* 45% / 55% 左右分栏 */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-[calc(100%-4rem)]">
+              {/* 45% / 55% 左右分栏：充满剩余高度，左右各自独立纵向滚动 */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
 
-                {/* 左侧 45%：拟真 PDF 纸张视窗与交互式 OCR BBox */}
-                <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet">
+                {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 (自带独立滚动条) */}
+                <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
                   {/* PDF 阅读器顶部工具栏 */}
-                  <div className="px-3.5 py-2 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between text-xs text-on-surface-variant font-mono">
+                  <div className="px-3.5 py-2 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between text-xs text-on-surface-variant font-mono shrink-0">
                     <div className="flex items-center gap-1.5 truncate max-w-[200px]">
                       <span className="material-symbols-outlined text-base text-red-500">picture_as_pdf</span>
                       <span className="font-bold truncate text-on-surface dark:text-surface-bright">{currentDoc.filename}</span>
@@ -434,6 +565,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           type="button"
                           onClick={() => setZoomLevel(prev => Math.max(75, prev - 15))}
                           className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded"
+                          title="缩小"
                         >
                           -
                         </button>
@@ -442,79 +574,163 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           type="button"
                           onClick={() => setZoomLevel(prev => Math.min(175, prev + 15))}
                           className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded"
+                          title="放大"
                         >
                           +
                         </button>
                       </div>
-                      <button type="button" className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded">
-                        <span className="material-symbols-outlined text-sm">rotate_right</span>
-                      </button>
-                      <span>&lt; 1 / {currentDoc.pageCount} &gt;</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => goToPage(currentDocPage - 1)}
+                          disabled={currentDocPage <= 1}
+                          className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded disabled:opacity-40"
+                          title="上一页"
+                        >
+                          &lt;
+                        </button>
+                        <span>{currentDocPage} / {currentDoc.pageCount}</span>
+                        <button
+                          type="button"
+                          onClick={() => goToPage(currentDocPage + 1)}
+                          disabled={currentDocPage >= currentDoc.pageCount}
+                          className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded disabled:opacity-40"
+                          title="下一页"
+                        >
+                          &gt;
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* 拟真白底纸张视窗 */}
-                  <div className="flex-1 p-6 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low flex justify-center">
+                  {/* 源文档视窗：支持真实多页高清切图纵向连续平铺 或 拟真纸张排版回退 */}
+                  {currentDoc.samplePages && currentDoc.samplePages.length > 0 ? (
                     <div
-                      className="paper-texture border border-outline-variant/40 rounded shadow-md p-8 relative transition-transform duration-200"
-                      style={{
-                        width: '460px',
-                        minHeight: '620px',
-                        transform: `scale(${zoomLevel / 100})`,
-                        transformOrigin: 'top center',
-                      }}
+                      ref={pdfScrollContainerRef}
+                      className="flex-1 p-4 overflow-y-auto overflow-x-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low flex flex-col items-center gap-5 scroll-smooth"
                     >
-                      <h3 className="font-bold text-center text-sm font-mono tracking-widest uppercase border-b pb-2 mb-4 text-on-surface">
-                        MATERIAL TEST CERTIFICATE
-                      </h3>
+                      {currentDoc.samplePages.map((pageSrc, pageIdx) => {
+                        const pageNum = pageIdx + 1;
+                        const pageBBoxes = bboxes.filter(b => b.page === pageNum);
 
-                      <div className="space-y-3 text-[11px] font-mono text-on-surface">
-                        <div className="flex justify-between border-b pb-1">
-                          <span>Supplier: {currentBatch.supplier}</span>
-                          <span>Date: 2026-08-26</span>
-                        </div>
-                        <div className="flex justify-between border-b pb-1">
-                          <span>Standard: {currentBatch.standard}</span>
-                          <span>Heat No: {currentBatch.heatNo}</span>
-                        </div>
+                        // 检查当前页是否包含正处于 1 秒悬浮放大状态的 BBox
+                        const activeMagnifiedBox = magnifiedFieldId
+                          ? pageBBoxes.find(b => b.id === magnifiedFieldId)
+                          : null;
+                        const isPageMagnified = !!activeMagnifiedBox;
 
-                        {/* OCR 标注框 1: 牌号与标准 */}
-                        <div
-                          className="ocr-box ocr-box-yellow left-6 top-24 w-80 h-10 flex items-center px-2 cursor-pointer"
-                          title={`OCR BBox #1: 牌号映射置信度 ${currentBatch.ocrConfidence}%`}
-                        >
-                          <span className="text-[10px] font-bold text-yellow-900 bg-yellow-200/80 px-1 rounded">
-                            Grade: {currentBatch.grade}
-                          </span>
-                        </div>
+                        const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
+                        const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
 
-                        {/* OCR 标注框 2: 化学成分矩阵 */}
-                        <div
-                          className="ocr-box ocr-box-blue left-6 top-40 w-96 h-32 p-2 cursor-pointer"
-                          title="OCR BBox #2: 化学成分表置信度 98%"
-                        >
-                          <div className="text-[10px] font-bold text-blue-900 bg-blue-100/90 px-1 inline-block rounded mb-1">
-                            Chemical: C {currentBatch.chemical[0]?.value || '0.025'}, Si {currentBatch.chemical[1]?.value || '0.45'}, Ni {currentBatch.chemical[5]?.value || '10.20'}...
+                        return (
+                          <div
+                            key={pageNum}
+                            id={`pdf-page-${pageNum}`}
+                            className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${
+                              isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
+                            }`}
+                            style={{
+                              width: `${460 * (zoomLevel / 100)}px`,
+                              maxWidth: '100%',
+                              aspectRatio: '1 / 1.414',
+                              transform: isPageMagnified ? 'scale(2)' : 'scale(1)',
+                              transformOrigin: `${originX}% ${originY}%`,
+                              transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out',
+                            }}
+                          >
+                            {/* 顶部高亮与放大提示徽章 (常驻于页面左上角空白边距，绝不遮挡任何表格与正文) */}
+                            {(isPageMagnified || pageBBoxes.some(b => b.id === highlightedFieldId)) && (
+                              <div className="absolute top-2 left-2 px-2.5 py-1 bg-primary/95 text-on-primary font-mono text-[11px] font-bold rounded backdrop-blur-xs z-30 pointer-events-none shadow-md flex items-center gap-1.5 animate-fade-in max-w-[65%] truncate">
+                                <span className="material-symbols-outlined text-xs shrink-0">
+                                  {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
+                                </span>
+                                <span className="truncate">
+                                  {isPageMagnified ? '聚焦放大 200%' : '已定位'}: {pageBBoxes.find(b => b.id === highlightedFieldId)?.label}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* 页码徽章 */}
+                            <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white font-mono text-[10px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
+                              第 {pageNum} / {currentDoc.samplePages!.length} 页
+                            </div>
+
+                            {/* 真实高清切图底图 */}
+                            <img
+                              src={pageSrc}
+                              alt={`第 ${pageNum} 页`}
+                              className="w-full h-full object-contain select-none pointer-events-none"
+                              loading="eager"
+                            />
+
+                            {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡) */}
+                            {pageBBoxes.map((box) => {
+                              const isHighlighted = highlightedFieldId === box.id;
+                              return (
+                                <div
+                                  key={box.id}
+                                  id={`bbox-${box.id}`}
+                                  onMouseEnter={() => scrollToRightField(box.id)}
+                                  onMouseLeave={() => handleFieldHover(null)}
+                                  className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
+                                    ? 'border-2 border-primary bg-primary/10 z-20 shadow-xs'
+                                    : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
+                                    }`}
+                                  style={{
+                                    left: `${box.x}%`,
+                                    top: `${box.y}%`,
+                                    width: `${box.w}%`,
+                                    height: `${box.h}%`,
+                                  }}
+                                  title={box.label}
+                                />
+                              );
+                            })}
                           </div>
-                        </div>
-
-                        {/* OCR 标注框 3: 力学与压扁 */}
-                        <div
-                          className="ocr-box ocr-box-yellow left-6 top-80 w-96 h-28 p-2 cursor-pointer"
-                          title="OCR BBox #3: 物理单位换算"
-                        >
-                          <div className="text-[10px] font-bold text-yellow-900 bg-yellow-200/80 px-1 inline-block rounded mb-1">
-                            Tensile Rm: {currentBatch.mechanical.tensile_rm}
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* 回退：拟真白底纸张视窗 */
+                    <div className="flex-1 p-6 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low flex justify-center">
+                      <div
+                        className="paper-texture border border-outline-variant/40 rounded shadow-md p-8 relative transition-transform duration-200"
+                        style={{
+                          width: '460px',
+                          minHeight: '620px',
+                          transform: `scale(${zoomLevel / 100})`,
+                          transformOrigin: 'top center',
+                        }}
+                      >
+                        <h3 className="font-bold text-center text-sm font-mono tracking-widest uppercase border-b pb-2 mb-4 text-on-surface">
+                          MATERIAL TEST CERTIFICATE
+                        </h3>
+                        <div className="space-y-3 text-[11px] font-mono text-on-surface">
+                          <div className="flex justify-between border-b pb-1">
+                            <span>Supplier: {currentBatch.supplier}</span>
+                            <span>Date: 2026-08-26</span>
+                          </div>
+                          <div className="flex justify-between border-b pb-1">
+                            <span>Standard: {currentBatch.standard}</span>
+                            <span>Heat No: {currentBatch.heatNo}</span>
+                          </div>
+                          <div className="ocr-box ocr-box-yellow left-6 top-24 w-80 h-10 flex items-center px-2 cursor-pointer">
+                            <span className="text-[10px] font-bold text-yellow-900 bg-yellow-200/80 px-1 rounded">
+                              Grade: {currentBatch.grade}
+                            </span>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                {/* 右侧 55%：结构化提取核对卡片 */}
-                <div className="lg:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-xs flex flex-col justify-between overflow-y-auto custom-scrollbar">
-                  <div className="space-y-4">
+                {/* 右侧 55%：结构化提取核对卡片 (自带独立滚动条) */}
+                <div className="lg:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs flex flex-col overflow-hidden h-full">
+                  <div
+                    ref={rightScrollContainerRef}
+                    className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-4 scroll-smooth"
+                  >
 
                     {/* 基础元数据 4行3列统一网格卡片 (第1行：标题、批次号控件、置信度徽标) */}
                     <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-lg p-3.5 sm:p-4">
@@ -524,11 +740,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         <div className="flex items-center gap-1.5 h-8">
                           <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">info</span>
                           <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider">
-                            基础元数据提取核对
+                            基础元数据
                           </h3>
                         </div>
 
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container-lowest dark:bg-surface-dark border border-primary/40 dark:border-primary/50 shadow-2xs h-8">
+                        <div
+                          id="right-field-meta_batchNo"
+                          onMouseEnter={() => handleFieldHover('meta_batchNo')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container-lowest dark:bg-surface-dark border shadow-2xs h-8 transition-all cursor-pointer ${highlightedFieldId === 'meta_batchNo'
+                            ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                            : 'border-primary/40 dark:border-primary/50'
+                            }`}
+                        >
                           <div className="flex items-center gap-1.5 shrink-0">
                             <span className="material-symbols-outlined text-sm text-primary dark:text-primary-fixed-dim">label</span>
                             <span className="text-[11px] text-on-surface-variant dark:text-outline-variant font-mono font-bold">批次号:</span>
@@ -548,44 +772,81 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         </div>
 
                         {/* 第 2 行：质保书编号 | 施工号 | 供货厂家 */}
-                        <div>
+                        <div
+                          id="right-field-meta_certificateNo"
+                          onMouseEnter={() => handleFieldHover('meta_certificateNo')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
                           <input
                             type="text"
                             defaultValue={currentBatch.certificateNo || currentBatch.reportNo.replace('QA', 'MTC')}
-                            className="w-full text-xs font-mono font-bold mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-on-surface dark:text-surface-bright"
+                            className={`w-full text-xs font-mono font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_certificateNo'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              }`}
                           />
                         </div>
 
-                        <div>
+                        <div
+                          id="right-field-meta_constructionNo"
+                          onMouseEnter={() => handleFieldHover('meta_constructionNo')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">施工号 (Construction No)</span>
                           <input
                             type="text"
                             defaultValue={currentBatch.constructionNo || '26XXX-0888'}
-                            className="w-full text-xs font-mono font-bold mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-primary dark:text-primary-fixed-dim"
+                            className={`w-full text-xs font-mono font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_constructionNo'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                              }`}
                           />
                         </div>
 
-                        <div>
+                        <div
+                          id="right-field-meta_supplier"
+                          onMouseEnter={() => handleFieldHover('meta_supplier')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂家 (Supplier)</span>
                           <input
                             type="text"
                             defaultValue={currentBatch.supplier}
-                            className="w-full text-xs font-mono font-bold mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-on-surface dark:text-surface-bright truncate"
+                            className={`w-full text-xs font-mono font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_supplier'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              }`}
                           />
                         </div>
 
                         {/* 第 3 行：产品品名 | 材料牌号 | 声称执行标准 */}
-                        <div>
+                        <div
+                          id="right-field-meta_productName"
+                          onMouseEnter={() => handleFieldHover('meta_productName')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品品名 (Product Name)</span>
                           <input
                             type="text"
-                            defaultValue={currentBatch.productName || '锅炉、热交换器用不锈钢无缝钢管'}
-                            className="w-full text-xs font-mono mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-on-surface dark:text-surface-bright truncate"
+                            defaultValue={currentBatch.productName || '换热管 (Heat exchange tubes)'}
+                            className={`w-full text-xs font-mono mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_productName'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              }`}
                           />
                         </div>
 
-                        <div>
+                        <div
+                          id="right-field-meta_grade"
+                          onMouseEnter={() => handleFieldHover('meta_grade')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] text-on-surface-variant dark:text-outline-variant">材料牌号 (Material Grade)</span>
                             <span className="px-1.5 py-0.2 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-bold rounded shrink-0">
@@ -595,44 +856,97 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <input
                             type="text"
                             defaultValue={currentBatch.grade}
-                            className="w-full text-xs font-mono font-bold mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-on-surface dark:text-surface-bright"
+                            className={`w-full text-xs font-mono font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_grade'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              }`}
                           />
                         </div>
 
-                        <div>
+                        <div
+                          id="right-field-meta_standard"
+                          onMouseEnter={() => handleFieldHover('meta_standard')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声称执行标准 (Declared Standard)</span>
                           <input
                             type="text"
                             defaultValue={currentBatch.standard}
-                            className="w-full text-xs font-mono mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 font-bold text-primary dark:text-primary-fixed-dim"
+                            className={`w-full text-xs font-mono mt-1 rounded border px-2.5 py-1 font-bold transition-all ${highlightedFieldId === 'meta_standard'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                              }`}
                           />
                         </div>
 
-                        {/* 第 4 行：冶炼炉号 | 交货几何规格 | 热处理状态 */}
-                        <div>
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">冶炼炉号 (Heat No)</span>
-                          <input
-                            type="text"
-                            defaultValue={currentBatch.heatNo}
-                            className="w-full text-xs font-mono mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-on-surface dark:text-surface-bright"
-                          />
+                        {/* 第 4 行：双炉号追溯 (冶炼炉号 / 热处理装炉号) | 交货几何规格 | 热处理状态 */}
+                        <div className="transition-all">
+                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">
+                            冶炼炉号/热处理炉号(Heat/Pack No.)
+                          </span>
+                          <div className="grid grid-cols-2 gap-1.5 mt-1">
+                            {/* 1. 冶炼炉号 (Heat No.) */}
+                            <input
+                              id="right-field-meta_heatNo"
+                              type="text"
+                              defaultValue={currentBatch.heatNo}
+                              onMouseEnter={() => handleFieldHover('meta_heatNo')}
+                              onMouseLeave={() => handleFieldHover(null)}
+                              title="原材料冶炼炉号 (Heat No.)"
+                              className={`w-full text-xs font-mono font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_heatNo'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                                }`}
+                            />
+
+                            {/* 2. 热处理炉号 (Pack No.) */}
+                            <input
+                              id="right-field-meta_packNo"
+                              type="text"
+                              defaultValue={currentBatch.packNo || 'Z26022C'}
+                              onMouseEnter={() => handleFieldHover('meta_packNo')}
+                              onMouseLeave={() => handleFieldHover(null)}
+                              title="钢管热处理炉号 (Pack No.)"
+                              className={`w-full text-xs font-mono font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_packNo'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                                }`}
+                            />
+                          </div>
                         </div>
 
-                        <div>
+                        <div
+                          id="right-field-meta_dimensions"
+                          onMouseEnter={() => handleFieldHover('meta_dimensions')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货几何规格 (Dimensions)</span>
                           <input
                             type="text"
                             defaultValue={currentBatch.dimensions}
-                            className="w-full text-xs font-mono mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-on-surface dark:text-surface-bright"
+                            className={`w-full text-xs font-mono mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_dimensions'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              }`}
                           />
                         </div>
 
-                        <div>
+                        <div
+                          id="right-field-meta_deliveryState"
+                          onMouseEnter={() => handleFieldHover('meta_deliveryState')}
+                          onMouseLeave={() => handleFieldHover(null)}
+                          className="transition-all cursor-pointer"
+                        >
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理状态 (Delivery State)</span>
                           <input
                             type="text"
-                            defaultValue={currentBatch.deliveryState || '固溶热处理 (Solution Treated)'}
-                            className="w-full text-xs font-mono mt-1 rounded border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-2.5 py-1 text-on-surface dark:text-surface-bright"
+                            defaultValue={currentBatch.deliveryState || '光亮固溶 (Bright Solution Annealed)'}
+                            className={`w-full text-xs font-mono mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_deliveryState'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              }`}
                           />
                         </div>
                       </div>
@@ -640,102 +954,170 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                     {/* 结构化实测数据区域：动态根据 standard.schema.ts 类别计算页签 (无数据自动隐藏) */}
                     {(() => {
-                      // 1. 结构化构建当前批次的全部提取项
+                      // 1. 结构化构建当前批次的全部提取项 (赋予精准 fieldId 与真实 BBox 坐标联动)
                       const allExtractItems = [
-                        // 化学成分
+                        // 化学成分 (原件未打印独立检测方法标准，客观呈现为 '-'，无依据 BBox)
                         ...currentBatch.chemical.map(c => ({
+                          fieldId: `chem_${c.element}`,
+                          methodFieldId: undefined,
                           category: 'chemical',
                           categoryLabel: '化学成分',
                           categoryColor: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                           name: `${c.element} (元素含量)`,
                           value: `${c.value} wt%`,
-                          method: 'GB/T 4336 火花放电原子发射光谱法',
+                          method: '-',
                           confidence: c.confidence,
                           status: c.status,
                           note: c.note,
                         })),
-                        // 力学性能
+                        // 力学性能 (拉伸依据 Page 2 表头 GB/T 228.1-2021，硬度依据表头 GB/T 4340.1-2024)
                         {
+                          fieldId: 'mech_tensile',
+                          methodFieldId: 'method_tensile',
                           category: 'mechanical',
                           categoryLabel: '力学性能',
                           categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
                           name: '抗拉强度 Rm',
                           value: currentBatch.mechanical.tensile_rm,
-                          method: 'GB/T 228.1 金属室温拉伸试验',
+                          method: 'GB/T 228.1-2021',
                           confidence: '98%',
                           status: 'ok' as const,
                         },
                         {
+                          fieldId: 'mech_yield',
+                          methodFieldId: 'method_tensile',
                           category: 'mechanical',
                           categoryLabel: '力学性能',
                           categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
                           name: '规定塑性延伸强度 Rp0.2',
                           value: currentBatch.mechanical.yield_rp02,
-                          method: 'GB/T 228.1 金属室温拉伸试验',
+                          method: 'GB/T 228.1-2021',
                           confidence: '97%',
                           status: 'ok' as const,
                         },
                         {
+                          fieldId: 'mech_elongation',
+                          methodFieldId: 'method_tensile',
                           category: 'mechanical',
                           categoryLabel: '力学性能',
                           categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
                           name: '断后伸长率 A',
                           value: currentBatch.mechanical.elongation_a,
-                          method: 'GB/T 228.1 金属室温拉伸试验',
+                          method: 'GB/T 228.1-2021',
                           confidence: '99%',
                           status: 'ok' as const,
                         },
                         ...(currentBatch.mechanical.hardness ? [{
+                          fieldId: 'mech_hardness',
+                          methodFieldId: 'method_hardness',
                           category: 'mechanical',
                           categoryLabel: '力学性能',
                           categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
                           name: '硬度 (Hardness)',
                           value: currentBatch.mechanical.hardness,
-                          method: 'GB/T 230.1 金属洛氏硬度试验',
+                          method: 'GB/T 4340.1-2024',
                           confidence: '96%',
                           status: 'ok' as const,
                         }] : []),
-                        // 工艺性能
+                        // 工艺性能 (依据 Page 1 下表第二列标准)
                         {
+                          fieldId: 'proc_flattening',
+                          methodFieldId: 'method_proc_flattening',
                           category: 'process',
                           categoryLabel: '工艺性能',
                           categoryColor: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
                           name: '压扁试验 (Flattening)',
                           value: currentBatch.process.flattening === 'PASS' ? '合格 (无裂纹/无分层)' : '未检出',
-                          method: 'GB/T 246 金属管压扁试验方法',
+                          method: 'GB/T 246-2017',
                           confidence: currentBatch.process.flattening === 'PASS' ? '98%' : '50%',
                           status: (currentBatch.process.flattening === 'PASS' ? 'ok' : 'warn') as 'ok' | 'warn',
                           note: currentBatch.process.flattening === 'PASS' ? undefined : '缺失压扁试验报告',
                         },
+                        ...(currentBatch.process.flaring ? [{
+                          fieldId: 'proc_flaring',
+                          methodFieldId: 'method_proc_flaring',
+                          category: 'process',
+                          categoryLabel: '工艺性能',
+                          categoryColor: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                          name: '扩口试验 (Flaring)',
+                          value: '合格 (顶心锥度 60°, 扩口率 ≥20%)',
+                          method: 'GB/T 242-2007',
+                          confidence: '99%',
+                          status: 'ok' as const,
+                        }] : []),
+                        // 金相组织 (依据 Page 2 表头 GB/T 6394-2017)
+                        ...(currentBatch.process.grainSize ? [{
+                          fieldId: 'metallo_grain',
+                          methodFieldId: 'method_grain',
+                          category: 'metallographic',
+                          categoryLabel: '金相组织',
+                          categoryColor: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                          name: '晶粒度评级 (Grain Size)',
+                          value: currentBatch.process.grainSize,
+                          method: 'GB/T 6394-2017',
+                          confidence: '98%',
+                          status: 'ok' as const,
+                        }] : []),
                         // 耐腐蚀试验
                         {
+                          fieldId: 'corrosion_intergranular',
+                          methodFieldId: 'method_corrosion_intergranular',
                           category: 'corrosion',
                           categoryLabel: '耐腐蚀试验',
                           categoryColor: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800',
                           name: '晶间腐蚀试验 (Intergranular Corrosion)',
-                          value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (Method E 硫酸-硫酸铜法)' : '未检出',
-                          method: 'GB/T 4334 不锈钢晶间腐蚀试验方法',
+                          value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (硫酸-硫酸铜法弯曲无裂纹)' : '未检出',
+                          method: 'GB/T 4334-2020 方法 E',
                           confidence: currentBatch.process.intergranularCorrosion === 'PASS' ? '98%' : '50%',
                           status: (currentBatch.process.intergranularCorrosion === 'PASS' ? 'ok' : 'warn') as 'ok' | 'warn',
                           note: currentBatch.process.intergranularCorrosion === 'PASS' ? undefined : '缺失晶间腐蚀试验报告',
                         },
                         // 无损检测
                         {
+                          fieldId: 'ndt_et',
+                          methodFieldId: 'method_ndt_et',
                           category: 'ndt',
                           categoryLabel: '无损检测',
                           categoryColor: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
-                          name: '无损探伤检验 (NDT / Hydrostatic)',
+                          name: '涡流探伤检验 (Eddy Current Test)',
                           value: currentBatch.process.ndt,
-                          method: 'GB/T 7735 / GB/T 5777',
+                          method: 'GB/T 7735-2016',
                           confidence: currentBatch.process.ndt.includes('合格') ? '98%' : '50%',
                           status: (currentBatch.process.ndt.includes('合格') ? 'ok' : 'warn') as 'ok' | 'warn',
                           note: currentBatch.process.ndt.includes('合格') ? undefined : '未检出探伤结果',
                         },
+                        // 几何尺寸与表面质量 (当存在真实多页切图时自动丰富)
+                        ...(currentDoc.docId === 'doc_zpje_01' ? [
+                          {
+                            fieldId: 'geo_dimensions',
+                            methodFieldId: 'method_geo_dimensions',
+                            category: 'geometric',
+                            categoryLabel: '几何尺寸',
+                            categoryColor: 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+                            name: '尺寸公差检验 (Dimensions Inspection)',
+                            value: '合格 (外径偏差 ±0.10mm, 壁厚偏差 ±10%)',
+                            method: 'GB/T 13296-2023',
+                            confidence: '99%',
+                            status: 'ok' as const,
+                          },
+                          {
+                            fieldId: 'surface_quality',
+                            methodFieldId: 'method_surface_quality',
+                            category: 'surface',
+                            categoryLabel: '表面质量',
+                            categoryColor: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                            name: '表面质量检验 (Surface Quality)',
+                            value: '合格 (内外表面光洁，无裂纹、折叠与重皮)',
+                            method: 'GB/T 13296-2023',
+                            confidence: '99%',
+                            status: 'ok' as const,
+                          },
+                        ] : []),
                       ];
 
                       // 2. 动态计算当前批次包含的分类列表 (仅保留有数据的分类)
                       const categoriesInBatch = [
-                        { key: 'all', label: '全部实测项总览', count: allExtractItems.length },
+                        { key: 'all', label: '解析数据总览', count: allExtractItems.length },
                         { key: 'chemical', label: '化学成分', count: allExtractItems.filter(i => i.category === 'chemical').length },
                         { key: 'mechanical', label: '力学性能', count: allExtractItems.filter(i => i.category === 'mechanical').length },
                         { key: 'process', label: '工艺性能', count: allExtractItems.filter(i => i.category === 'process').length },
@@ -779,46 +1161,79 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             })}
                           </div>
 
-                          {/* 1. 全部实测项总览 (平铺综合表格视图) */}
+                          {/* 1. 全部实测项总览 (平铺综合表格视图，结果与依据独立双向高亮联动) */}
                           {activeTabCategory === 'all' && (
                             <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl overflow-hidden shadow-2xs">
                               <table className="w-full text-left text-xs font-mono">
                                 <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
                                   <tr>
-                                    <th className="px-3 py-2 w-28 min-w-[100px] whitespace-nowrap">类别</th>
-                                    <th className="px-3 py-2 min-w-[140px]">检验项目</th>
-                                    <th className="px-3 py-2">提取测得值 / 试验结果</th>
-                                    <th className="px-3 py-2 hidden md:table-cell">试验依据方法 / 标准</th>
-                                    <th className="px-3 py-2 text-right w-24 whitespace-nowrap">置信度</th>
+                                    <th className="px-3.5 py-2.5 w-24 min-w-[90px] whitespace-nowrap">类别</th>
+                                    <th className="px-3.5 py-2.5 w-44 min-w-[130px]">检验项目</th>
+                                    <th className="px-3.5 py-2.5 min-w-[180px]">提取测得值 / 试验结果</th>
+                                    <th className="px-3.5 py-2.5 min-w-[190px]">试验依据方法 / 标准</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
-                                  {displayedItems.map((row, idx) => (
-                                    <tr key={idx} className="hover:bg-surface-container-low/50 dark:hover:bg-surface-dark-low/50 transition-colors">
-                                      <td className="px-3 py-2 whitespace-nowrap">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
-                                          {row.categoryLabel}
-                                        </span>
-                                      </td>
-                                      <td className="px-3 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
-                                      <td className="px-3 py-2 font-bold text-primary dark:text-primary-fixed-dim">{row.value}</td>
-                                      <td className="px-3 py-2 text-[11px] text-on-surface-variant dark:text-outline-variant hidden md:table-cell">{row.method || '-'}</td>
-                                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                                        {row.status === 'warn' ? (
+                                  {displayedItems.map((row, idx) => {
+                                    const isValueHighlighted = highlightedFieldId === row.fieldId;
+                                    const isMethodHighlighted = Boolean(row.methodFieldId && highlightedFieldId === row.methodFieldId);
+                                    const isRowActive = isValueHighlighted || isMethodHighlighted;
+
+                                    return (
+                                      <tr
+                                        key={idx}
+                                        id={`right-field-${row.fieldId}`}
+                                        className={`transition-colors ${isRowActive
+                                          ? 'bg-primary/10 dark:bg-primary/20'
+                                          : 'hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40'
+                                          }`}
+                                      >
+                                        <td className="px-3.5 py-2 whitespace-nowrap">
+                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
+                                            {row.categoryLabel}
+                                          </span>
+                                        </td>
+                                        <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
+                                        
+                                        {/* 1. 提取测得值 / 试验结果（独立 BBox 联动，无图标与边框） */}
+                                        <td className="px-3.5 py-2.5">
                                           <span
-                                            className="px-2 py-0.5 rounded font-bold font-mono text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 inline-block shadow-2xs"
-                                            title={row.note || '置信度偏低 / 需人工核实'}
+                                            onMouseEnter={() => handleFieldHover(row.fieldId)}
+                                            onMouseLeave={() => handleFieldHover(null)}
+                                            className={`inline-block transition-colors cursor-pointer ${isValueHighlighted
+                                              ? 'text-primary dark:text-primary-fixed-dim font-black underline underline-offset-2 decoration-2'
+                                              : 'text-primary dark:text-primary-fixed-dim font-bold hover:underline hover:underline-offset-2'
+                                              }`}
+                                            title="悬浮查看源文档中该项的实测数据位置"
                                           >
-                                            {row.confidence}
+                                            {row.value}
                                           </span>
-                                        ) : (
-                                          <span className="font-mono font-medium text-on-surface dark:text-surface-bright">
-                                            {row.confidence}
-                                          </span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                        </td>
+
+                                        {/* 2. 试验依据方法 / 标准（独立 BBox 联动，无图标与边框） */}
+                                        <td className="px-3.5 py-2.5 text-[11px]">
+                                          {row.method && row.method !== '-' && row.methodFieldId ? (
+                                            <span
+                                              id={`right-field-${row.methodFieldId}`}
+                                              onMouseEnter={() => handleFieldHover(row.methodFieldId!)}
+                                              onMouseLeave={() => handleFieldHover(null)}
+                                              className={`inline-block transition-colors cursor-pointer ${isMethodHighlighted
+                                                ? 'text-primary dark:text-primary-fixed-dim font-bold underline underline-offset-2 decoration-2'
+                                                : 'text-on-surface-variant dark:text-outline-variant hover:text-primary hover:underline hover:underline-offset-2'
+                                                }`}
+                                              title="悬浮查看源文档中该项依据的标准/方法条款位置"
+                                            >
+                                              {row.method}
+                                            </span>
+                                          ) : (
+                                            <span className="text-outline-variant dark:text-outline-dark">
+                                              {row.method || '-'}
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
@@ -830,34 +1245,32 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               <table className="w-full text-left text-xs font-mono">
                                 <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
                                   <tr>
-                                    <th className="px-3 py-2">化学元素 (Element)</th>
-                                    <th className="px-3 py-2">提取测得值 (wt%)</th>
-                                    <th className="px-3 py-2">检验依据方法</th>
-                                    <th className="px-3 py-2 text-right w-24 whitespace-nowrap">置信度</th>
+                                    <th className="px-3.5 py-2.5">化学元素 (Element)</th>
+                                    <th className="px-3.5 py-2.5">提取测得值 (wt%)</th>
+                                    <th className="px-3.5 py-2.5">检验依据方法</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
-                                  {currentBatch.chemical.map((row, idx) => (
-                                    <tr key={idx} className="hover:bg-surface-container-low/50 dark:hover:bg-surface-dark-low/50">
-                                      <td className="px-3 py-2 font-bold text-on-surface dark:text-surface-bright">{row.element}</td>
-                                      <td className="px-3 py-2 font-bold text-primary dark:text-primary-fixed-dim">{row.value} wt%</td>
-                                      <td className="px-3 py-2 text-on-surface-variant dark:text-outline-variant text-[11px]">GB/T 4336 火花放电发射光谱法</td>
-                                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                                        {row.status === 'warn' ? (
-                                          <span
-                                            className="px-2 py-0.5 rounded font-bold font-mono text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 inline-block shadow-2xs"
-                                            title={row.note || '需人工核实'}
-                                          >
-                                            {row.confidence}
-                                          </span>
-                                        ) : (
-                                          <span className="font-mono font-medium text-on-surface dark:text-surface-bright">
-                                            {row.confidence}
-                                          </span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {currentBatch.chemical.map((row, idx) => {
+                                    const fieldId = `chem_${row.element}`;
+                                    const isHighlighted = highlightedFieldId === fieldId;
+                                    return (
+                                      <tr
+                                        key={idx}
+                                        id={`right-field-${fieldId}`}
+                                        onMouseEnter={() => handleFieldHover(fieldId)}
+                                        onMouseLeave={() => handleFieldHover(null)}
+                                        className={`transition-colors cursor-pointer ${isHighlighted
+                                          ? 'bg-primary/15 dark:bg-primary/25 ring-1 ring-primary/50'
+                                          : 'hover:bg-surface-container-low/50 dark:hover:bg-surface-dark-low/50'
+                                          }`}
+                                      >
+                                        <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.element}</td>
+                                        <td className="px-3.5 py-2 font-bold text-primary dark:text-primary-fixed-dim">{row.value} wt%</td>
+                                        <td className="px-3.5 py-2 text-outline-variant dark:text-outline-dark text-[11px]">- (未声明独立方法)</td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
@@ -871,19 +1284,51 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   拉伸与硬度力学性能实测 (Mechanical Tensile & Hardness)
                                 </span>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                  <div className="p-2.5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/30 rounded-lg flex justify-between items-center">
+                                  <div
+                                    id="right-field-mech_tensile"
+                                    onMouseEnter={() => handleFieldHover('mech_tensile')}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_tensile'
+                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                      : 'border-outline-variant/30 hover:border-primary/50'
+                                      }`}
+                                  >
                                     <span className="text-on-surface-variant dark:text-outline-variant">抗拉强度 Rm:</span>
                                     <strong className="text-primary dark:text-primary-fixed-dim">{currentBatch.mechanical.tensile_rm}</strong>
                                   </div>
-                                  <div className="p-2.5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/30 rounded-lg flex justify-between items-center">
+                                  <div
+                                    id="right-field-mech_yield"
+                                    onMouseEnter={() => handleFieldHover('mech_yield')}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_yield'
+                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                      : 'border-outline-variant/30 hover:border-primary/50'
+                                      }`}
+                                  >
                                     <span className="text-on-surface-variant dark:text-outline-variant">规定塑性延伸强度 Rp0.2:</span>
                                     <strong className="text-primary dark:text-primary-fixed-dim">{currentBatch.mechanical.yield_rp02}</strong>
                                   </div>
-                                  <div className="p-2.5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/30 rounded-lg flex justify-between items-center">
+                                  <div
+                                    id="right-field-mech_elongation"
+                                    onMouseEnter={() => handleFieldHover('mech_elongation')}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_elongation'
+                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                      : 'border-outline-variant/30 hover:border-primary/50'
+                                      }`}
+                                  >
                                     <span className="text-on-surface-variant dark:text-outline-variant">断后伸长率 A (%):</span>
                                     <strong className="text-primary dark:text-primary-fixed-dim">{currentBatch.mechanical.elongation_a}</strong>
                                   </div>
-                                  <div className="p-2.5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/30 rounded-lg flex justify-between items-center">
+                                  <div
+                                    id="right-field-mech_hardness"
+                                    onMouseEnter={() => handleFieldHover('mech_hardness')}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_hardness'
+                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                      : 'border-outline-variant/30 hover:border-primary/50'
+                                      }`}
+                                  >
                                     <span className="text-on-surface-variant dark:text-outline-variant">硬度 (Hardness):</span>
                                     <strong className="text-on-surface dark:text-surface-bright">{currentBatch.mechanical.hardness || '免检 (壁厚<1.7mm)'}</strong>
                                   </div>
@@ -905,7 +1350,15 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 工艺成型试验条款实测 (Process Flattening & Bending)
                               </span>
-                              <div className="p-3 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/30 rounded-lg flex justify-between items-center">
+                              <div
+                                id="right-field-proc_flattening"
+                                onMouseEnter={() => handleFieldHover('proc_flattening')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flattening'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-primary/50'
+                                  }`}
+                              >
                                 <div>
                                   <strong className="text-on-surface dark:text-surface-bright block">压扁试验 (Flattening Test)</strong>
                                   <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 246 金属管压扁试验方法</span>
@@ -914,16 +1367,67 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   {currentBatch.process.flattening === 'PASS' ? '合格 (无裂纹/无分层)' : '未检出'}
                                 </strong>
                               </div>
+                              {currentBatch.process.flaring && (
+                                <div
+                                  id="right-field-proc_flaring"
+                                  onMouseEnter={() => handleFieldHover('proc_flaring')}
+                                  onMouseLeave={() => handleFieldHover(null)}
+                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flaring'
+                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                    : 'border-outline-variant/30 hover:border-primary/50'
+                                    }`}
+                                >
+                                  <div>
+                                    <strong className="text-on-surface dark:text-surface-bright block">扩口试验 (Flaring Test)</strong>
+                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 242 金属管扩口试验方法 (顶心锥度 60°)</span>
+                                  </div>
+                                  <strong className="text-status-pass-text font-bold text-sm">合格 (扩口率 ≥20%)</strong>
+                                </div>
+                              )}
                             </div>
                           )}
 
-                          {/* 5. 耐腐蚀试验独立专业视图 */}
+                          {/* 5. 金相组织独立专业视图 */}
+                          {activeTabCategory === 'metallographic' && (
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                金相组织与晶粒度实测 (Metallographic & Grain Size)
+                              </span>
+                              <div
+                                id="right-field-metallo_grain"
+                                onMouseEnter={() => handleFieldHover('metallo_grain')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'metallo_grain'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-primary/50'
+                                  }`}
+                              >
+                                <div>
+                                  <strong className="text-on-surface dark:text-surface-bright block">晶粒度评级 (Grain Size)</strong>
+                                  <span className="text-[11px] text-on-surface-variant">依据标准：GB/T 6394 金属平均晶粒度测定方法 (比较法)</span>
+                                </div>
+                                <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
+                                  {currentBatch.process.grainSize || '7.0 级'}
+                                </strong>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 6. 耐腐蚀试验独立专业视图 */}
                           {activeTabCategory === 'corrosion' && (
                             <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 不锈钢耐腐蚀试验实测 (Corrosion Resistance)
                               </span>
-                              <div className="p-3 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/30 rounded-lg flex justify-between items-center">
+                              <div
+                                id="right-field-corrosion_intergranular"
+                                onMouseEnter={() => handleFieldHover('corrosion_intergranular')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'corrosion_intergranular'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-primary/50'
+                                  }`}
+                              >
                                 <div>
                                   <strong className="text-on-surface dark:text-surface-bright block">晶间腐蚀试验 (Intergranular Corrosion)</strong>
                                   <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 4334 Method E (硫酸-硫酸铜腐蚀试验)</span>
@@ -935,13 +1439,21 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             </div>
                           )}
 
-                          {/* 6. 无损检测独立专业视图 */}
+                          {/* 7. 无损检测独立专业视图 */}
                           {activeTabCategory === 'ndt' && (
                             <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 承压管道无损探伤检验 (Non-Destructive Testing)
                               </span>
-                              <div className="p-3 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/30 rounded-lg flex justify-between items-center">
+                              <div
+                                id="right-field-ndt_et"
+                                onMouseEnter={() => handleFieldHover('ndt_et')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'ndt_et'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-primary/50'
+                                  }`}
+                              >
                                 <div>
                                   <strong className="text-on-surface dark:text-surface-bright block">无损探伤 / 水压替代 (NDT / Hydrostatic Alternative)</strong>
                                   <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 7735 (涡流 E3H) / GB/T 5777 (超声 U2)</span>
@@ -949,6 +1461,54 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
                                   {currentBatch.process.ndt}
                                 </strong>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 8. 几何尺寸独立专业视图 */}
+                          {activeTabCategory === 'geometric' && (
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                几何公差与尺寸检验 (Geometric Tolerances)
+                              </span>
+                              <div
+                                id="right-field-geo_dimensions"
+                                onMouseEnter={() => handleFieldHover('geo_dimensions')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'geo_dimensions'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-primary/50'
+                                  }`}
+                              >
+                                <div>
+                                  <strong className="text-on-surface dark:text-surface-bright block">外径与壁厚公差实测 (OD & WT)</strong>
+                                  <span className="text-[11px] text-on-surface-variant">依据标准：GB/T 13296-2023 第 5.2 条款 (精密级)</span>
+                                </div>
+                                <strong className="text-status-pass-text font-bold text-sm">合格 OK</strong>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 9. 表面质量独立专业视图 */}
+                          {activeTabCategory === 'surface' && (
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                表面宏观与微观质量检验 (Surface Quality)
+                              </span>
+                              <div
+                                id="right-field-surface_quality"
+                                onMouseEnter={() => handleFieldHover('surface_quality')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'surface_quality'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-primary/50'
+                                  }`}
+                              >
+                                <div>
+                                  <strong className="text-on-surface dark:text-surface-bright block">内外部表面缺陷目视与内窥镜检验</strong>
+                                  <span className="text-[11px] text-on-surface-variant">无裂纹、折叠、轧折、离层和结疤</span>
+                                </div>
+                                <strong className="text-status-pass-text font-bold text-sm">合格 OK</strong>
                               </div>
                             </div>
                           )}
@@ -969,18 +1529,20 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             <div className="max-w-[1440px] mx-auto w-full space-y-4">
 
               {/* 顶部统一标题与两层树状批次选择条 */}
-              <BatchContextBar
-                stepTitle="步骤 3: 比对执行标准"
-                session={session}
-                selectedDocId={selectedDocId}
-                selectedBatchNo={selectedBatchNo}
-                onSelectDoc={setSelectedDocId}
-                onSelectBatch={(docId, batchNo) => {
-                  setSelectedDocId(docId);
-                  setSelectedBatchNo(batchNo);
-                }}
-                mode="compliance"
-              />
+              <div className="relative z-30">
+                <BatchContextBar
+                  stepTitle="步骤 3: 比对执行标准"
+                  session={session}
+                  selectedDocId={selectedDocId}
+                  selectedBatchNo={selectedBatchNo}
+                  onSelectDoc={setSelectedDocId}
+                  onSelectBatch={(docId, batchNo) => {
+                    setSelectedDocId(docId);
+                    setSelectedBatchNo(batchNo);
+                  }}
+                  mode="compliance"
+                />
+              </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
@@ -1211,18 +1773,20 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             <div className="max-w-[1440px] mx-auto w-full space-y-4">
 
               {/* 顶部统一标题与两层树状批次选择条 */}
-              <BatchContextBar
-                stepTitle="步骤 4: 报告归档与导出"
-                session={session}
-                selectedDocId={selectedDocId}
-                selectedBatchNo={selectedBatchNo}
-                onSelectDoc={setSelectedDocId}
-                onSelectBatch={(docId, batchNo) => {
-                  setSelectedDocId(docId);
-                  setSelectedBatchNo(batchNo);
-                }}
-                mode="compliance"
-              />
+              <div className="relative z-30">
+                <BatchContextBar
+                  stepTitle="步骤 4: 报告归档与导出"
+                  session={session}
+                  selectedDocId={selectedDocId}
+                  selectedBatchNo={selectedBatchNo}
+                  onSelectDoc={setSelectedDocId}
+                  onSelectBatch={(docId, batchNo) => {
+                    setSelectedDocId(docId);
+                    setSelectedBatchNo(batchNo);
+                  }}
+                  mode="compliance"
+                />
+              </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 

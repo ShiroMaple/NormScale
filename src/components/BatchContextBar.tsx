@@ -116,7 +116,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
   const isSuccessOrPass = currentBatch.verdict === 'PASS';
 
   return (
-    <div className="w-full space-y-2.5 select-none">
+    <div className="w-full space-y-2.5 select-none relative z-30">
       
       {/* 1. 顶部主标题行 (左侧步骤主标题，右侧可选操作) */}
       <div className="flex items-center justify-between gap-4 px-1">
@@ -143,8 +143,8 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
         )}
       </div>
 
-      {/* 2. 下部独立圆角选择器卡片 (单行不折叠设计) */}
-      <div className="w-full bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-2xl p-3 sm:p-3.5 shadow-xs flex items-center justify-between gap-3 text-xs overflow-x-auto custom-scrollbar">
+      {/* 2. 下部独立圆角选择器卡片 (单行不折叠设计，允许下拉菜单溢出浮层，杜绝遮挡与滚动条) */}
+      <div className="w-full bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-2xl p-3 sm:p-3.5 shadow-xs flex items-center justify-between gap-3 text-xs relative overflow-visible">
         
         {/* 左侧：Session 简写胶囊 + 第 1 层文档 + 第 2 层批次号 */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">

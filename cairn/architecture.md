@@ -12,8 +12,11 @@ contains:
   - decision
   - procedure
 created: "2026-08-21"
-updated: "2026-08-22"
-related: []
+updated: "2026-08-27"
+related:
+  - cairn/mtc-schema-evolution.md
+  - cairn/viewport-scroll-isolation.md
+  - cairn/ocr-bbox-lens-guide.md
 authoring_mode: ai_generated
 ---
 

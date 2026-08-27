@@ -41,14 +41,23 @@ export const CertificateHeaderSchema = z.object({
   material_product_name: z.string().optional(),             // 产品品名（例如："锅炉、热交换器用不锈钢无缝钢管"）
   declared_standard: z.string(),                            // 质保书声称执行标准（例如："GB/T 13296-2023"）
   declared_grade: z.string(),                               // 质保书声称材料牌号（例如："06Cr19Ni10" 或 "S30408"）
-  heat_number: z.string().optional(),                       // 冶炼炉号（Heat No.，例如："H240188"）
-  batch_lot_number: z.string().optional(),                  // 检验批号 / 热处理批号（Batch / Lot No.，例如："L202403-01"）
+  heat_number: z.string().optional(),                       // 原材料冶炼炉号（Heat No. / Melt No.，决定化学成分，例如："YX2602-2207"）
+  heat_treatment_lot_number: z.string().optional(),         // 钢管热处理炉号 / 装炉号（Pack No. / Heat Treatment Lot No.，决定力学与金相，例如："Z26022C"）
+  batch_lot_number: z.string().optional(),                  // 检验批号 / 试样编号（Batch No.，例如："Z26022C-DB7"）
   material_form: z.string().optional(),                     // 材料形态（例如："tube_seamless" 无缝管、"plate" 钢板、"bar" 棒材）
   manufacturing_process: z.string().optional(),             // 制造工艺（例如："cold_drawn" 冷拔、"hot_rolled" 热轧、"hot_extrusion" 热挤压）
   delivery_state: z.string().optional(),                    // 交货状态（例如："固溶酸洗"、"光亮退火"、"淬火+回火"）
   dimensions: DimensionsSchema.optional(),                  // 实测/声称几何规格尺寸
   quantity: QuantitySchema.optional(),                      // 交付批次数量与重量
-});
+
+  // 【通用结构化长尾扩展元数据池：一劳永逸兜底合同号、母卷号、TS特种设备许可证号、包装捆号等不在预设中的长尾元数据】
+  additional_identifiers: z.array(z.object({
+    key: z.string(),                                        // 规范化英文标识（如 "contract_no", "bundle_no", "ts_license_no"）
+    label: z.string(),                                      // 质保书原始打印字面（如 "订货合同号", "包装捆号", "制造许可证号"）
+    value: z.string(),                                      // 提取值文本
+    ocr_confidence: z.number().optional(),                  // 视觉识别置信度
+  })).optional(),
+}).passthrough();
 export type CertificateHeader = z.infer<typeof CertificateHeaderSchema>;
 
 

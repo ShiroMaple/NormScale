@@ -25,7 +25,8 @@ export interface BatchSpecimen {
   standard: string;            // 声称执行标准，如 "GB/T 13296-2023"
   supplier: string;            // 供货厂家名称
   dimensions: string;          // 交货规格，如 "OD 25.0mm × WT 2.0mm × L 6000mm"
-  heatNo: string;              // 冶炼炉号
+  heatNo: string;              // 冶炼炉号 (Heat No.)
+  packNo?: string;             // 钢管热处理炉号 / 装炉号 (Pack No. / Heat Treatment Lot No.)
   deliveryState?: string;      // 交货热处理状态，如 "固溶热处理 (Solution Treated)"
   verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
   verdictSummary: string;      // 判定依据简述
@@ -47,8 +48,10 @@ export interface BatchSpecimen {
   // 模块 C: 工艺与定性条款
   process: {
     flattening: 'PASS' | 'FAIL';
+    flaring?: 'PASS' | 'FAIL';
     intergranularCorrosion: 'PASS' | 'FAIL';
     ndt: string;
+    grainSize?: string;
   };
   
   // 归档存证字段
@@ -64,6 +67,7 @@ export interface SessionDocument {
   uploadTime: string;          // 上传时间
   ocrStatus: 'DONE' | 'PROCESSING' | 'PENDING';
   pageCount: number;           // 页数
+  samplePages?: string[];      // 真实高清切图 URL 列表 (如 ["/samples/zpje/page-1.png", ...])
   batches: BatchSpecimen[];    // 文档内包含的各炉批号/试样
 }
 
@@ -94,18 +98,171 @@ export function generateSessionId(): string {
 }
 
 /**
- * 默认初始化的预置两层树作业会话（包含 3 份文档，5 个真实工业炉批）
+ * 默认初始化的预置两层树作业会话（包含 4 份文档，8 个真实工业炉批）
  */
 export const DEFAULT_INSPECTION_SESSION: InspectionSession = {
   sessionId: 'SESS-20260826-143000-8F9C2E1A',
   createdAt: '2026-08-26 14:30:00',
-  title: 'Area Optimization (26XXX-0888) · 锅炉与承压管道集中入库质检',
-  totalDocuments: 3,
-  totalBatches: 5,
-  passedBatches: 4,
+  title: 'Area Optimization (26715-7053) · 镇海石化换热管集中入库合规检验',
+  totalDocuments: 4,
+  totalBatches: 8,
+  passedBatches: 7,
   failedBatches: 1,
   hitlBatches: 0,
   documents: [
+    {
+      docId: 'doc_zpje_01',
+      filename: 'ZPJE_S32168_HeatExchangeTube_MTC.pdf',
+      fileSize: '650 KB',
+      uploadTime: '2026-08-27 08:30',
+      ocrStatus: 'DONE',
+      pageCount: 3,
+      samplePages: [
+        '/samples/zpje/page-1.png',
+        '/samples/zpje/page-2.png',
+        '/samples/zpje/page-3.png',
+      ],
+      batches: [
+        {
+          batchNo: 'Z26022C-DB7',
+          subBatchIndex: 1,
+          certificateNo: '20260704203',
+          constructionNo: '26715-7053',
+          productName: '换热管 (Heat exchange tubes)',
+          grade: 'S32168 (06Cr18Ni11Ti)',
+          standard: 'NB/T 47019.5-2021、GB/T 13296-2023',
+          supplier: '镇海石化建安工程股份有限公司制管厂',
+          dimensions: 'OD 15.0mm × WT 0.8mm',
+          heatNo: 'YX2602-2207',
+          packNo: 'Z26022C',
+          deliveryState: '光亮固溶 (Bright Solution Annealed)',
+          verdict: 'PASS',
+          verdictSummary: '全项符合 GB/T 13296 与 NB/T 47019.5 标准要求 (化学成分、晶间腐蚀、无损探伤全项合格)',
+          ocrConfidence: 99,
+          gradeMatchConfidence: 99,
+          chemical: [
+            { element: 'C', value: '0.018', confidence: '99%', status: 'ok' },
+            { element: 'Si', value: '0.44', confidence: '98%', status: 'ok' },
+            { element: 'Mn', value: '1.16', confidence: '98%', status: 'ok' },
+            { element: 'P', value: '0.035', confidence: '96%', status: 'ok' },
+            { element: 'S', value: '0.005', confidence: '99%', status: 'ok' },
+            { element: 'Cr', value: '17.41', confidence: '99%', status: 'ok' },
+            { element: 'Ni', value: '9.08', confidence: '99%', status: 'ok' },
+            { element: 'Ti', value: '0.14', confidence: '98%', status: 'ok' },
+            { element: 'N', value: '<0.01', confidence: '95%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '621、620 MPa (标准 ≥520)',
+            yield_rp02: '268、267 MPa (标准 ≥205)',
+            elongation_a: '57.5、61.5 % (标准 ≥40)',
+            hardness: '139.3 HV1 (实测 143/145/137/132/140/139, 要求 ≤200)',
+            astFormulaNote: '涡流探伤(ET)与超声探伤(UT)双探伤合格 → 依据 6.5 条款免做水压',
+          },
+          process: {
+            flattening: 'PASS',
+            flaring: 'PASS',
+            intergranularCorrosion: 'PASS',
+            ndt: '涡流检测 (ET) 与超声波检测 (UT) 均合格 OK',
+            grainSize: '6.5 级 (GB/T 6394-2017)',
+          },
+          reportNo: 'QA-20260704-DB7',
+          sha256Hash: '9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b',
+          inspector: 'OP-ZPJE-01 (QA)',
+        },
+        {
+          batchNo: 'Z26022C-DB8',
+          subBatchIndex: 2,
+          certificateNo: '20260704203',
+          constructionNo: '26715-7053',
+          productName: '换热管 (Heat exchange tubes)',
+          grade: 'S32168 (06Cr18Ni11Ti)',
+          standard: 'NB/T 47019.5-2021、GB/T 13296-2023',
+          supplier: '镇海石化建安工程股份有限公司制管厂',
+          dimensions: 'OD 15.0mm × WT 0.8mm',
+          heatNo: 'YX2602-2207',
+          packNo: 'Z26022C',
+          deliveryState: '光亮固溶 (Bright Solution Annealed)',
+          verdict: 'PASS',
+          verdictSummary: '全项符合 GB/T 13296 标准要求',
+          ocrConfidence: 98,
+          gradeMatchConfidence: 99,
+          chemical: [
+            { element: 'C', value: '0.018', confidence: '99%', status: 'ok' },
+            { element: 'Si', value: '0.44', confidence: '98%', status: 'ok' },
+            { element: 'Mn', value: '1.16', confidence: '98%', status: 'ok' },
+            { element: 'P', value: '0.035', confidence: '96%', status: 'ok' },
+            { element: 'S', value: '0.005', confidence: '99%', status: 'ok' },
+            { element: 'Cr', value: '17.41', confidence: '99%', status: 'ok' },
+            { element: 'Ni', value: '9.08', confidence: '99%', status: 'ok' },
+            { element: 'Ti', value: '0.14', confidence: '98%', status: 'ok' },
+            { element: 'N', value: '<0.01', confidence: '95%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '651、652 MPa (标准 ≥520)',
+            yield_rp02: '297、289 MPa (标准 ≥205)',
+            elongation_a: '54.0、50.5 % (标准 ≥40)',
+            hardness: '147.3 HV1 (实测 149/143/150/144/154/144, 要求 ≤200)',
+            astFormulaNote: '涡流探伤(ET)与超声探伤(UT)双探伤合格 → 依据 6.5 条款免做水压',
+          },
+          process: {
+            flattening: 'PASS',
+            flaring: 'PASS',
+            intergranularCorrosion: 'PASS',
+            ndt: '涡流检测 (ET) 与超声波检测 (UT) 均合格 OK',
+            grainSize: '7.0 级 (GB/T 6394-2017)',
+          },
+          reportNo: 'QA-20260704-DB8',
+          sha256Hash: '8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c',
+          inspector: 'OP-ZPJE-01 (QA)',
+        },
+        {
+          batchNo: 'Z26022C-E1',
+          subBatchIndex: 3,
+          certificateNo: '20260704203',
+          constructionNo: '26715-7053',
+          productName: '换热管 (Heat exchange tubes)',
+          grade: 'S32168 (06Cr18Ni11Ti)',
+          standard: 'NB/T 47019.5-2021、GB/T 13296-2023',
+          supplier: '镇海石化建安工程股份有限公司制管厂',
+          dimensions: 'OD 15.0mm × WT 0.8mm',
+          heatNo: 'YX2602-2207',
+          packNo: 'Z26022C',
+          deliveryState: '光亮固溶 (Bright Solution Annealed)',
+          verdict: 'PASS',
+          verdictSummary: '全项符合 GB/T 13296 标准要求',
+          ocrConfidence: 98,
+          gradeMatchConfidence: 99,
+          chemical: [
+            { element: 'C', value: '0.018', confidence: '99%', status: 'ok' },
+            { element: 'Si', value: '0.44', confidence: '98%', status: 'ok' },
+            { element: 'Mn', value: '1.16', confidence: '98%', status: 'ok' },
+            { element: 'P', value: '0.035', confidence: '96%', status: 'ok' },
+            { element: 'S', value: '0.005', confidence: '99%', status: 'ok' },
+            { element: 'Cr', value: '17.41', confidence: '99%', status: 'ok' },
+            { element: 'Ni', value: '9.08', confidence: '99%', status: 'ok' },
+            { element: 'Ti', value: '0.14', confidence: '98%', status: 'ok' },
+            { element: 'N', value: '<0.01', confidence: '95%', status: 'ok' },
+          ],
+          mechanical: {
+            tensile_rm: '675、669 MPa (标准 ≥520)',
+            yield_rp02: '334、343 MPa (标准 ≥205)',
+            elongation_a: '48.0、48.0 % (标准 ≥40)',
+            hardness: '157.8 HV1 (实测 155/163/165/150/152/162, 要求 ≤200)',
+            astFormulaNote: '涡流探伤(ET)与超声探伤(UT)双探伤合格 → 依据 6.5 条款免做水压',
+          },
+          process: {
+            flattening: 'PASS',
+            flaring: 'PASS',
+            intergranularCorrosion: 'PASS',
+            ndt: '涡流检测 (ET) 与超声波检测 (UT) 均合格 OK',
+            grainSize: '7.0 级 (GB/T 6394-2017)',
+          },
+          reportNo: 'QA-20260704-E1',
+          sha256Hash: '7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d',
+          inspector: 'OP-ZPJE-01 (QA)',
+        },
+      ],
+    },
     {
       docId: 'doc_baosteel_01',
       filename: 'Baosteel_S30408_BoilerTube_MTC.pdf',

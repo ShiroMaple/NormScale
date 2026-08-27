@@ -37,13 +37,33 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => onTabChange && onTabChange('workbench')}
           className="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary-fixed-dim tracking-tight flex items-center gap-2.5 cursor-pointer"
         >
-          <span
-            className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-2xl fill-1"
-            style={{ fontVariationSettings: "'FILL' 1" }}
+          {/* 准衡 Logo SVG */}
+          <svg
+            viewBox="0 0 100 100"
+            className="shrink-0"
+            style={{ width: 32, height: 32 }}
+            xmlns="http://www.w3.org/2000/svg"
           >
-            precision_manufacturing
-          </span>
-          <span className="text-xl font-bold tracking-tight">NormScale</span>
+            <rect x="0" y="0" width="100" height="100" rx="8" fill="#0F4C81" />
+            <text
+              x="50"
+              y="73"
+              fontSize="62"
+              fontWeight="900"
+              fill="#FFFFFF"
+              textAnchor="middle"
+              fontFamily="STKaiti, KaiTi, serif"
+            >
+              准
+            </text>
+          </svg>
+
+          <div className="flex flex-col leading-none">
+            <span className="text-xl font-bold tracking-tight">准衡</span>
+            <span className="text-[10px] font-medium tracking-[0.2em] text-on-surface-variant dark:text-secondary-fixed-dim opacity-70">
+              NORMSCALE
+            </span>
+          </div>
           <span className="text-on-surface-variant dark:text-secondary-fixed-dim font-normal text-xl ml-2 hidden md:inline opacity-80 border-l border-outline-variant dark:border-border-dark pl-3">
             工业质保证书合规检验
           </span>
