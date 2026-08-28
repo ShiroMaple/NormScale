@@ -12,6 +12,8 @@ import {
 } from '@/types/session.ts';
 import { BatchContextBar } from './BatchContextBar.tsx';
 import { getZPJEBBoxes, FieldBBox } from '@/types/bbox.ts';
+import { HitlDrawer } from './HitlDrawer.tsx';
+import { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.interface.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -377,20 +379,106 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   let computedVerdictSummary = currentBatch.verdictSummary;
 
   if (isOverridden) {
-    if (activeGrade.includes('S30408')) {
+    if (currentBatch.batchNo.includes('DB7') && activeGrade.includes('S30408')) {
       computedIsPass = false;
       computedVerdictSummary = '人工切换为 S30408：Cr 实测 17.41% 低于标准下限 (≥18.00%)，触发一票否决';
-    } else if (activeGrade.includes('S31603')) {
+    } else if (currentBatch.batchNo.includes('DB7') && activeGrade.includes('S31603')) {
       computedIsPass = false;
       computedVerdictSummary = '人工切换为 S31603：缺少关键耐点蚀元素 Mo 钼熔炼分析指标 (标准要求 2.00~3.00%)，判定不合格';
     } else {
       computedIsPass = currentBatch.verdict === 'PASS';
-      computedVerdictSummary = `人工切换为 ${activeGrade}：全项指标符合 ${activeStandard} 规范要求`;
+      computedVerdictSummary = currentBatch.verdictSummary || `人工切换为 ${activeGrade}：全项指标符合 ${activeStandard} 规范要求`;
     }
   }
 
   const isPass = computedIsPass;
   const isHitl = currentBatch.verdict === 'MANUAL_REVIEW';
+
+  // 步骤 3 / 步骤 2 HITL 侧边抽屉内部状态
+  const [isHitlDrawerOpen, setIsHitlDrawerOpen] = useState<boolean>(false);
+  const [activeHitlContext, setActiveHitlContext] = useState<HitlInterruptContext | undefined>(undefined);
+  const [isHitlSubmitting, setIsHitlSubmitting] = useState<boolean>(false);
+
+  // 触发打开 HITL 抽屉 (根据当前批次动态适配场景)
+  const handleTriggerHitl = () => {
+    const reason: HitlInterruptContext['reason'] = currentBatch.hitlReason || (
+      currentBatch.grade.includes('Special') || currentBatch.grade.includes('SUS') || currentBatch.grade.includes('未知')
+        ? 'UNKNOWN_GRADE'
+        : 'ALTERNATIVE_CLAUSE'
+    );
+
+    const ctx: HitlInterruptContext = {
+      reason,
+      prompt_message: currentBatch.systemVerdictSummary || currentBatch.verdictSummary || '触发人机协同规则阻断，需人工介入核实',
+      batch_no: currentBatch.batchNo,
+    };
+    setActiveHitlContext(ctx);
+    setIsHitlDrawerOpen(true);
+    onOpenHitlDrawer?.();
+  };
+
+  // 质检员确认并恢复流转（闭环重算当前批次）
+  const handleResolveHitl = async (correction: HumanCorrectionInput) => {
+    setIsHitlSubmitting(true);
+    await new Promise(resolve => setTimeout(resolve, 350));
+
+    setSession(prev => ({
+      ...prev,
+      documents: prev.documents.map(doc => {
+        if (doc.docId === selectedDocId) {
+          return {
+            ...doc,
+            batches: doc.batches.map(b => {
+              if (b.batchNo === selectedBatchNo) {
+                let nextVerdict: 'PASS' | 'FAIL' = 'PASS';
+                let nextSummary = '质检工程师完成协同确认放行';
+                let nextOverrideGrade = b.overrideGrade;
+
+                if (correction.corrected_grade) {
+                  nextOverrideGrade = correction.corrected_grade;
+                  nextVerdict = 'PASS';
+                  nextSummary = `质检员已消歧指定国家标准钢级为 ${correction.corrected_grade}，全项比对合格`;
+                } else if (correction.accepted_alternative_clause !== undefined) {
+                  if (correction.accepted_alternative_clause) {
+                    nextVerdict = 'PASS';
+                    nextSummary = '质检员已确认依据合同采纳涡流探伤替代液压试验，致密性指标判定通过';
+                  } else {
+                    nextVerdict = 'FAIL';
+                    nextSummary = '质检员已核实不予采纳替代，按水压试验缺项一票否决处理';
+                  }
+                } else if (correction.arbitrated_standard_id) {
+                  nextVerdict = 'PASS';
+                  nextSummary = `已指定以 ${correction.arbitrated_standard_id} 作为主仲裁标尺重新计算，判定合规`;
+                } else if (correction.qualitative_verdict) {
+                  nextVerdict = correction.qualitative_verdict;
+                  nextSummary = correction.qualitative_verdict === 'PASS'
+                    ? '质检工程师已复核定性描述条款，确认显微组织符合标准技术要求'
+                    : '质检工程师已复核定性描述条款，判定显微组织存在缺陷，予以否决';
+                }
+
+                return {
+                  ...b,
+                  verdict: nextVerdict,
+                  verdictSummary: nextSummary,
+                  systemVerdict: nextVerdict,
+                  systemVerdictSummary: nextSummary,
+                  overrideGrade: nextOverrideGrade,
+                  humanVerdict: nextVerdict === 'FAIL' ? 'REJECT' : 'PASS',
+                  humanVerdictSummary: correction.waiver_notes || (nextVerdict === 'FAIL' ? '质检工程师核准予以否决' : '质检工程师完成协同确认放行'),
+                  humanVerifiedAt: new Date().toISOString(),
+                };
+              }
+              return b;
+            }),
+          };
+        }
+        return doc;
+      }),
+    }));
+
+    setIsHitlSubmitting(false);
+    setIsHitlDrawerOpen(false);
+  };
 
   // 从 activeStandard 中解析出已选中的标准列表 (严格仅按顿号、逗号、分号切分，绝对不按空格切分，因标准代号内部自带空格如 "GB/T 13296-2023")
   const selectedStandardIds = useMemo(() => {
@@ -817,8 +905,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     isHitl ? (
                       <button
                         type="button"
-                        onClick={onOpenHitlDrawer}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-status-hitl-bg text-status-hitl-text text-xs font-bold border border-purple-300 dark:border-purple-800 shadow-xs hover:opacity-90 transition-all"
+                        onClick={handleTriggerHitl}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-xs font-bold shadow-xs hover:opacity-95 transition-all cursor-pointer ring-2 ring-amber-400/30"
                       >
                         <span className="material-symbols-outlined text-base">emergency_home</span>
                         <span>打开 HITL 人工介入复核抽屉</span>
@@ -1615,8 +1703,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               </div>
 
                               {currentBatch.mechanical.astFormulaNote && (
-                                <div className="p-2.5 rounded-lg bg-status-hitl-bg border border-purple-200 dark:border-purple-900 text-status-hitl-text text-[11px] flex items-center gap-2">
-                                  <span className="material-symbols-outlined text-base">auto_awesome</span>
+                                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-[12px] flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-base text-amber-600 dark:text-amber-400">auto_awesome</span>
                                   <span>{currentBatch.mechanical.astFormulaNote}</span>
                                 </div>
                               )}
@@ -1916,12 +2004,22 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     categoryLabel: '化分',
                     categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
                     name: '镍 Ni (奥氏体相)',
-                    measuredValue: '9.08 wt%',
-                    standardRequirement: '9.00 ~ 12.00 wt%',
-                    deviation: '+0.08 wt% (高于下限)',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '熔炼分析 (区间约束)',
+                    measuredValue: currentBatch.hitlReason === 'UNKNOWN_GRADE' ? '8.45 wt%' : '9.08 wt%',
+                    standardRequirement: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '待消歧牌号以加载标尺 (参考要求 8.00~11.00 wt%)'
+                      : '9.00 ~ 12.00 wt%',
+                    deviation: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '待消歧钢级'
+                      : '+0.08 wt% (高于下限)',
+                    status: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? 'HITL'
+                      : 'PASS',
+                    statusLabel: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '? 待消歧'
+                      : '✓ PASS',
+                    ruleBasis: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '非标牌号别名无法确定性匹配成分标尺，需人工消歧指定'
+                      : '熔炼分析 (区间约束)',
                   },
                   {
                     id: 'chem_Cr',
@@ -2055,13 +2153,23 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     category: 'metallographic',
                     categoryLabel: '金相',
                     categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
-                    name: '晶粒度评级 (Grain Size)',
+                    name: '晶粒度评级与显微组织 (Metallographic)',
                     measuredValue: currentBatch.process.grainSize || '7.0 级',
-                    standardRequirement: '7.0 级或更细 (≥ 7.0 级)',
-                    deviation: '完全符合',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '比较法评级 (GB/T 6394-2017)',
+                    standardRequirement: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '基体组织均匀，不得有对耐蚀性有害的连续网状析出'
+                      : '7.0 级或更细 (≥ 7.0 级)',
+                    deviation: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? 'NLP 判定模糊 (71%)'
+                      : '完全符合',
+                    status: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? 'HITL'
+                      : 'PASS',
+                    statusLabel: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '? 待定性'
+                      : '✓ PASS',
+                    ruleBasis: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '定性描述包含局部微量析出，需质检工程师人工裁定组织形貌'
+                      : '比较法评级 (GB/T 6394-2017)',
                   },
 
                   // 5. 耐腐蚀性能
@@ -2071,12 +2179,24 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     categoryLabel: '腐蚀',
                     categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
                     name: '晶间腐蚀试验 (Intergranular)',
-                    measuredValue: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (硫酸-硫酸铜法弯曲无裂纹)' : '未检出',
-                    standardRequirement: 'GB/T 4334-2020 检验方法 E 弯曲无裂纹',
-                    deviation: '完全符合',
-                    status: currentBatch.process.intergranularCorrosion === 'PASS' ? 'PASS' : 'FAIL',
-                    statusLabel: currentBatch.process.intergranularCorrosion === 'PASS' ? '✓ PASS' : '✗ FAIL',
-                    ruleBasis: '耐腐蚀性能 (GB/T 4334-2020 E法)',
+                    measuredValue: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '供货态E法合格 (未进行能标敏化处理)'
+                      : (currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (硫酸-硫酸铜法弯曲无裂纹)' : '未检出'),
+                    standardRequirement: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? 'GB/T 13296 (供货态E法) vs NB/T 47019.5 (敏化态E法)'
+                      : 'GB/T 4334-2020 检验方法 E 弯曲无裂纹',
+                    deviation: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '标准条款互斥'
+                      : '完全符合',
+                    status: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? 'HITL'
+                      : (currentBatch.process.intergranularCorrosion === 'PASS' ? 'PASS' : 'FAIL'),
+                    statusLabel: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '? 待仲裁'
+                      : (currentBatch.process.intergranularCorrosion === 'PASS' ? '✓ PASS' : '✗ FAIL'),
+                    ruleBasis: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '国标与能标对晶间腐蚀敏化制样要求互斥，需质检员指定主仲裁标尺'
+                      : '耐腐蚀性能 (GB/T 4334-2020 E法)',
                   },
 
                   // 6. 无损检测
@@ -2086,12 +2206,22 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     categoryLabel: '探伤',
                     categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
                     name: '承压/致密性检验 (Pressure Tightness)',
-                    measuredValue: currentBatch.process.ndt || '涡流探伤合格 (GB/T 7735 E3H 级)',
-                    standardRequirement: '逐根液压试验或符合 E3H 级涡流检测',
-                    deviation: '替代组生效',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '致密性替代条款 (GB/T 13296 第 7.5 条)',
+                    measuredValue: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '涡流探伤合格 (未出具水压试验实测值)'
+                      : (currentBatch.process.ndt || '涡流探伤合格 (GB/T 7735 E3H 级)'),
+                    standardRequirement: '逐根液压试验 (经供需协商可在合同约定无损探伤替代)',
+                    deviation: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '待确权合同替代'
+                      : '替代组生效',
+                    status: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? 'HITL'
+                      : 'PASS',
+                    statusLabel: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? '? 待确权'
+                      : '✓ PASS',
+                    ruleBasis: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
+                      ? 'GB/T 13296 第 7.5 条允许协议替代，需质检员核实订货合同授权'
+                      : '致密性替代条款 (GB/T 13296 第 7.5 条)',
                   },
                   {
                     id: 'ndt_ut',
@@ -2253,7 +2383,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 当前执行标准与牌号基准
                               </h4>
                               {isOverridden && (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                <span className="px-2 py-0.5 rounded text-[12px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
                                   人工重置规则
                                 </span>
                               )}
@@ -2514,7 +2644,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                                   )}
                                                 </div>
                                                 {g.description && (
-                                                  <span className={`text-[10px] truncate mt-0.5 ${isSelected ? 'text-white/80' : 'text-on-surface-variant dark:text-outline-variant'
+                                                  <span className={`text-[12px] truncate mt-0.5 ${isSelected ? 'text-white/80' : 'text-on-surface-variant dark:text-outline-variant'
                                                     }`}>
                                                     {g.description}
                                                   </span>
@@ -2529,7 +2659,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                           );
                                         })}
                                     </div>
-                                    <div className="text-[10px] text-on-surface-variant dark:text-outline-variant px-1 border-t border-outline-variant/30 pt-1.5 flex items-center justify-between">
+                                    <div className="text-[12px] text-on-surface-variant dark:text-outline-variant px-1 border-t border-outline-variant/30 pt-1.5 flex items-center justify-between">
                                       <span>动态基于已选标准提取牌号并集</span>
                                       <span>候选 {availableGradesForSelectedStandards.length} 项</span>
                                     </div>
@@ -2545,38 +2675,38 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark shadow-xs flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden items-stretch">
 
                           {/* 1. 左侧约 55% (md:col-span-7)：系统客观判定 */}
-                          <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1 ${!computedIsPass
-                            ? 'bg-status-fail-bg text-status-fail-text'
-                            : isHitl
-                              ? 'bg-status-hitl-bg text-status-hitl-text'
+                          <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1 ${isHitl
+                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
+                            : !computedIsPass
+                              ? 'bg-status-fail-bg text-status-fail-text'
                               : 'bg-status-pass-bg text-status-pass-text'
                             }`}>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="material-symbols-outlined text-xl font-bold shrink-0">
-                                {!computedIsPass ? 'cancel' : isHitl ? 'pending_actions' : 'check_circle'}
+                              <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${isHitl ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                                {isHitl ? 'pending_actions' : !computedIsPass ? 'cancel' : 'check_circle'}
                               </span>
                               <h3 className="text-sm sm:text-base font-bold font-headline whitespace-nowrap">
-                                {!computedIsPass
-                                  ? '系统判定: FAIL 一票否决'
-                                  : isHitl
-                                    ? '系统判定: HITL 待质检员裁决'
+                                {isHitl
+                                  ? 'HITL 系统判定:待人工介入'
+                                  : !computedIsPass
+                                    ? '系统判定: FAIL 一票否决'
                                     : '系统判定: PASS 全项合规'}
                               </h3>
                             </div>
-                            <p className="text-[11px] opacity-90 font-sans pl-7 line-clamp-2 leading-relaxed" title={computedVerdictSummary}>
+                            <p className="text-[12px] opacity-90 font-sans pl-7 line-clamp-2 leading-relaxed" title={computedVerdictSummary}>
                               {computedVerdictSummary}
                             </p>
                           </div>
 
                           {/* 2. 右侧约 45% (md:col-span-5)：人工复核判定 (独立分栏背景色，按钮占满横幅高度) */}
-                          <div className={`md:col-span-5 min-w-0 p-2.5 md:border-l md:border-current/20 flex items-center justify-between gap-3 ${currentBatch.humanVerdict === 'REJECT'
-                            ? 'bg-status-fail-bg text-status-fail-text'
-                            : currentBatch.humanVerdict === 'PASS'
-                              ? 'bg-status-pass-bg text-status-pass-text'
-                              : !computedIsPass
-                                ? 'bg-status-fail-bg text-status-fail-text'
-                                : isHitl
-                                  ? 'bg-status-hitl-bg text-status-hitl-text'
+                          <div className={`md:col-span-5 min-w-0 p-2.5 md:border-l md:border-current/20 flex items-center justify-between gap-3 ${isHitl
+                            ? 'bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200'
+                            : currentBatch.humanVerdict === 'REJECT'
+                              ? 'bg-status-fail-bg text-status-fail-text'
+                              : currentBatch.humanVerdict === 'PASS'
+                                ? 'bg-status-pass-bg text-status-pass-text'
+                                : !computedIsPass
+                                  ? 'bg-status-fail-bg text-status-fail-text'
                                   : 'bg-status-pass-bg text-status-pass-text'
                             }`}>
                             {/* 左侧上下排布：上方人工复核标头，下方状态标签 */}
@@ -2586,7 +2716,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 <span>人工复核:</span>
                               </div>
                               <div>
-                                {currentBatch.humanVerdict === 'PASS' ? (
+                                {isHitl ? (
+                                  <span className="px-2 py-1 rounded text-[12px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs whitespace-nowrap">
+                                    待介入
+                                  </span>
+                                ) : currentBatch.humanVerdict === 'PASS' ? (
                                   <span className="px-2 py-1 rounded text-[12px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/90 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shadow-2xs whitespace-nowrap">
                                     ✓ APPROVE
                                   </span>
@@ -2602,39 +2736,43 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               </div>
                             </div>
 
-                            {/* 右侧：高度占满 (self-stretch) 的操作按钮组 */}
+                            {/* 右侧：操作按钮组 (HITL 状态下先只提供高饱和琥珀黄处理按钮，流转后再显示拒收与审批) */}
                             <div className="flex items-stretch gap-2 self-stretch py-0.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'REJECT' ? null : 'REJECT')}
-                                title={currentBatch.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
-                                className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
-                                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs ring-2 ring-red-400/50'
-                                  : 'border border-current bg-surface-container-lowest/80 dark:bg-surface-dark/80 hover:bg-red-500/10'
-                                  }`}
-                              >
-                                <span>拒收</span>
-                              </button>
-                              {isHitl && (
+                              {isHitl ? (
                                 <button
                                   type="button"
-                                  onClick={onOpenHitlDrawer}
-                                  className="px-3 rounded-lg border border-purple-400 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-bold transition-opacity hover:opacity-80 cursor-pointer shadow-2xs flex items-center justify-center whitespace-nowrap"
+                                  onClick={handleTriggerHitl}
+                                  className="px-6 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md border border-amber-600/40 flex items-center justify-center gap-1.5 transition-all cursor-pointer ring-2 ring-amber-400/30 whitespace-nowrap self-stretch"
                                 >
-                                  处理
+                                  <span className="material-symbols-outlined text-base">emergency_home</span>
+                                  <span>处理</span>
                                 </button>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'REJECT' ? null : 'REJECT')}
+                                    title={currentBatch.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
+                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
+                                      ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs ring-2 ring-red-400/50'
+                                      : 'border border-current bg-surface-container-lowest/80 dark:bg-surface-dark/80 hover:bg-red-500/10'
+                                      }`}
+                                  >
+                                    <span>拒收</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'PASS' ? null : 'PASS')}
+                                    title={currentBatch.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
+                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
+                                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-400/50'
+                                      : 'bg-primary hover:bg-primary-container text-on-primary shadow-xs'
+                                      }`}
+                                  >
+                                    <span>审批通过</span>
+                                  </button>
+                                </>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'PASS' ? null : 'PASS')}
-                                title={currentBatch.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
-                                className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
-                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-400/50'
-                                  : 'bg-primary hover:bg-primary-container text-on-primary shadow-xs'
-                                  }`}
-                              >
-                                <span>审批通过</span>
-                              </button>
                             </div>
                           </div>
                         </div>
@@ -2706,7 +2844,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40 transition-colors"
                               >
                                 <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
+                                  <span className={`px-2 py-0.5 rounded text-[12px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
                                     {row.categoryLabel}
                                   </span>
                                 </td>
@@ -2723,12 +2861,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   {row.deviation}
                                 </td>
                                 <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold inline-block ${row.status === 'PASS'
+                                  <span className={`px-2.5 py-0.5 rounded text-[12px] font-bold inline-block ${row.status === 'PASS'
                                     ? 'bg-status-pass-bg text-status-pass-text'
                                     : row.status === 'FAIL'
                                       ? 'bg-status-fail-bg text-status-fail-text font-black'
                                       : row.status === 'HITL'
-                                        ? 'bg-status-hitl-bg text-status-hitl-text'
+                                        ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs'
                                         : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                                     }`}>
                                     {row.statusLabel}
@@ -3079,6 +3217,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           </div>
         </div>
       </footer>
+
+      {/* 步骤 3 / 步骤 2 人机协同 (HITL) 侧边抽屉 (520px 方案 A) */}
+      <HitlDrawer
+        isOpen={isHitlDrawerOpen}
+        onClose={() => setIsHitlDrawerOpen(false)}
+        hitlContext={activeHitlContext}
+        taskId={`TK-${currentBatch.batchNo}`}
+        onSubmitResume={handleResolveHitl}
+        isSubmitting={isHitlSubmitting}
+      />
     </div>
   );
 };

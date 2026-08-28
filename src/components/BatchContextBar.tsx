@@ -108,12 +108,10 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
   // 状态显示标签：Step2 模式使用 SUCCESS/FAIL，Step3/4 模式使用 PASS/FAIL
   const getVerdictBadgeText = (verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW') => {
     if (mode === 'extraction') {
-      return verdict === 'PASS' ? 'SUCCESS ✓' : verdict === 'FAIL' ? 'FAIL ✗' : 'HITL ?';
+      return verdict === 'PASS' ? 'SUCCESS ✓' : verdict === 'FAIL' ? 'FAIL ✗' : 'HITL';
     }
-    return verdict === 'PASS' ? 'PASS ✓' : verdict === 'FAIL' ? 'FAIL ✗' : 'HITL ?';
+    return verdict === 'PASS' ? 'PASS ✓' : verdict === 'FAIL' ? 'FAIL ✗' : 'HITL';
   };
-
-  const isSuccessOrPass = currentBatch.verdict === 'PASS';
 
   return (
     <div className="w-full space-y-2.5 select-none relative z-30">
@@ -152,13 +150,13 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
           {/* 会话 ID 简写胶囊 (hover 显示完整 ID) */}
           <div
             title={`完整会话 ID: ${session.sessionId}`}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/60 dark:border-border-dark text-on-surface dark:text-surface-bright rounded-xl font-mono text-xs shadow-2xs cursor-help shrink-0"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/60 dark:border-border-dark text-on-surface dark:text-surface-bright rounded-xl  text-xs shadow-2xs cursor-help shrink-0"
           >
             <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">folder_managed</span>
             <span className="font-bold">#{shortSessionId}</span>
           </div>
 
-          <span className="text-outline-variant dark:text-border-dark font-mono">/</span>
+          <span className="text-outline-variant dark:text-border-dark ">/</span>
 
           {/* 第 1 层：文档下拉选择器 */}
           <div className="relative">
@@ -168,12 +166,12 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                 setDocDropdownOpen(!docDropdownOpen);
                 setBatchDropdownOpen(false);
               }}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low hover:border-primary dark:hover:border-primary-fixed-dim text-on-surface dark:text-surface-bright font-mono transition-colors shadow-2xs"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low hover:border-primary dark:hover:border-primary-fixed-dim text-on-surface dark:text-surface-bright transition-colors shadow-2xs"
             >
               <span className="material-symbols-outlined text-base text-red-500 fill-1 shrink-0">picture_as_pdf</span>
               <span className="font-bold max-w-[130px] md:max-w-[170px] xl:max-w-[210px] truncate">{currentDoc.filename}</span>
               <span className="text-[11px] text-on-surface-variant font-normal shrink-0">
-                ({currentDoc.batches.length} 批次)
+                ({currentDoc.batches.length} 炉批)
               </span>
               <span className="material-symbols-outlined text-sm text-on-surface-variant shrink-0">arrow_drop_down</span>
             </button>
@@ -204,9 +202,9 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                     >
                       <div className="flex items-center gap-2 truncate">
                         <span className="material-symbols-outlined text-sm text-red-500 fill-1">picture_as_pdf</span>
-                        <span className="truncate font-mono">{doc.filename}</span>
+                        <span className="truncate">{doc.filename}</span>
                       </div>
-                      <span className="text-[10px] text-on-surface-variant font-mono shrink-0 ml-2">
+                      <span className="text-[12px] text-on-surface-variant shrink-0 ml-2">
                         {doc.batches.length} 炉批
                       </span>
                     </div>
@@ -216,7 +214,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
             )}
           </div>
 
-          <span className="text-outline-variant dark:text-border-dark font-mono">/</span>
+          <span className="text-outline-variant dark:text-border-dark ">/</span>
 
           {/* 第 2 层：被选中的批次号 (显著视觉焦点 + 状态标签) */}
           <div className="relative">
@@ -227,15 +225,17 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                 setDocDropdownOpen(false);
               }}
               title="点击切换当前文档包含的炉批号"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-primary dark:border-primary-fixed-dim bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim font-mono font-bold shadow-xs hover:bg-primary/15 transition-all text-xs sm:text-sm ring-2 ring-primary/25 cursor-pointer shrink-0"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-primary dark:border-primary-fixed-dim bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim  font-bold shadow-xs hover:bg-primary/15 transition-all text-xs sm:text-sm ring-2 ring-primary/25 cursor-pointer shrink-0"
             >
               <span className="material-symbols-outlined text-base">label</span>
               <span className="tracking-wide">{currentBatch.batchNo}</span>
 
               {/* 状态徽章 (Step 2 场景显示 SUCCESS/FAIL) */}
-              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ${isSuccessOrPass
+              <span className={`px-2 py-0.5 rounded text-[12px] font-bold shrink-0 ${currentBatch.verdict === 'PASS'
                 ? 'bg-status-pass-bg text-status-pass-text border border-emerald-300 dark:border-emerald-800'
-                : 'bg-status-fail-bg text-status-fail-text border border-red-300 dark:border-red-800'
+                : currentBatch.verdict === 'FAIL'
+                  ? 'bg-status-fail-bg text-status-fail-text border border-red-300 dark:border-red-800'
+                  : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
                 }`}>
                 {getVerdictBadgeText(currentBatch.verdict)}
               </span>
@@ -264,19 +264,19 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <strong className="font-mono">{b.batchNo}</strong>
+                          <strong className="">{b.batchNo}</strong>
                           <span className="text-[11px] text-on-surface-variant truncate">({b.grade})</span>
                         </div>
-                        <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block truncate">
+                        <span className="text-[12px] text-on-surface-variant dark:text-outline-variant block truncate">
                           {b.dimensions}
                         </span>
                       </div>
 
-                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ml-2 ${b.verdict === 'PASS'
+                      <span className={`px-2 py-0.5 rounded text-[12px] font-bold shrink-0 ml-2 ${b.verdict === 'PASS'
                         ? 'bg-status-pass-bg text-status-pass-text'
                         : b.verdict === 'FAIL'
                           ? 'bg-status-fail-bg text-status-fail-text'
-                          : 'bg-status-hitl-bg text-status-hitl-text'
+                          : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
                         }`}>
                         {getVerdictBadgeText(b.verdict)}
                       </span>
@@ -295,14 +295,19 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
           <div className="flex items-center gap-1.5 text-[14px] text-on-surface-variant dark:text-outline-variant shrink-0">
             <span className="hidden md:inline">总进度:</span>
             <span className="font-bold text-on-surface dark:text-surface-bright">
-              {currentFlatIndex + 1} / {allFlattenedBatches.length} 批次
+              {currentFlatIndex + 1} / {allFlattenedBatches.length} 炉批
             </span>
-            <span className="px-1.5 py-1 bg-status-pass-bg text-status-pass-text rounded font-bold text-[14px]">
-              {session.passedBatches} {mode === 'extraction' ? 'SUCCESS' : 'PASS'}
+            <span className="px-2 py-0.5 bg-status-pass-bg text-status-pass-text rounded font-bold text-[13px] sm:text-[14px]">
+              {allFlattenedBatches.filter(item => item.batch.verdict === 'PASS').length} {mode === 'extraction' ? 'SUCCESS' : 'PASS'}
             </span>
-            {session.failedBatches > 0 && (
-              <span className="px-1.5 py-1 bg-status-fail-bg text-status-fail-text rounded font-bold text-[14px]">
-                {session.failedBatches} FAIL
+            {allFlattenedBatches.filter(item => item.batch.verdict === 'FAIL').length > 0 && (
+              <span className="px-2 py-0.5 bg-status-fail-bg text-status-fail-text rounded font-bold text-[13px] sm:text-[14px]">
+                {allFlattenedBatches.filter(item => item.batch.verdict === 'FAIL').length} FAIL
+              </span>
+            )}
+            {allFlattenedBatches.filter(item => item.batch.verdict === 'MANUAL_REVIEW').length > 0 && (
+              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded font-bold text-[13px] sm:text-[14px]">
+                {allFlattenedBatches.filter(item => item.batch.verdict === 'MANUAL_REVIEW').length} HITL
               </span>
             )}
           </div>

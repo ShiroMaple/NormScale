@@ -175,7 +175,7 @@ export default function DashboardPage() {
             onSelectSample={id => handleExecuteAudit(id)}
             isAuditing={isAuditing}
             currentReport={currentReport}
-            onOpenHitlDrawer={() => setIsHitlOpen(true)}
+            onOpenHitlDrawer={() => {}}
             onTriggerAudit={() => handleExecuteAudit(selectedSampleId)}
             loadedSession={loadedSession}
           />

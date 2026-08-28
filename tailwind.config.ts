@@ -79,8 +79,8 @@ const config: Config = {
         'status-fail-text': '#B91C1C',
         'status-missing-bg': '#FFFBEB',
         'status-missing-text': '#B45309',
-        'status-hitl-bg': '#F5F3FF',
-        'status-hitl-text': '#6D28D9',
+        'status-hitl-bg': '#FEF3C7',
+        'status-hitl-text': '#92400E',
       },
       borderRadius: {
         DEFAULT: '0.125rem',

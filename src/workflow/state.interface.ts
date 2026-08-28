@@ -26,25 +26,82 @@ export interface SemanticReviewItem {
   explanation: string;
 }
 
+/** 候选推荐标准钢级选项 */
+export interface CandidateGradeOption {
+  id: string;
+  code: string;
+  match: string;
+  standard: string;
+  recommended?: boolean;
+}
+
+/** 替代条款详情上下文 */
+export interface AlternativeClauseDetails {
+  standard_id: string;
+  clause_no: string;
+  clause_title: string;
+  missing_test: string;
+  alternative_test: string;
+  raw_evidence: string;
+}
+
+/** 多标准互斥冲突详情上下文 */
+export interface MultiStandardConflictDetails {
+  item_name: string;
+  standard_a: { id: string; req: string };
+  standard_b: { id: string; req: string };
+}
+
+/** 定性文字条款语义争议详情上下文 */
+export interface QualitativeAmbiguityDetails {
+  item_name: string;
+  raw_text: string;
+  standard_req: string;
+  model_confidence: string;
+}
+
 /** 人机协同 (HITL) 中断挂起上下文 */
 export interface HitlInterruptContext {
-  /** 挂起触发原因 (如 'UNKNOWN_GRADE' / 'LOW_CONFIDENCE' / 'CRITICAL_DEFECT_WAIVER') */
-  reason: 'UNKNOWN_GRADE' | 'LOW_CONFIDENCE' | 'CRITICAL_DEFECT_WAIVER' | 'MANUAL_REQUEST';
+  /** 挂起触发原因 */
+  reason:
+    | 'UNKNOWN_GRADE'
+    | 'ALTERNATIVE_CLAUSE'
+    | 'MULTI_STANDARD_CONFLICT'
+    | 'QUALITATIVE_AMBIGUITY'
+    | 'LOW_CONFIDENCE'
+    | 'CRITICAL_DEFECT_WAIVER'
+    | 'MANUAL_REQUEST';
   /** 面向质检工程师的自然语言挂起提示与指导 */
   prompt_message: string;
   /** 待人工复核确认的字段键名列表 */
   pending_fields?: string[];
   /** 系统推断的候选建议值 */
   suggestions?: Record<string, unknown>;
+  /** 关联炉批号 */
+  batch_no?: string;
+  /** 候选钢级列表 (针对 UNKNOWN_GRADE 场景) */
+  candidate_grades?: CandidateGradeOption[];
+  /** 替代条款详情 (针对 ALTERNATIVE_CLAUSE 场景) */
+  alternative_details?: AlternativeClauseDetails;
+  /** 多标准冲突详情 (针对 MULTI_STANDARD_CONFLICT 场景) */
+  conflict_details?: MultiStandardConflictDetails;
+  /** 定性语义争议详情 (针对 QUALITATIVE_AMBIGUITY 场景) */
+  qualitative_details?: QualitativeAmbiguityDetails;
 }
 
 /** 人工修正与恢复提交数据 */
 export interface HumanCorrectionInput {
-  /** 质检员确认/修正后的标准材料牌号 (如 '06Cr19Ni10') */
+  /** 质检员确认/修正后的标准材料牌号 (如 'S30408') */
   corrected_grade?: string;
   /** 质检员修正后的实测数据项覆盖映射 (property_key -> value) */
   corrected_test_records?: Record<string, unknown>;
-  /** 质检员特批放行说明 (Waiver justification) */
+  /** 是否认可替代条款 (针对 ALTERNATIVE_CLAUSE 场景) */
+  accepted_alternative_clause?: boolean;
+  /** 仲裁选定的主裁决标准代号 (针对 MULTI_STANDARD_CONFLICT 场景) */
+  arbitrated_standard_id?: string;
+  /** 定性条款裁决结果 (针对 QUALITATIVE_AMBIGUITY 场景) */
+  qualitative_verdict?: 'PASS' | 'FAIL';
+  /** 质检员处理/裁决说明 (Justification notes) */
   waiver_notes?: string;
   /** 审核质检员姓名/工号 */
   inspector_id?: string;
