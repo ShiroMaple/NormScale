@@ -1,0 +1,336 @@
+{
+  "spec_key": "S32168",
+  "spec_type": "grade",
+  "display_name": "06Cr18Ni11Ti (S32168)",
+  "primary_grade": "06Cr18Ni11Ti",
+  "unified_code": "S32168",
+  "standard_code": "NB/T 47019.5-2021",
+  "structure_type": "austenitic",
+  "aliases": [
+    "SUS321",
+    "TP321",
+    "0Cr18Ni10Ti"
+  ],
+  "description": "NB/T 47019.5-2021 序号15 06Cr18Ni11Ti (S32168) 锅炉、热交换器用管订货技术条件规则切片",
+  "evaluation_rules": [
+    {
+      "rule_id": "CHEM_NB_S32168_C",
+      "category": "chemical",
+      "property_key": "C",
+      "display_name": "碳含量 (C)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 C 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 0.08,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "CHEM_NB_S32168_Si",
+      "category": "chemical",
+      "property_key": "Si",
+      "display_name": "硅含量 (Si)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 Si 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 1,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_NB_S32168_Mn",
+      "category": "chemical",
+      "property_key": "Mn",
+      "display_name": "锰含量 (Mn)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 Mn 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 2,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_NB_S32168_P",
+      "category": "chemical",
+      "property_key": "P",
+      "display_name": "磷含量 (P)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 P 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 0.035,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "CHEM_NB_S32168_S",
+      "category": "chemical",
+      "property_key": "S",
+      "display_name": "硫含量 (S)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 S 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 0.015,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "CHEM_NB_S32168_Ni",
+      "category": "chemical",
+      "property_key": "Ni",
+      "display_name": "镍含量 (Ni)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 Ni 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 9,
+        "max": 12,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_NB_S32168_Cr",
+      "category": "chemical",
+      "property_key": "Cr",
+      "display_name": "铬含量 (Cr)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 Cr 含量指标",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 17,
+        "max": 19,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_NB_S32168_Ti",
+      "category": "chemical",
+      "property_key": "Ti",
+      "display_name": "钛含量 (Ti)",
+      "description": "依据 NB/T 47019.5-2021 表1，06Cr18Ni11Ti 熔炼分析 Ti 稳定化公式指标",
+      "rule_type": "dynamic_expression",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "formula_min": "5 * (ctx.chemical.C + ctx.chemical.N)",
+        "formula_max": null,
+        "min": null,
+        "max": 0.7,
+        "unit": "%",
+        "rounding_decimals": 2,
+        "note": "Ti: 5(C+N) ~ 0.70%"
+      }
+    },
+    {
+      "rule_id": "MECH_NB_S32168_RM",
+      "category": "mechanical",
+      "property_key": "tensile_rm",
+      "display_name": "抗拉强度 (Rm)",
+      "description": "依据 NB/T 47019.5-2021 表2，06Cr18Ni11Ti 室温抗拉强度下限",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 520,
+        "max": null,
+        "unit": "MPa",
+        "rounding_decimals": 0
+      }
+    },
+    {
+      "rule_id": "MECH_NB_S32168_RP02",
+      "category": "mechanical",
+      "property_key": "yield_rp02",
+      "display_name": "屈服强度 (Rp0.2)",
+      "description": "依据 NB/T 47019.5-2021 表2，06Cr18Ni11Ti 室温规定塑性延伸强度下限",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 205,
+        "max": null,
+        "unit": "MPa",
+        "rounding_decimals": 0
+      }
+    },
+    {
+      "rule_id": "MECH_NB_S32168_A",
+      "category": "mechanical",
+      "property_key": "elongation_a",
+      "display_name": "断后伸长率 (A)",
+      "description": "依据 NB/T 47019.5-2021 表2，06Cr18Ni11Ti 规定断后伸长率 A >= 40%（较通用国标 GB/T 13296 的 35% 提高 5% 塑性变形储备）",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 40,
+        "max": null,
+        "unit": "%",
+        "rounding_decimals": 1
+      }
+    },
+    {
+      "rule_id": "MECH_NB_S32168_HARDNESS",
+      "category": "mechanical",
+      "property_key": "hardness",
+      "display_name": "硬度试验 (Hardness)",
+      "description": "依据 NB/T 47019.5-2021 第6.4.2条及表4，壁厚 >= 1.7mm 的管子考核硬度（HBW/HRB/HV 三选一）",
+      "rule_type": "or_choice_group",
+      "requirement_level": "CONDITIONAL",
+      "trigger_condition": "ctx.header.dimensions.wall_thickness_mm >= 1.7",
+      "criteria": {
+        "options": [
+          {
+            "sub_key": "HV",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "min": null,
+              "max": 200,
+              "unit": "HV"
+            }
+          },
+          {
+            "sub_key": "HRB",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "min": null,
+              "max": 90,
+              "unit": "HRB"
+            }
+          },
+          {
+            "sub_key": "HBW",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "min": null,
+              "max": 187,
+              "unit": "HBW"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "PROC_NB_S32168_FLATTENING",
+      "category": "process",
+      "property_key": "flattening",
+      "display_name": "压扁试验 (Flattening)",
+      "description": "依据 NB/T 47019.5-2021 第6.5.1条，壁厚 <= 10mm 钢管按 NB/T 47019.1 压扁公式计算间距 H 并要求无裂纹",
+      "rule_type": "dynamic_formula_pass",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "formula_distance_H": "(1 + 0.09) * S / (0.09 + S / D)",
+        "expected_visual_result": "NO_CRACKS",
+        "test_standard": "GB/T 246"
+      }
+    },
+    {
+      "rule_id": "PROC_NB_S32168_FLARING",
+      "category": "process",
+      "property_key": "flaring",
+      "display_name": "扩口试验 (Flaring)",
+      "description": "依据 NB/T 47019.5-2021 第6.5.2条，壁厚 <= 10mm 无缝管顶心锥度 60°，扩口率 >= 18% 无裂口",
+      "rule_type": "qualitative_and_numeric",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "cone_angle_deg": 60,
+        "flaring_rate_min_percent": 18,
+        "expected_visual_result": "NO_CRACKS",
+        "test_standard": "GB/T 242"
+      }
+    },
+    {
+      "rule_id": "METALLO_NB_S32168_GRAIN",
+      "category": "metallographic",
+      "property_key": "grain_size",
+      "display_name": "晶粒度评级 (Grain Size)",
+      "description": "依据 NB/T 47019.5-2021 第6.9条及表5，平均晶粒度按 GB/T 6394 测定",
+      "rule_type": "qualitative_enum",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min_level": "7",
+        "test_standard": "GB/T 6394"
+      }
+    },
+    {
+      "rule_id": "CORROSION_NB_S32168_INTERGRANULAR",
+      "category": "corrosion",
+      "property_key": "intergranular_corrosion",
+      "display_name": "晶间腐蚀试验 (Intergranular Corrosion)",
+      "description": "依据 NB/T 47019.5-2021 第6.8条及表5，管子应逐批按 GB/T 4334-2020 方法 E 进行晶间腐蚀试验且无晶间腐蚀倾向（强制性必检项）",
+      "rule_type": "qualitative_enum",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "method": "Method_E",
+        "test_standard": "GB/T 4334-2020",
+        "expected": "NO_CORROSION_TREND"
+      }
+    },
+    {
+      "rule_id": "NDT_NB_S32168_ULTRASONIC",
+      "category": "ndt",
+      "property_key": "ultrasonic_test",
+      "display_name": "超声检测 (Ultrasonic Testing)",
+      "description": "依据 NB/T 47019.5-2021 第6.10.1.1条，无缝管应逐根按 GB/T 5777-2019 进行超声波探伤，纵向刻槽深度验收等级按 U2 级执行",
+      "rule_type": "qualitative_enum",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "required_level": "U2",
+        "test_standard": "GB/T 5777-2019"
+      }
+    },
+    {
+      "rule_id": "NDT_NB_S32168_TIGHTNESS_GROUP",
+      "category": "ndt",
+      "property_key": "pressure_tightness",
+      "display_name": "致密性/水压试验组 (Pressure Tightness)",
+      "description": "依据 NB/T 47019.5-2021 第6.6条，管子应逐根进行水压试验（最大 20MPa 稳压10s）；或协商以高等级涡流替代（外径<=25mm通孔0.8mm，外径>25mm达E2H级）",
+      "rule_type": "alternative_group",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "group_logic": "AT_LEAST_ONE_PASS",
+        "candidates": [
+          {
+            "candidate_key": "hydraulic_test",
+            "display_name": "逐根液压试验",
+            "test_standard": "GB/T 241",
+            "max_pressure_cap": 20,
+            "min_holding_time_s": 10,
+            "criteria_description": "试验压力按公式计算，最大试验压力不超过 20MPa，稳压时间不少于 10s 无渗漏"
+          },
+          {
+            "candidate_key": "eddy_current_test",
+            "display_name": "高等级涡流探伤替代",
+            "test_standard": "GB/T 7735-2016",
+            "required_level": "E2H",
+            "criteria_description": "外径<=25mm对比样管人工缺陷通孔0.8mm；外径>25mm符合 GB/T 7735-2016 E2H 级"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "SURFACE_NB_S32168_QUALITY",
+      "category": "surface",
+      "property_key": "surface_quality",
+      "display_name": "表面质量与粗糙度",
+      "description": "依据 NB/T 47019.5-2021 第6.11及6.12条，内外表面光洁平整，无裂缝、折叠与重皮，粗糙度 Ra 符合通则规定",
+      "rule_type": "qualitative_pass",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "expected": "CLEAN_PASS"
+      }
+    }
+  ]
+}

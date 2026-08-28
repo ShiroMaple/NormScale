@@ -1,0 +1,54 @@
+{
+  "standard_id": "NB/T 47019.5-2021",
+  "standard_name": "锅炉、热交换器用管订货技术条件 第5部分：不锈钢",
+  "version": "2021",
+  "description": "本文件规定了锅炉、热交换器用不锈钢无缝和焊接管的一般要求，尺寸、外形、重量及允许偏差，技术要求，检验及试验方法，检验规则，运输包装、标志和质量证明书等订货技术要求。",
+  "status": "CURRENT",
+  "material_category": "ferrous_pipe",
+  "applies_to_forms": [
+    "tube_seamless",
+    "tube_welded"
+  ],
+  "tolerance_tables": [
+    {
+      "table_id": "NB_T_47019_1_TABLE_2",
+      "table_name": "NB/T 47019.1 表2 冷拔(轧)无缝管公称外径允许偏差",
+      "rules": [
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_max": 25,
+          "plus_tolerance_value": 0.1,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.1,
+          "minus_tolerance_is_percent": false,
+          "note": "外径 <= 25mm: +-0.10mm (Ⅰ级)"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 25,
+          "range_max": 38,
+          "plus_tolerance_value": 0.15,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.15,
+          "minus_tolerance_is_percent": false,
+          "note": "外径 25~38mm: +-0.15mm (Ⅰ级)"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_max": 10,
+          "plus_tolerance_value": 20,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": 0,
+          "minus_tolerance_is_percent": false,
+          "note": "最小壁厚交货: +20%S, -0"
+        }
+      ]
+    }
+  ]
+}
