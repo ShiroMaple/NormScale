@@ -54,7 +54,6 @@ export const Header: React.FC<HeaderProps> = ({
               textAnchor="middle"
               fontFamily="STKaiti, KaiTi, serif"
             >
-              准
             </text>
           </svg>
 

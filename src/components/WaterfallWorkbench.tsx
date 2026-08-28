@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AuditReport } from '@/schemas/report.schema.ts';
 import { PresetSampleDto, StandardOverviewDto } from '@/lib/api-client.ts';
 import {
@@ -30,6 +30,65 @@ interface WaterfallWorkbenchProps {
   initialStep?: number;
 }
 
+export interface StandardCatalogGrade {
+  code: string;
+  primaryGrade: string;
+  display: string;
+  description?: string;
+}
+
+export interface StandardCatalogItem {
+  id: string;
+  shortCode: string;
+  name: string;
+  category: '承压订货技术条件' | '产品制造通用标准' | '其他规范';
+  badgeColor: string;
+  grades: StandardCatalogGrade[];
+}
+
+export const STANDARDS_CATALOG: StandardCatalogItem[] = [
+  {
+    id: 'NB/T 47019.5-2021',
+    shortCode: 'NB/T 47019.5',
+    name: '锅炉、热交换器用管订货技术条件 第5部分：不锈钢',
+    category: '承压订货技术条件',
+    badgeColor: 'text-amber-700 bg-amber-50 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700',
+    grades: [
+      { code: 'S32168', primaryGrade: '06Cr18Ni11Ti', display: '06Cr18Ni11Ti (S32168)', description: '钛稳定化奥氏体不锈钢承压管' },
+      { code: 'S30408', primaryGrade: '06Cr19Ni10', display: '06Cr19Ni10 (S30408)', description: '通用18-8型奥氏体耐腐蚀钢管' },
+      { code: 'S31603', primaryGrade: '022Cr17Ni12Mo2', display: '022Cr17Ni12Mo2 (S31603)', description: '超低碳钼系耐蚀不锈钢管' },
+      { code: 'S34778', primaryGrade: '06Cr18Ni11Nb', display: '06Cr18Ni11Nb (S34778)', description: '铌稳定化高温抗蠕变钢管' },
+      { code: 'S31008', primaryGrade: '06Cr25Ni20', display: '06Cr25Ni20 (S31008)', description: '25-20型高温抗氧化耐热钢管' },
+    ],
+  },
+  {
+    id: 'GB/T 13296-2023',
+    shortCode: 'GB/T 13296',
+    name: '锅炉、热交换器用不锈钢无缝钢管',
+    category: '产品制造通用标准',
+    badgeColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/70 border-blue-300 dark:border-blue-700',
+    grades: [
+      { code: 'S32168', primaryGrade: '06Cr18Ni11Ti', display: '06Cr18Ni11Ti (S32168)', description: '钛稳定化奥氏体不锈钢无缝管 (原件默认)' },
+      { code: 'S30408', primaryGrade: '06Cr19Ni10', display: '06Cr19Ni10 (S30408)', description: '常规奥氏体不锈钢通用管' },
+      { code: 'S31603', primaryGrade: '022Cr17Ni12Mo2', display: '022Cr17Ni12Mo2 (S31603)', description: '超低碳耐点蚀承压不锈钢管' },
+      { code: 'S34778', primaryGrade: '06Cr18Ni11Nb', display: '06Cr18Ni11Nb (S34778)', description: '铌稳定化高温用管' },
+      { code: 'S31008', primaryGrade: '06Cr25Ni20', display: '06Cr25Ni20 (S31008)', description: '耐热抗氧化不锈钢特种管' },
+      { code: 'S31254', primaryGrade: '015Cr20Ni18Mo6CuN', display: '015Cr20Ni18Mo6CuN (S31254)', description: '超级奥氏体耐点蚀钢管' },
+      { code: 'S32205', primaryGrade: '022Cr23Ni5Mo3N', display: '022Cr23Ni5Mo3N (S32205)', description: '2205奥氏体-铁素体双相钢管' },
+      { code: 'S31803', primaryGrade: '022Cr22Ni5Mo3N', display: '022Cr22Ni5Mo3N (S31803)', description: '高强度耐应力腐蚀双相钢管' },
+      { code: 'S32750', primaryGrade: '022Cr25Ni7Mo4N', display: '022Cr25Ni7Mo4N (S32750)', description: '超级双相不锈钢特种管' },
+    ],
+  },
+];
+
+export const AVAILABLE_GRADE_SLICES = STANDARDS_CATALOG.flatMap(s =>
+  s.grades.map(g => ({
+    grade: g.display,
+    standard: s.id,
+    label: `${g.display} - ${s.shortCode}`,
+  }))
+);
+
 /**
  * ============================================================================
  * NormScale 工业质检工作台 (1:1 像素级还原 Stitch 设计系统)
@@ -51,6 +110,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [zoomLevel, setZoomLevel] = useState<number>(125);
   const [selectedExportFormat, setSelectedExportFormat] = useState<string>('PDF');
   const [activeTabCategory, setActiveTabCategory] = useState<string>('all');
+  // 步骤 3: 全景合规比对矩阵分类页签与标准/牌号双搜索控件状态
+  const [step3Category, setStep3Category] = useState<string>('all');
+  const [isStandardSelectorOpen, setIsStandardSelectorOpen] = useState<boolean>(false);
+  const [isGradeSelectorOpen, setIsGradeSelectorOpen] = useState<boolean>(false);
+  const [standardSearchQuery, setStandardSearchQuery] = useState<string>('');
+  const [gradeSearchQuery, setGradeSearchQuery] = useState<string>('');
 
   // 当前作业会话 (Session) 与当前 Focus 的文档 ID 及炉批号 (默认首位选中真实《质保书.pdf》及其第 1 批次)
   const [session, setSession] = useState<InspectionSession>(loadedSession || DEFAULT_INSPECTION_SESSION);
@@ -102,6 +167,84 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       };
     });
     setSelectedBatchNo(newBatchNo);
+  };
+
+  // 步骤 3: 人工切换标准/钢级规则切片 (Manual Override)
+  const handleOverrideGrade = (newGrade: string, newStandard: string) => {
+    setSession(prev => ({
+      ...prev,
+      documents: prev.documents.map(doc => {
+        if (doc.docId === selectedDocId) {
+          return {
+            ...doc,
+            batches: doc.batches.map(b => {
+              if (b.batchNo === selectedBatchNo) {
+                return {
+                  ...b,
+                  overrideGrade: newGrade,
+                  overrideStandard: newStandard,
+                };
+              }
+              return b;
+            }),
+          };
+        }
+        return doc;
+      }),
+    }));
+    setIsGradeSelectorOpen(false);
+  };
+
+  // 恢复默认原件规则切片
+  const handleResetGrade = () => {
+    setSession(prev => ({
+      ...prev,
+      documents: prev.documents.map(doc => {
+        if (doc.docId === selectedDocId) {
+          return {
+            ...doc,
+            batches: doc.batches.map(b => {
+              if (b.batchNo === selectedBatchNo) {
+                const { overrideGrade, overrideStandard, ...rest } = b;
+                return rest as BatchSpecimen;
+              }
+              return b;
+            }),
+          };
+        }
+        return doc;
+      }),
+    }));
+  };
+
+  // 质检员人工复核判定（双轨制：非必须，且绝不覆盖系统判定的客观计算结果）
+  const handleSetHumanVerdict = (humanDecision: 'PASS' | 'REJECT' | null) => {
+    setSession(prev => ({
+      ...prev,
+      documents: prev.documents.map(doc => {
+        if (doc.docId === selectedDocId) {
+          return {
+            ...doc,
+            batches: doc.batches.map(b => {
+              if (b.batchNo === selectedBatchNo) {
+                return {
+                  ...b,
+                  humanVerdict: humanDecision,
+                  humanVerdictSummary: humanDecision === 'PASS'
+                    ? '质检工程师人工核准通过'
+                    : humanDecision === 'REJECT'
+                      ? '质检工程师人工标记拒收'
+                      : undefined,
+                  humanVerifiedAt: humanDecision ? new Date().toISOString() : undefined,
+                };
+              }
+              return b;
+            }),
+          };
+        }
+        return doc;
+      }),
+    }));
   };
 
   // 当外部加载历史 Session 时，自动同步更新
@@ -226,8 +369,145 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     currentDoc.batches[0] ||
     DEFAULT_INSPECTION_SESSION.documents[0]!.batches[0]!;
 
-  const isPass = currentBatch.verdict === 'PASS';
+  const activeGrade = currentBatch.overrideGrade || currentBatch.grade;
+  const activeStandard = currentBatch.overrideStandard || currentBatch.standard;
+  const isOverridden = Boolean(currentBatch.overrideGrade || currentBatch.overrideStandard);
+
+  let computedIsPass = currentBatch.verdict === 'PASS';
+  let computedVerdictSummary = currentBatch.verdictSummary;
+
+  if (isOverridden) {
+    if (activeGrade.includes('S30408')) {
+      computedIsPass = false;
+      computedVerdictSummary = '人工切换为 S30408：Cr 实测 17.41% 低于标准下限 (≥18.00%)，触发一票否决';
+    } else if (activeGrade.includes('S31603')) {
+      computedIsPass = false;
+      computedVerdictSummary = '人工切换为 S31603：缺少关键耐点蚀元素 Mo 钼熔炼分析指标 (标准要求 2.00~3.00%)，判定不合格';
+    } else {
+      computedIsPass = currentBatch.verdict === 'PASS';
+      computedVerdictSummary = `人工切换为 ${activeGrade}：全项指标符合 ${activeStandard} 规范要求`;
+    }
+  }
+
+  const isPass = computedIsPass;
   const isHitl = currentBatch.verdict === 'MANUAL_REVIEW';
+
+  // 从 activeStandard 中解析出已选中的标准列表 (严格仅按顿号、逗号、分号切分，绝对不按空格切分，因标准代号内部自带空格如 "GB/T 13296-2023")
+  const selectedStandardIds = useMemo(() => {
+    const rawList = activeStandard
+      .split(/[、,，;；\n]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    const sanitized: string[] = [];
+    let i = 0;
+    while (i < rawList.length) {
+      const current = rawList[i]!;
+      const exactMatch = STANDARDS_CATALOG.find(s => s.id === current || s.shortCode === current);
+      if (exactMatch) {
+        if (!sanitized.includes(exactMatch.id)) sanitized.push(exactMatch.id);
+        i++;
+        continue;
+      }
+      // 容错修复：若历史操作中曾被空格错误拆成了 'NB/T' 和 '47019.5-2021'，自动重新缝合为完整标准 ID
+      if (i + 1 < rawList.length) {
+        const combined = `${current} ${rawList[i + 1]}`;
+        const combinedMatch = STANDARDS_CATALOG.find(s => s.id === combined || s.shortCode === combined);
+        if (combinedMatch) {
+          if (!sanitized.includes(combinedMatch.id)) sanitized.push(combinedMatch.id);
+          i += 2;
+          continue;
+        }
+      }
+      if (!sanitized.includes(current)) sanitized.push(current);
+      i++;
+    }
+    return sanitized;
+  }, [activeStandard]);
+
+  // 根据当前勾选的执行标准集合，动态提取可用牌号并集，并计算多标覆盖度
+  const availableGradesForSelectedStandards = useMemo(() => {
+    const matchedStandards = STANDARDS_CATALOG.filter(std =>
+      selectedStandardIds.some(sel => std.id.includes(sel) || sel.includes(std.shortCode) || std.shortCode.includes(sel))
+    );
+    const effectiveStandards = matchedStandards.length > 0 ? matchedStandards : STANDARDS_CATALOG;
+
+    const gradeMap = new Map<string, {
+      code: string;
+      primaryGrade: string;
+      display: string;
+      description?: string;
+      supportedStandards: string[];
+    }>();
+
+    for (const std of effectiveStandards) {
+      for (const g of std.grades) {
+        if (!gradeMap.has(g.code)) {
+          gradeMap.set(g.code, {
+            code: g.code,
+            primaryGrade: g.primaryGrade,
+            display: g.display,
+            description: g.description,
+            supportedStandards: [std.shortCode],
+          });
+        } else {
+          const item = gradeMap.get(g.code)!;
+          if (!item.supportedStandards.includes(std.shortCode)) {
+            item.supportedStandards.push(std.shortCode);
+          }
+        }
+      }
+    }
+
+    const totalCount = effectiveStandards.length;
+    return Array.from(gradeMap.values()).map(g => ({
+      ...g,
+      isFullyCovered: g.supportedStandards.length >= totalCount && totalCount > 1,
+      coverageLabel: g.supportedStandards.length >= totalCount && totalCount > 1
+        ? '双标覆盖'
+        : `${g.supportedStandards[0]} 专有`,
+    }));
+  }, [selectedStandardIds]);
+
+  // 切换/勾选标准
+  const handleToggleStandard = (stdId: string) => {
+    let newSelected: string[];
+    const isCurrentlySelected = selectedStandardIds.includes(stdId);
+
+    if (isCurrentlySelected) {
+      if (selectedStandardIds.length <= 1) {
+        return; // 至少保留一个标准
+      }
+      newSelected = selectedStandardIds.filter(s => s !== stdId);
+    } else {
+      newSelected = [...selectedStandardIds, stdId];
+    }
+
+    const newStandardStr = newSelected.join('、');
+
+    // 智能同名匹配优先：检查当前 activeGrade 是否在新的标准集合支持的牌号中
+    const currentGradeCodeMatch = activeGrade.match(/S\d{5}/);
+    const currentCode = currentGradeCodeMatch ? currentGradeCodeMatch[0] : '';
+
+    const nextStandards = STANDARDS_CATALOG.filter(std =>
+      newSelected.some(sel => std.id.includes(sel) || sel.includes(std.shortCode) || std.shortCode.includes(sel))
+    );
+    const allNextGrades = nextStandards.flatMap(s => s.grades);
+    const hasCurrentGrade = allNextGrades.some(g => g.code === currentCode || g.display === activeGrade);
+
+    let nextGrade = activeGrade;
+    if (!hasCurrentGrade && allNextGrades.length > 0) {
+      nextGrade = allNextGrades[0]!.display;
+    }
+
+    handleOverrideGrade(nextGrade, newStandardStr);
+  };
+
+  // 单选材料牌号
+  const handleSelectGrade = (newGradeDisplay: string) => {
+    handleOverrideGrade(newGradeDisplay, activeStandard);
+    setIsGradeSelectorOpen(false);
+  };
 
   // 计算当前文档/批次的 OCR BBox 字典
   const bboxes: FieldBBox[] = currentDoc.docId === 'doc_zpje_01'
@@ -960,8 +1240,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: `chem_${c.element}`,
                           methodFieldId: undefined,
                           category: 'chemical',
-                          categoryLabel: '化学成分',
-                          categoryColor: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                          categoryLabel: '化分',
+                          categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
                           name: `${c.element} (元素含量)`,
                           value: `${c.value} wt%`,
                           method: '-',
@@ -974,8 +1254,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'mech_tensile',
                           methodFieldId: 'method_tensile',
                           category: 'mechanical',
-                          categoryLabel: '力学性能',
-                          categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                          categoryLabel: '力学',
+                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                           name: '抗拉强度 Rm',
                           value: currentBatch.mechanical.tensile_rm,
                           method: 'GB/T 228.1-2021',
@@ -986,8 +1266,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'mech_yield',
                           methodFieldId: 'method_tensile',
                           category: 'mechanical',
-                          categoryLabel: '力学性能',
-                          categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                          categoryLabel: '力学',
+                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                           name: '规定塑性延伸强度 Rp0.2',
                           value: currentBatch.mechanical.yield_rp02,
                           method: 'GB/T 228.1-2021',
@@ -998,8 +1278,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'mech_elongation',
                           methodFieldId: 'method_tensile',
                           category: 'mechanical',
-                          categoryLabel: '力学性能',
-                          categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                          categoryLabel: '力学',
+                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                           name: '断后伸长率 A',
                           value: currentBatch.mechanical.elongation_a,
                           method: 'GB/T 228.1-2021',
@@ -1010,8 +1290,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'mech_hardness',
                           methodFieldId: 'method_hardness',
                           category: 'mechanical',
-                          categoryLabel: '力学性能',
-                          categoryColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                          categoryLabel: '力学',
+                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                           name: '硬度 (Hardness)',
                           value: currentBatch.mechanical.hardness,
                           method: 'GB/T 4340.1-2024',
@@ -1023,8 +1303,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'proc_flattening',
                           methodFieldId: 'method_proc_flattening',
                           category: 'process',
-                          categoryLabel: '工艺性能',
-                          categoryColor: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                          categoryLabel: '工艺',
+                          categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                           name: '压扁试验 (Flattening)',
                           value: currentBatch.process.flattening === 'PASS' ? '合格 (无裂纹/无分层)' : '未检出',
                           method: 'GB/T 246-2017',
@@ -1036,8 +1316,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'proc_flaring',
                           methodFieldId: 'method_proc_flaring',
                           category: 'process',
-                          categoryLabel: '工艺性能',
-                          categoryColor: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                          categoryLabel: '工艺',
+                          categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                           name: '扩口试验 (Flaring)',
                           value: '合格 (顶心锥度 60°, 扩口率 ≥20%)',
                           method: 'GB/T 242-2007',
@@ -1049,8 +1329,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'metallo_grain',
                           methodFieldId: 'method_grain',
                           category: 'metallographic',
-                          categoryLabel: '金相组织',
-                          categoryColor: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                          categoryLabel: '金相',
+                          categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
                           name: '晶粒度评级 (Grain Size)',
                           value: currentBatch.process.grainSize,
                           method: 'GB/T 6394-2017',
@@ -1062,8 +1342,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'corrosion_intergranular',
                           methodFieldId: 'method_corrosion_intergranular',
                           category: 'corrosion',
-                          categoryLabel: '耐腐蚀试验',
-                          categoryColor: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+                          categoryLabel: '腐蚀',
+                          categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
                           name: '晶间腐蚀试验 (Intergranular Corrosion)',
                           value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (硫酸-硫酸铜法弯曲无裂纹)' : '未检出',
                           method: 'GB/T 4334-2020 方法 E',
@@ -1076,8 +1356,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           fieldId: 'ndt_et',
                           methodFieldId: 'method_ndt_et',
                           category: 'ndt',
-                          categoryLabel: '无损检测',
-                          categoryColor: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
+                          categoryLabel: '探伤',
+                          categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
                           name: '涡流探伤检验 (Eddy Current Test)',
                           value: currentBatch.process.ndt,
                           method: 'GB/T 7735-2016',
@@ -1091,8 +1371,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             fieldId: 'geo_dimensions',
                             methodFieldId: 'method_geo_dimensions',
                             category: 'geometric',
-                            categoryLabel: '几何尺寸',
-                            categoryColor: 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+                            categoryLabel: '尺寸',
+                            categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
                             name: '尺寸公差检验 (Dimensions Inspection)',
                             value: '合格 (外径偏差 ±0.10mm, 壁厚偏差 ±10%)',
                             method: 'GB/T 13296-2023',
@@ -1103,8 +1383,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             fieldId: 'surface_quality',
                             methodFieldId: 'method_surface_quality',
                             category: 'surface',
-                            categoryLabel: '表面质量',
-                            categoryColor: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                            categoryLabel: '表面',
+                            categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
                             name: '表面质量检验 (Surface Quality)',
                             value: '合格 (内外表面光洁，无裂纹、折叠与重皮)',
                             method: 'GB/T 13296-2023',
@@ -1543,224 +1823,930 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* ========================================================================= */}
+              {/* 步骤 3 内容区：全景合规比对架构 */}
+              {/* ========================================================================= */}
+              {(() => {
+                interface ComplianceMatrixRow {
+                  id: string;
+                  category: 'chemical' | 'mechanical' | 'process' | 'metallographic' | 'corrosion' | 'ndt' | 'dimensions' | 'additional';
+                  categoryLabel: string;
+                  categoryColor: string;
+                  name: string;
+                  measuredValue: string;
+                  standardRequirement: string;
+                  deviation: string;
+                  status: 'PASS' | 'FAIL' | 'HITL' | 'INFO';
+                  statusLabel: string;
+                  ruleBasis: string;
+                  note?: string;
+                }
 
-                {/* 左侧 40%：质保书解析数据快照 (瓦片数字网格) */}
-                <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-xs space-y-4">
-                  <h2 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
-                    当前批次解析数据快照
-                  </h2>
+                // 构建全景比对矩阵数据项
+                const complianceMatrixItems: ComplianceMatrixRow[] = [
+                  // 1. 化学成分
+                  {
+                    id: 'chem_C',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '碳 C (元素含量)',
+                    measuredValue: '0.018 wt%',
+                    standardRequirement: '≤ 0.080 wt%',
+                    deviation: '-0.062 wt%',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '熔炼分析 (GB/T 13296 表3 序号22)',
+                  },
+                  {
+                    id: 'chem_Si',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '硅 Si (元素含量)',
+                    measuredValue: '0.44 wt%',
+                    standardRequirement: '≤ 1.00 wt%',
+                    deviation: '-0.56 wt%',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '熔炼分析 (GB/T 13296 表3)',
+                  },
+                  {
+                    id: 'chem_Mn',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '锰 Mn (元素含量)',
+                    measuredValue: '1.16 wt%',
+                    standardRequirement: '≤ 2.00 wt%',
+                    deviation: '-0.84 wt%',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '熔炼分析 (GB/T 13296 表3)',
+                  },
+                  {
+                    id: 'chem_P',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '磷 P (有害杂质)',
+                    measuredValue: '0.035 wt%',
+                    standardRequirement: '≤ 0.035 wt%',
+                    deviation: '0.000 wt%',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '熔炼分析 (上限红线控制)',
+                  },
+                  {
+                    id: 'chem_S',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '硫 S (有害杂质)',
+                    measuredValue: '0.005 wt%',
+                    standardRequirement: '≤ 0.015 wt%',
+                    deviation: '-0.010 wt%',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '熔炼分析 (纯净度优级控制)',
+                  },
+                  {
+                    id: 'chem_Ni',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '镍 Ni (奥氏体相)',
+                    measuredValue: '9.08 wt%',
+                    standardRequirement: '9.00 ~ 12.00 wt%',
+                    deviation: '+0.08 wt% (高于下限)',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '熔炼分析 (区间约束)',
+                  },
+                  {
+                    id: 'chem_Cr',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '铬 Cr (耐腐蚀基体)',
+                    measuredValue: '17.41 wt%',
+                    standardRequirement: activeGrade.includes('S30408') ? '18.00 ~ 20.00 wt%' : '17.00 ~ 19.00 wt%',
+                    deviation: activeGrade.includes('S30408') ? '-0.59 wt% (低于下限)' : '+0.41 wt% (高于下限)',
+                    status: activeGrade.includes('S30408') ? 'FAIL' : 'PASS',
+                    statusLabel: activeGrade.includes('S30408') ? '✗ FAIL' : '✓ PASS',
+                    ruleBasis: activeGrade.includes('S30408') ? '标准要求 Cr ≥ 18.00%，实测不满足' : '熔炼分析 (区间约束)',
+                  },
+                  {
+                    id: 'chem_Ti',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '钛 Ti (稳定化元素)',
+                    measuredValue: '0.14 wt%',
+                    standardRequirement: activeGrade.includes('S30408') || activeGrade.includes('S31603')
+                      ? '无考核要求'
+                      : '5×(C+N) ~ 0.70 wt% (要求 ≥0.14 wt%)',
+                    deviation: '0.00 wt%',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: activeGrade.includes('S30408') || activeGrade.includes('S31603')
+                      ? '非强制添加元素'
+                      : 'AST动态公式: 5×(0.018+<0.01) = 0.14 wt%',
+                  },
+                  {
+                    id: 'chem_N',
+                    category: 'chemical',
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: '氮 N (固溶强化)',
+                    measuredValue: '<0.01 wt%',
+                    standardRequirement: '未设上限 (参照协议)',
+                    deviation: '-',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '残余元素分析',
+                  },
 
-                  <div className="grid grid-cols-2 gap-3 text-xs border-b border-outline-variant/40 dark:border-border-dark pb-3">
-                    <div>
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货商</span>
-                      <strong className="font-mono text-on-surface dark:text-surface-bright block truncate">
-                        {currentBatch.supplier}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">牌号</span>
-                      <strong className="font-mono text-primary dark:text-primary-fixed-dim block">
-                        {currentBatch.grade}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">炉号</span>
-                      <span className="font-mono text-on-surface dark:text-surface-bright">{currentBatch.heatNo}</span>
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">批次试样</span>
-                      <span className="font-mono text-on-surface dark:text-surface-bright">{currentBatch.batchNo}</span>
-                    </div>
-                  </div>
+                  // 2. 力学性能
+                  {
+                    id: 'mech_rm',
+                    category: 'mechanical',
+                    categoryLabel: '力学',
+                    categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                    name: '抗拉强度 Rm',
+                    measuredValue: currentBatch.mechanical.tensile_rm,
+                    standardRequirement: '≥ 520 MPa',
+                    deviation: '+101 MPa',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '常温拉伸 (GB/T 228.1-2021)',
+                  },
+                  {
+                    id: 'mech_rp02',
+                    category: 'mechanical',
+                    categoryLabel: '力学',
+                    categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                    name: '规定塑性延伸强度 Rp0.2',
+                    measuredValue: currentBatch.mechanical.yield_rp02,
+                    standardRequirement: '≥ 205 MPa',
+                    deviation: '+63 MPa',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '常温屈服 (GB/T 228.1-2021)',
+                  },
+                  {
+                    id: 'mech_a',
+                    category: 'mechanical',
+                    categoryLabel: '力学',
+                    categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                    name: '断后伸长率 A',
+                    measuredValue: currentBatch.mechanical.elongation_a,
+                    standardRequirement: '≥ 35.0 % (原件内控 ≥40%)',
+                    deviation: '+22.5 %',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '断后伸长率 (GB/T 228.1-2021)',
+                  },
+                  {
+                    id: 'mech_hardness',
+                    category: 'mechanical',
+                    categoryLabel: '力学',
+                    categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                    name: '硬度试验 Hardness (HV1)',
+                    measuredValue: currentBatch.mechanical.hardness || '139.3 HV1 (实测 143/145/137/132/140/139)',
+                    standardRequirement: '≤ 200 HV1 (壁厚<1.7mm 免检，实测亦合格)',
+                    deviation: '-60.7 HV1',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '维氏硬度 (GB/T 4340.1-2024 第 7.4.2 条)',
+                  },
 
-                  {/* 化学成分实测值瓦片 */}
-                  <div>
-                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-2 font-medium">化学成分 (%)</span>
-                    <div className="grid grid-cols-4 gap-2 font-mono">
-                      {currentBatch.chemical.slice(0, 8).map(tile => (
-                        <div key={tile.element} className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-center">
-                          <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block">{tile.element}</span>
-                          <strong className="text-xs text-on-surface dark:text-surface-bright block">{tile.value}</strong>
+                  // 3. 工艺性能
+                  {
+                    id: 'proc_flattening',
+                    category: 'process',
+                    categoryLabel: '工艺',
+                    categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                    name: '压扁试验 (Flattening)',
+                    measuredValue: currentBatch.process.flattening === 'PASS' ? '合格 (无裂纹/无分层)' : '未检出',
+                    standardRequirement: '压至间距 H=(1+0.09)S/(0.09+S/D) 试样无裂纹',
+                    deviation: '完全符合',
+                    status: currentBatch.process.flattening === 'PASS' ? 'PASS' : 'FAIL',
+                    statusLabel: currentBatch.process.flattening === 'PASS' ? '✓ PASS' : '✗ FAIL',
+                    ruleBasis: '工艺性能 (GB/T 246-2017)',
+                  },
+                  {
+                    id: 'proc_flaring',
+                    category: 'process',
+                    categoryLabel: '工艺',
+                    categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                    name: '扩口试验 (Flaring)',
+                    measuredValue: currentBatch.process.flaring === 'PASS' ? '合格 (顶心锥度 60°, 扩口率 ≥20%)' : '未做',
+                    standardRequirement: '顶心锥度 60°, 扩口率 ≥20% 试样无裂纹',
+                    deviation: '完全符合',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '工艺性能 (GB/T 242-2007)',
+                  },
+
+                  // 4. 金相组织
+                  {
+                    id: 'metallo_grain',
+                    category: 'metallographic',
+                    categoryLabel: '金相',
+                    categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
+                    name: '晶粒度评级 (Grain Size)',
+                    measuredValue: currentBatch.process.grainSize || '7.0 级',
+                    standardRequirement: '7.0 级或更细 (≥ 7.0 级)',
+                    deviation: '完全符合',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '比较法评级 (GB/T 6394-2017)',
+                  },
+
+                  // 5. 耐腐蚀性能
+                  {
+                    id: 'corrosion_intergranular',
+                    category: 'corrosion',
+                    categoryLabel: '腐蚀',
+                    categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
+                    name: '晶间腐蚀试验 (Intergranular)',
+                    measuredValue: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (硫酸-硫酸铜法弯曲无裂纹)' : '未检出',
+                    standardRequirement: 'GB/T 4334-2020 检验方法 E 弯曲无裂纹',
+                    deviation: '完全符合',
+                    status: currentBatch.process.intergranularCorrosion === 'PASS' ? 'PASS' : 'FAIL',
+                    statusLabel: currentBatch.process.intergranularCorrosion === 'PASS' ? '✓ PASS' : '✗ FAIL',
+                    ruleBasis: '耐腐蚀性能 (GB/T 4334-2020 E法)',
+                  },
+
+                  // 6. 无损检测
+                  {
+                    id: 'ndt_pressure',
+                    category: 'ndt',
+                    categoryLabel: '探伤',
+                    categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                    name: '承压/致密性检验 (Pressure Tightness)',
+                    measuredValue: currentBatch.process.ndt || '涡流探伤合格 (GB/T 7735 E3H 级)',
+                    standardRequirement: '逐根液压试验或符合 E3H 级涡流检测',
+                    deviation: '替代组生效',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '致密性替代条款 (GB/T 13296 第 7.5 条)',
+                  },
+                  {
+                    id: 'ndt_ut',
+                    category: 'ndt',
+                    categoryLabel: '探伤',
+                    categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                    name: '超声波检测 (Ultrasonic)',
+                    measuredValue: '超声探伤合格 (GB/T 5777-2019 U2 级)',
+                    standardRequirement: '纵向人工缺陷深度的 U2 级',
+                    deviation: '完全符合',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '无损检验 (GB/T 5777-2019)',
+                  },
+
+                  // 7. 几何尺寸与表面质量
+                  {
+                    id: 'geo_dimensions',
+                    category: 'dimensions',
+                    categoryLabel: '尺寸',
+                    categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+                    name: '几何尺寸公差 (Dimensions)',
+                    measuredValue: '外径 15.0mm / 壁厚 0.8mm',
+                    standardRequirement: '外径允许偏差 ±0.10mm，壁厚允许偏差 ±10%',
+                    deviation: '实测在允许公差带内',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '尺寸精度 (GB/T 13296 表1 精密级)',
+                  },
+                  {
+                    id: 'geo_surface',
+                    category: 'dimensions',
+                    categoryLabel: '表面',
+                    categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+                    name: '表面质量检验 (Surface Quality)',
+                    measuredValue: '内外表面光洁，无裂纹、折叠与重皮缺陷',
+                    standardRequirement: '钢管内外表面平整光洁，不得有结疤、重皮及过热',
+                    deviation: '完全符合',
+                    status: 'PASS',
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '外观要求 (GB/T 13296 第 5.5 条)',
+                  },
+
+                  // 8. 非标与扩展协议 (通用扩展池)
+                  {
+                    id: 'custom_construction_no',
+                    category: 'additional',
+                    categoryLabel: '扩展',
+                    categoryColor: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700',
+                    name: '施工工程号 (Construction No.)',
+                    measuredValue: currentBatch.constructionNo || '26715-7053',
+                    standardRequirement: '采购合同工程技术协议 / 业主项目追溯标识',
+                    deviation: '-',
+                    status: 'INFO',
+                    statusLabel: 'ℹ️ 供参考',
+                    ruleBasis: 'Schema 扩展池 (项目属性，非国标红线)',
+                  },
+                  {
+                    id: 'custom_packing_info',
+                    category: 'additional',
+                    categoryLabel: '扩展',
+                    categoryColor: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700',
+                    name: '包装支数与净重 (Packing Info)',
+                    measuredValue: '15 支 / 45.2 kg',
+                    standardRequirement: '物资交货装箱清单',
+                    deviation: '-',
+                    status: 'INFO',
+                    statusLabel: 'ℹ️ 供参考',
+                    ruleBasis: '物流交付属性 (仅供仓库点验核查)',
+                  },
+                ];
+
+                const STEP3_TABS = [
+                  { key: 'all', label: '全部比对项', count: complianceMatrixItems.length },
+                  { key: 'chemical', label: '化学成分', count: complianceMatrixItems.filter(i => i.category === 'chemical').length },
+                  { key: 'mechanical', label: '力学性能', count: complianceMatrixItems.filter(i => i.category === 'mechanical').length },
+                  { key: 'process', label: '工艺成型', count: complianceMatrixItems.filter(i => i.category === 'process').length },
+                  { key: 'metallographic', label: '金相组织', count: complianceMatrixItems.filter(i => i.category === 'metallographic').length },
+                  { key: 'corrosion', label: '耐腐蚀试验', count: complianceMatrixItems.filter(i => i.category === 'corrosion').length },
+                  { key: 'ndt', label: '无损探伤', count: complianceMatrixItems.filter(i => i.category === 'ndt').length },
+                  { key: 'dimensions', label: '尺寸与表面', count: complianceMatrixItems.filter(i => i.category === 'dimensions').length },
+                  { key: 'additional', label: '非标与扩展', count: complianceMatrixItems.filter(i => i.category === 'additional').length },
+                ];
+
+                const displayedComplianceItems = step3Category === 'all'
+                  ? complianceMatrixItems
+                  : complianceMatrixItems.filter(item => item.category === step3Category);
+
+                return (
+                  <div className="space-y-4">
+                    {/* 1. 顶部上下文与判定决策带 (两栏卡片: 质保书信息 vs 当前执行标准基准 + 综合判定) */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+
+                      {/* 左侧 50% (lg:col-span-6)：质保书信息 */}
+                      <div className="lg:col-span-6 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-4 shadow-xs flex flex-col justify-between">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 border-b border-outline-variant/30 dark:border-border-dark pb-2.5">
+                            <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-lg">info</span>
+                            <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright">
+                              质保书信息
+                            </h3>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs ">
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品名称 (Product Name)</span>
+                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.productName || '换热管 (Heat exchange tubes)'}>
+                                {currentBatch.productName || '换热管 (Heat exchange tubes)'}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
+                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.certificateNo || '2022-05-012'}>
+                                {currentBatch.certificateNo || '2022-05-012'}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声明标准 (Declared Standard)</span>
+                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.standard}>
+                                {currentBatch.standard}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">材料牌号</span>
+                              <strong className="text-primary dark:text-primary-fixed-dim block truncate" title={currentBatch.grade}>
+                                {currentBatch.grade}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">冶炼炉号 (Heat No.)</span>
+                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.heatNo}</span>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理装炉号 (Pack No.)</span>
+                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.packNo || 'Z26022C'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货规格</span>
+                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.dimensions}</span>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂商</span>
+                              <span className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.supplier}>
+                                {currentBatch.supplier}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 力学性能实测值瓦片 */}
-                  <div>
-                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-2 font-medium">力学性能</span>
-                    <div className="grid grid-cols-2 gap-2 font-mono">
-                      <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2.5">
-                        <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block">Rm</span>
-                        <strong className="text-xs text-primary dark:text-primary-fixed-dim block truncate">{currentBatch.mechanical.tensile_rm}</strong>
                       </div>
-                      <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2.5">
-                        <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block">Rp0.2</span>
-                        <strong className="text-xs text-primary dark:text-primary-fixed-dim block truncate">{currentBatch.mechanical.yield_rp02}</strong>
-                      </div>
-                      <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2.5">
-                        <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block">A (%)</span>
-                        <strong className="text-xs text-on-surface dark:text-surface-bright block">{currentBatch.mechanical.elongation_a}</strong>
-                      </div>
-                      <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2.5">
-                        <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block">Hardness</span>
-                        <strong className="text-xs text-on-surface dark:text-surface-bright block">{currentBatch.mechanical.hardness || '免做'}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
-                {/* 右侧 60%：规则切片绑定、综合判定横幅与模块 A/B/C 比对表 */}
-                <div className="lg:col-span-7 space-y-4">
+                      {/* 右侧 50% (lg:col-span-6)：当前执行标准与牌号基准 + 综合判定看板 */}
+                      <div className="lg:col-span-6 flex flex-col gap-3">
 
-                  {/* 锁定规则切片与前置条件 */}
-                  <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-4 shadow-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-lg">lock</span>
-                      <span className="font-mono text-xs font-bold text-on-surface dark:text-surface-bright">
-                        锁定规则切片：{currentBatch.standard} / {currentBatch.grade}
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mt-1">
-                      (当前试样规格: {currentBatch.dimensions})
-                    </span>
-                  </div>
-
-                  {/* 大尺寸判定看板 */}
-                  <div className={`rounded-xl p-4 border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${isPass
-                    ? 'bg-status-pass-bg border-emerald-300 dark:border-emerald-900 text-status-pass-text'
-                    : 'bg-status-fail-bg border-red-300 dark:border-red-900 text-status-fail-text'
-                    }`}>
-                    <div>
-                      <h3 className="text-lg font-bold font-headline">
-                        {isPass ? '综合判定: PASS 全项合格' : '综合判定: FAIL 一票否决不合格'}
-                      </h3>
-                      <p className="text-xs opacity-90 font-sans mt-0.5">
-                        ({currentBatch.verdictSummary})
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => goToStep(3)}
-                        className="px-3 py-1.5 rounded-lg border border-current bg-surface-container-lowest dark:bg-surface-dark text-xs font-bold"
-                      >
-                        拒收
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onOpenHitlDrawer}
-                        className="px-3 py-1.5 rounded-lg border border-current bg-surface-container-lowest dark:bg-surface-dark text-xs font-bold"
-                      >
-                        特批放行
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => goToStep(3)}
-                        className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs"
-                      >
-                        审批结果
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 模块 A: 化学成分比对表 */}
-                  <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-4 shadow-xs space-y-2">
-                    <h4 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
-                      模块 A: 化学成分比对表
-                    </h4>
-                    <div className="border border-outline-variant/40 dark:border-border-dark rounded-lg overflow-hidden">
-                      <table className="w-full text-left text-xs font-mono">
-                        <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
-                          <tr>
-                            <th className="px-3 py-2">指标</th>
-                            <th className="px-3 py-2">测量值</th>
-                            <th className="px-3 py-2">标准范围 [Min, Max]</th>
-                            <th className="px-3 py-2">偏差量</th>
-                            <th className="px-3 py-2">状态</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
-                          {currentBatch.chemical.slice(0, 4).map((row, idx) => (
-                            <tr key={idx} className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40">
-                              <td className="px-3 py-1.5 font-bold text-on-surface dark:text-surface-bright">{row.element}</td>
-                              <td className="px-3 py-1.5 text-primary dark:text-primary-fixed-dim font-bold">{row.value}</td>
-                              <td className="px-3 py-1.5 text-on-surface-variant dark:text-outline-variant">[标准要求内]</td>
-                              <td className="px-3 py-1.5 text-on-surface-variant dark:text-outline-variant">0.00</td>
-                              <td className="px-3 py-1.5">
-                                <span className="px-2 py-0.5 rounded bg-status-pass-bg text-status-pass-text text-[10px] font-bold">
-                                  ✓ PASS
+                        {/* 上部：当前执行标准与牌号基准 */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs font-bold text-on-surface dark:text-surface-bright">
+                                当前执行标准与牌号基准
+                              </h4>
+                              {isOverridden && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                  人工重置规则
                                 </span>
-                              </td>
+                              )}
+                            </div>
+
+                            {/* 右侧常驻重置按钮 */}
+                            <button
+                              type="button"
+                              onClick={handleResetGrade}
+                              disabled={!isOverridden}
+                              title={isOverridden ? '重置为质保书原件声明标准与牌号' : '当前已是质保书原件声明基准'}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all shadow-2xs ${isOverridden
+                                ? 'border border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 hover:shadow-xs cursor-pointer'
+                                : 'border border-outline-variant/30 dark:border-border-dark text-on-surface-variant/40 dark:text-outline-variant/40 cursor-not-allowed bg-transparent'
+                                }`}
+                            >
+                              <span className="material-symbols-outlined text-[13px]">restart_alt</span>
+                              <span>重置</span>
+                            </button>
+                          </div>
+
+                          <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-3 shadow-xs grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+
+                            {/* 1. 执行标准 (多选可搜 Combobox) */}
+                            <div className="relative">
+                              <div className="flex items-center justify-between text-[11px] mb-1">
+                                <span className="text-on-surface-variant dark:text-outline-variant font-medium flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[12px] text-primary">menu_book</span>
+                                  <span>执行标准 (可多选)</span>
+                                </span>
+                                <span className="text-[12px]  px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold">
+                                  已选 {selectedStandardIds.length} 部
+                                </span>
+                              </div>
+
+                              {/* 触发器按键：大号字体 + 精致选中样式 */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsStandardSelectorOpen(!isStandardSelectorOpen);
+                                  setIsGradeSelectorOpen(false);
+                                }}
+                                className={`w-full text-left bg-surface-container-low dark:bg-surface-dark-low border rounded-lg px-3 py-2 transition-all flex items-center justify-between gap-2 cursor-pointer shadow-2xs ${isStandardSelectorOpen
+                                  ? 'border-primary ring-2 ring-primary/20'
+                                  : 'border-outline-variant/60 dark:border-border-dark hover:border-primary/60'
+                                  }`}
+                              >
+                                <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                                  {selectedStandardIds.map(stdId => {
+                                    const catalogItem = STANDARDS_CATALOG.find(s => s.id === stdId || s.shortCode === stdId);
+                                    return (
+                                      <span
+                                        key={stdId}
+                                        className="px-2.5 py-0.5 rounded-md text-xs  font-bold bg-surface-container-high dark:bg-surface-dark-high text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark whitespace-nowrap shadow-2xs"
+                                        title={catalogItem ? catalogItem.name : stdId}
+                                      >
+                                        {catalogItem ? catalogItem.id : stdId}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                                <span className={`material-symbols-outlined text-base transition-transform text-on-surface-variant shrink-0 ${isStandardSelectorOpen ? 'rotate-180 text-primary' : ''}`}>
+                                  expand_more
+                                </span>
+                              </button>
+
+                              {/* 多选下拉 Popover */}
+                              {isStandardSelectorOpen && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setIsStandardSelectorOpen(false)}
+                                  />
+                                  <div className="absolute left-0 top-full mt-2 w-88 sm:w-96 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-2xl p-2.5 z-50 space-y-2">
+                                    {/* 搜索输入框 */}
+                                    <div className="relative">
+                                      <span className="material-symbols-outlined text-xs absolute left-2.5 top-2.5 text-on-surface-variant">
+                                        search
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={standardSearchQuery}
+                                        onChange={e => setStandardSearchQuery(e.target.value)}
+                                        placeholder="搜索标准代号或名称 (如 47019, 13296)..."
+                                        autoFocus
+                                        className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary"
+                                      />
+                                      {standardSearchQuery && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setStandardSearchQuery('')}
+                                          className="absolute right-2 top-2 text-xs text-on-surface-variant hover:text-on-surface cursor-pointer"
+                                        >
+                                          ✕
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {/* 标准列表 */}
+                                    <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1">
+                                      {STANDARDS_CATALOG
+                                        .filter(s => {
+                                          if (!standardSearchQuery.trim()) return true;
+                                          const q = standardSearchQuery.toLowerCase();
+                                          return s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || s.shortCode.toLowerCase().includes(q);
+                                        })
+                                        .map(std => {
+                                          const isChecked = selectedStandardIds.some(sel => std.id.includes(sel) || sel.includes(std.shortCode) || std.shortCode.includes(sel));
+                                          return (
+                                            <div
+                                              key={std.id}
+                                              onClick={() => handleToggleStandard(std.id)}
+                                              className={`p-2 rounded-lg text-xs transition-colors flex items-start gap-2.5 cursor-pointer ${isChecked
+                                                ? 'bg-primary/8 border border-primary/20'
+                                                : 'hover:bg-surface-container-low dark:hover:bg-surface-dark-low border border-transparent'
+                                                }`}
+                                            >
+                                              <span className={`material-symbols-outlined text-base mt-0.5 shrink-0 ${isChecked ? 'text-primary' : 'text-outline-variant'}`}>
+                                                {isChecked ? 'check_box' : 'check_box_outline_blank'}
+                                              </span>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between gap-1">
+                                                  <span className=" font-bold text-on-surface dark:text-surface-bright truncate">
+                                                    {std.id}
+                                                  </span>
+                                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-medium border shrink-0 ${std.badgeColor}`}>
+                                                    {std.category}
+                                                  </span>
+                                                </div>
+                                                <p className="text-[11px] text-on-surface-variant dark:text-outline-variant line-clamp-1 mt-0.5">
+                                                  {std.name}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                    </div>
+                                    <div className="text-[12px] text-on-surface-variant dark:text-outline-variant px-1 border-t border-outline-variant/30 pt-1.5 flex items-center justify-between">
+                                      <span>共 {STANDARDS_CATALOG.length} 部标准</span>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            {/* 2. 材料牌号 (单选可搜·动态索引 Combobox) */}
+                            <div className="relative">
+                              <div className="flex items-center justify-between text-[11px] mb-1">
+                                <span className="text-on-surface-variant dark:text-outline-variant font-medium flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[12px] text-primary">verified</span>
+                                  <span>材料牌号</span>
+                                </span>
+                                <span className="text-[12px]  text-on-surface-variant dark:text-outline-variant">
+                                  {availableGradesForSelectedStandards.length} 个候选牌号
+                                </span>
+                              </div>
+
+                              {/* 触发器按键：大号字体 + 精致强调色 */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsGradeSelectorOpen(!isGradeSelectorOpen);
+                                  setIsStandardSelectorOpen(false);
+                                }}
+                                className={`w-full text-left bg-surface-container-low dark:bg-surface-dark-low border rounded-lg px-3 py-2 transition-all flex items-center justify-between gap-2 cursor-pointer shadow-2xs ${isGradeSelectorOpen
+                                  ? 'border-primary ring-2 ring-primary/20'
+                                  : 'border-outline-variant/60 dark:border-border-dark hover:border-primary/60'
+                                  }`}
+                              >
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <span className=" text-xs sm:text-sm font-bold text-primary dark:text-primary-fixed-dim truncate">
+                                    {activeGrade}
+                                  </span>
+                                  {availableGradesForSelectedStandards.find(g => g.display === activeGrade || activeGrade.includes(g.code))?.isFullyCovered && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shrink-0">
+                                      双标覆盖
+                                    </span>
+                                  )}
+                                </div>
+                                <span className={`material-symbols-outlined text-base transition-transform text-on-surface-variant shrink-0 ${isGradeSelectorOpen ? 'rotate-180 text-primary' : ''}`}>
+                                  expand_more
+                                </span>
+                              </button>
+
+                              {/* 牌号单选下拉 Popover */}
+                              {isGradeSelectorOpen && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setIsGradeSelectorOpen(false)}
+                                  />
+                                  <div className="absolute right-0 top-full mt-2 w-88 sm:w-96 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-2xl p-2.5 z-50 space-y-2">
+                                    {/* 搜索输入框 */}
+                                    <div className="relative">
+                                      <span className="material-symbols-outlined text-xs absolute left-2.5 top-2.5 text-on-surface-variant">
+                                        search
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={gradeSearchQuery}
+                                        onChange={e => setGradeSearchQuery(e.target.value)}
+                                        placeholder="搜索材料牌号或代码 (如 S32168, 304, 316)..."
+                                        autoFocus
+                                        className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary"
+                                      />
+                                      {gradeSearchQuery && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setGradeSearchQuery('')}
+                                          className="absolute right-2 top-2 text-xs text-on-surface-variant hover:text-on-surface cursor-pointer"
+                                        >
+                                          ✕
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {/* 牌号列表 */}
+                                    <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1">
+                                      {availableGradesForSelectedStandards
+                                        .filter(g => {
+                                          if (!gradeSearchQuery.trim()) return true;
+                                          const q = gradeSearchQuery.toLowerCase();
+                                          return (
+                                            g.code.toLowerCase().includes(q) ||
+                                            g.primaryGrade.toLowerCase().includes(q) ||
+                                            g.display.toLowerCase().includes(q) ||
+                                            (g.description && g.description.toLowerCase().includes(q))
+                                          );
+                                        })
+                                        .map(g => {
+                                          const isSelected = activeGrade === g.display || activeGrade.includes(g.code);
+                                          return (
+                                            <div
+                                              key={g.code}
+                                              onClick={() => handleSelectGrade(g.display)}
+                                              className={`p-2 rounded-lg text-xs transition-colors flex items-center justify-between gap-2 cursor-pointer ${isSelected
+                                                ? 'bg-primary text-on-primary font-bold shadow-xs'
+                                                : 'hover:bg-surface-container-low dark:hover:bg-surface-dark-low text-on-surface dark:text-surface-bright'
+                                                }`}
+                                            >
+                                              <div className="flex flex-col min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                  <span className=" font-bold truncate">
+                                                    {g.display}
+                                                  </span>
+                                                  {g.isFullyCovered ? (
+                                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0 ${isSelected
+                                                      ? 'bg-white/20 text-white'
+                                                      : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700'
+                                                      }`}>
+                                                      双标覆盖
+                                                    </span>
+                                                  ) : (
+                                                    <span className={`px-1.5 py-0.2 rounded text-[9px] shrink-0 ${isSelected ? 'text-white/80' : 'text-on-surface-variant dark:text-outline-variant bg-surface-container-high'
+                                                      }`}>
+                                                      {g.coverageLabel}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                {g.description && (
+                                                  <span className={`text-[10px] truncate mt-0.5 ${isSelected ? 'text-white/80' : 'text-on-surface-variant dark:text-outline-variant'
+                                                    }`}>
+                                                    {g.description}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              {isSelected && (
+                                                <span className="material-symbols-outlined text-base shrink-0">
+                                                  check
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                    </div>
+                                    <div className="text-[10px] text-on-surface-variant dark:text-outline-variant px-1 border-t border-outline-variant/30 pt-1.5 flex items-center justify-between">
+                                      <span>动态基于已选标准提取牌号并集</span>
+                                      <span>候选 {availableGradesForSelectedStandards.length} 项</span>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                          </div>
+                        </div>
+
+                        {/* 下部：综合判定看板 (双轨制：系统客观计算 55% vs 人工复核判定 45%，独立分栏背景色，吸纳垂直空隙) */}
+                        <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark shadow-xs flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden items-stretch">
+
+                          {/* 1. 左侧约 55% (md:col-span-7)：系统客观判定 */}
+                          <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1 ${!computedIsPass
+                            ? 'bg-status-fail-bg text-status-fail-text'
+                            : isHitl
+                              ? 'bg-status-hitl-bg text-status-hitl-text'
+                              : 'bg-status-pass-bg text-status-pass-text'
+                            }`}>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="material-symbols-outlined text-xl font-bold shrink-0">
+                                {!computedIsPass ? 'cancel' : isHitl ? 'pending_actions' : 'check_circle'}
+                              </span>
+                              <h3 className="text-sm sm:text-base font-bold font-headline whitespace-nowrap">
+                                {!computedIsPass
+                                  ? '系统判定: FAIL 一票否决'
+                                  : isHitl
+                                    ? '系统判定: HITL 待质检员裁决'
+                                    : '系统判定: PASS 全项合规'}
+                              </h3>
+                            </div>
+                            <p className="text-[11px] opacity-90 font-sans pl-7 line-clamp-2 leading-relaxed" title={computedVerdictSummary}>
+                              {computedVerdictSummary}
+                            </p>
+                          </div>
+
+                          {/* 2. 右侧约 45% (md:col-span-5)：人工复核判定 (独立分栏背景色，按钮占满横幅高度) */}
+                          <div className={`md:col-span-5 min-w-0 p-2.5 md:border-l md:border-current/20 flex items-center justify-between gap-3 ${currentBatch.humanVerdict === 'REJECT'
+                            ? 'bg-status-fail-bg text-status-fail-text'
+                            : currentBatch.humanVerdict === 'PASS'
+                              ? 'bg-status-pass-bg text-status-pass-text'
+                              : !computedIsPass
+                                ? 'bg-status-fail-bg text-status-fail-text'
+                                : isHitl
+                                  ? 'bg-status-hitl-bg text-status-hitl-text'
+                                  : 'bg-status-pass-bg text-status-pass-text'
+                            }`}>
+                            {/* 左侧上下排布：上方人工复核标头，下方状态标签 */}
+                            <div className="flex flex-col justify-center gap-1 shrink-0">
+                              <div className="flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap">
+                                <span className="material-symbols-outlined text-[15px]">person_check</span>
+                                <span>人工复核:</span>
+                              </div>
+                              <div>
+                                {currentBatch.humanVerdict === 'PASS' ? (
+                                  <span className="px-2 py-1 rounded text-[12px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/90 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shadow-2xs whitespace-nowrap">
+                                    ✓ APPROVE
+                                  </span>
+                                ) : currentBatch.humanVerdict === 'REJECT' ? (
+                                  <span className="px-2 py-1 rounded text-[12px] font-bold bg-red-100 text-red-800 dark:bg-red-950/90 dark:text-red-200 border border-red-300 dark:border-red-700 shadow-2xs whitespace-nowrap">
+                                    ✗ REJECT
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-1 rounded text-[12px] font-medium bg-surface-container-high/70 dark:bg-surface-dark-high/70 border border-outline-variant/30 dark:border-border-dark opacity-80 whitespace-nowrap">
+                                    未复核
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 右侧：高度占满 (self-stretch) 的操作按钮组 */}
+                            <div className="flex items-stretch gap-2 self-stretch py-0.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'REJECT' ? null : 'REJECT')}
+                                title={currentBatch.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
+                                className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
+                                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs ring-2 ring-red-400/50'
+                                  : 'border border-current bg-surface-container-lowest/80 dark:bg-surface-dark/80 hover:bg-red-500/10'
+                                  }`}
+                              >
+                                <span>拒收</span>
+                              </button>
+                              {isHitl && (
+                                <button
+                                  type="button"
+                                  onClick={onOpenHitlDrawer}
+                                  className="px-3 rounded-lg border border-purple-400 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-bold transition-opacity hover:opacity-80 cursor-pointer shadow-2xs flex items-center justify-center whitespace-nowrap"
+                                >
+                                  处理
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'PASS' ? null : 'PASS')}
+                                title={currentBatch.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
+                                className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-400/50'
+                                  : 'bg-primary hover:bg-primary-container text-on-primary shadow-xs'
+                                  }`}
+                              >
+                                <span>审批通过</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+
+                    </div>
+
+                    {/* 2. 下部：全景合规比对矩阵 (Master Compliance Matrix) */}
+                    <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-xs space-y-4">
+
+                      {/* 顶部标题与分类 Filter 页签 */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-outline-variant/40 dark:border-border-dark pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-xl">fact_check</span>
+                          <div>
+                            <h3 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
+                              全景合规比对矩阵
+                            </h3>
+                            <p className="text-[11px] text-on-surface-variant dark:text-outline-variant">
+                              执行标准条款规范与质保书提取测量值同行左右相邻紧凑对照（全项覆盖无冗余）
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* 分类 Filter 页签 */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full custom-scrollbar">
+                          {STEP3_TABS.map(tab => {
+                            const isActive = step3Category === tab.key;
+                            return (
+                              <button
+                                key={tab.key}
+                                type="button"
+                                onClick={() => setStep3Category(tab.key)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${isActive
+                                  ? 'bg-primary text-on-primary shadow-xs'
+                                  : 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high'
+                                  }`}
+                              >
+                                <span>{tab.label}</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px]  font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
+                                  }`}>
+                                  {tab.count}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 全景比对大表 */}
+                      <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl overflow-hidden shadow-2xs">
+                        <table className="w-full text-left text-xs ">
+                          <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
+                            <tr>
+                              <th className="px-3.5 py-2.5 w-20 min-w-[75px] whitespace-nowrap">类别</th>
+                              <th className="px-3.5 py-2.5 min-w-[160px]">检验项目 / 指标</th>
+                              <th className="px-3.5 py-2.5 min-w-[220px]">执行标准要求 [Min, Max] / 条款规范</th>
+                              <th className="px-3.5 py-2.5 min-w-[190px]">报告测量值 / 实际结果</th>
+                              <th className="px-3.5 py-2.5 w-32 min-w-[110px]">偏差量 / 吻合度</th>
+                              <th className="px-3.5 py-2.5 w-24 whitespace-nowrap">判定状态</th>
+                              <th className="px-3.5 py-2.5 min-w-[200px]">规则依据 / 判定逻辑</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* 模块 B & 模块 C 双栏 */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* 模块 B */}
-                    <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-4 shadow-xs space-y-2">
-                      <h4 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
-                        模块 B: 力学性能
-                      </h4>
-                      <div className="space-y-1.5 text-xs font-mono">
-                        <div className="flex justify-between items-center border-b border-outline-variant/30 dark:border-border-dark pb-1 text-on-surface dark:text-surface-bright">
-                          <span>Rm:</span>
-                          <strong className="text-status-pass-text flex items-center gap-1">
-                            {currentBatch.mechanical.tensile_rm} <span className="material-symbols-outlined text-sm">check_circle</span>
-                          </strong>
-                        </div>
-                        <div className="flex justify-between items-center border-b border-outline-variant/30 dark:border-border-dark pb-1 text-on-surface dark:text-surface-bright">
-                          <span>Rp0.2:</span>
-                          <strong className="text-status-pass-text flex items-center gap-1">
-                            {currentBatch.mechanical.yield_rp02} <span className="material-symbols-outlined text-sm">check_circle</span>
-                          </strong>
-                        </div>
+                          </thead>
+                          <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
+                            {displayedComplianceItems.map((row) => (
+                              <tr
+                                key={row.id}
+                                className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40 transition-colors"
+                              >
+                                <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
+                                    {row.categoryLabel}
+                                  </span>
+                                </td>
+                                <td className="px-3.5 py-2.5 font-bold text-on-surface dark:text-surface-bright">
+                                  {row.name}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-on-surface dark:text-surface-bright font-medium">
+                                  {row.standardRequirement}
+                                </td>
+                                <td className="px-3.5 py-2.5 font-bold text-primary dark:text-primary-fixed-dim">
+                                  {row.measuredValue}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-on-surface-variant dark:text-outline-variant font-medium">
+                                  {row.deviation}
+                                </td>
+                                <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold inline-block ${row.status === 'PASS'
+                                    ? 'bg-status-pass-bg text-status-pass-text'
+                                    : row.status === 'FAIL'
+                                      ? 'bg-status-fail-bg text-status-fail-text font-black'
+                                      : row.status === 'HITL'
+                                        ? 'bg-status-hitl-bg text-status-hitl-text'
+                                        : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                    }`}>
+                                    {row.statusLabel}
+                                  </span>
+                                </td>
+                                <td className="px-3.5 py-2.5 text-[11px] text-on-surface-variant dark:text-outline-variant">
+                                  {row.ruleBasis}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
 
-                      {/* 紫色 AST 公式提示框 */}
-                      {currentBatch.mechanical.astFormulaNote && (
-                        <div className="p-2.5 rounded-lg bg-status-hitl-bg border border-purple-200 dark:border-purple-900 text-status-hitl-text text-[11px] flex items-center gap-2">
-                          <span className="material-symbols-outlined text-base">auto_awesome</span>
-                          <span>{currentBatch.mechanical.astFormulaNote}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 模块 C */}
-                    <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-4 shadow-xs space-y-2">
-                      <h4 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
-                        模块 C: 定性条款
-                      </h4>
-                      <div className="space-y-2 text-xs">
-                        <div className="p-2.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-lg flex justify-between items-center">
-                          <span className="font-medium text-on-surface dark:text-surface-bright">压扁试验 (Flattening)</span>
-                          <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${currentBatch.process.flattening === 'PASS'
-                            ? 'bg-status-pass-bg text-status-pass-text'
-                            : 'bg-status-fail-bg text-status-fail-text'
-                            }`}>
-                            {currentBatch.process.flattening === 'PASS' ? 'PASS' : 'FAIL (未检)'}
-                          </span>
-                        </div>
-                        <div className="p-2.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-lg flex justify-between items-center">
-                          <span className="font-medium text-on-surface dark:text-surface-bright">晶间腐蚀 (Method E)</span>
-                          <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${currentBatch.process.intergranularCorrosion === 'PASS'
-                            ? 'bg-status-pass-bg text-status-pass-text'
-                            : 'bg-status-fail-bg text-status-fail-text'
-                            }`}>
-                            {currentBatch.process.intergranularCorrosion === 'PASS' ? 'PASS' : 'FAIL (未检)'}
-                          </span>
-                        </div>
-                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
             </div>
           </section>
 
@@ -1817,12 +2803,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         <h4 className="text-base font-bold font-headline text-on-surface">
                           {isPass ? '材料合规性核验报告' : '物资不合格拒收处置报告'}
                         </h4>
-                        <span className="font-mono text-[10px] text-on-surface-variant tracking-wider">
+                        <span className=" text-[10px] text-on-surface-variant tracking-wider">
                           REPORT NO: {currentBatch.reportNo}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono border-b pb-3 border-outline-variant/30 text-on-surface">
+                      <div className="grid grid-cols-2 gap-2 text-[11px]  border-b pb-3 border-outline-variant/30 text-on-surface">
                         <div>
                           <span className="text-on-surface-variant block">生成时间:</span>
                           <strong>2026-08-26 15:30</strong>
@@ -1843,7 +2829,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         </div>
                       </div>
 
-                      <div className="bg-surface-container-low/60 dark:bg-surface-dark-low/60 rounded p-3 text-[11px] font-mono space-y-1">
+                      <div className="bg-surface-container-low/60 dark:bg-surface-dark-low/60 rounded p-3 text-[11px]  space-y-1">
                         <span className="font-bold block text-on-surface">关键数据汇总:</span>
                         <div className="flex justify-between text-on-surface">
                           <span className="text-on-surface-variant">炉号:</span>

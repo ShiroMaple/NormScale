@@ -23,6 +23,8 @@ export interface BatchSpecimen {
   productName?: string;        // 产品品名，如 "锅炉、热交换器用不锈钢无缝钢管"
   grade: string;               // 材料牌号，如 "022Cr17Ni12Mo2 (S31603)"
   standard: string;            // 声称执行标准，如 "GB/T 13296-2023"
+  overrideGrade?: string;      // 用户人工切换的裁决牌号 (Manual Override)
+  overrideStandard?: string;   // 用户人工切换的裁决标准 (Manual Override)
   supplier: string;            // 供货厂家名称
   dimensions: string;          // 交货规格，如 "OD 25.0mm × WT 2.0mm × L 6000mm"
   heatNo: string;              // 冶炼炉号 (Heat No.)
@@ -30,6 +32,12 @@ export interface BatchSpecimen {
   deliveryState?: string;      // 交货热处理状态，如 "固溶热处理 (Solution Treated)"
   verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
   verdictSummary: string;      // 判定依据简述
+  // 双轨制判定模型 (Dual-Track Verdict: 系统客观计算与人工复核审批并行，互不抹除)
+  systemVerdict?: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';   // 系统客观算法判定结论
+  systemVerdictSummary?: string;                       // 系统判定规则依据简述
+  humanVerdict?: 'PASS' | 'REJECT' | 'WAIVED' | null;  // 质检工程师人工签认结论 (非必须，不覆盖系统结果)
+  humanVerdictSummary?: string;                        // 人工审批批注或特批放行依据
+  humanVerifiedAt?: string;                            // 人工签认时间戳 (ISO 8601)
   ocrConfidence: number;       // 综合 OCR 视觉解析置信度 (0~100)
   gradeMatchConfidence: number;// 材料牌号标准消歧匹配度 (0~100)
   

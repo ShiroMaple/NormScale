@@ -117,7 +117,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
 
   return (
     <div className="w-full space-y-2.5 select-none relative z-30">
-      
+
       {/* 1. 顶部主标题行 (左侧步骤主标题，右侧可选操作) */}
       <div className="flex items-center justify-between gap-4 px-1">
         <div className="flex items-center gap-2.5">
@@ -126,8 +126,8 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
               {stepTitle.startsWith('Step2')
                 ? 'fact_check'
                 : stepTitle.startsWith('Step3')
-                ? 'compare_arrows'
-                : 'archive'}
+                  ? 'compare_arrows'
+                  : 'archive'}
             </span>
           </div>
           <h1 className="font-headline-lg text-lg sm:text-xl font-bold text-on-surface dark:text-surface-bright tracking-tight">
@@ -145,10 +145,10 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
 
       {/* 2. 下部独立圆角选择器卡片 (单行不折叠设计，允许下拉菜单溢出浮层，杜绝遮挡与滚动条) */}
       <div className="w-full bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-2xl p-3 sm:p-3.5 shadow-xs flex items-center justify-between gap-3 text-xs relative overflow-visible">
-        
+
         {/* 左侧：Session 简写胶囊 + 第 1 层文档 + 第 2 层批次号 */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-          
+
           {/* 会话 ID 简写胶囊 (hover 显示完整 ID) */}
           <div
             title={`完整会话 ID: ${session.sessionId}`}
@@ -197,11 +197,10 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                         }
                         setDocDropdownOpen(false);
                       }}
-                      className={`px-2.5 py-2 rounded-lg cursor-pointer flex items-center justify-between text-xs transition-colors ${
-                        isSelected
-                          ? 'bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim font-bold'
-                          : 'hover:bg-surface-container-low dark:hover:bg-surface-dark-low text-on-surface dark:text-surface-bright'
-                      }`}
+                      className={`px-2.5 py-2 rounded-lg cursor-pointer flex items-center justify-between text-xs transition-colors ${isSelected
+                        ? 'bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim font-bold'
+                        : 'hover:bg-surface-container-low dark:hover:bg-surface-dark-low text-on-surface dark:text-surface-bright'
+                        }`}
                     >
                       <div className="flex items-center gap-2 truncate">
                         <span className="material-symbols-outlined text-sm text-red-500 fill-1">picture_as_pdf</span>
@@ -232,13 +231,12 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
             >
               <span className="material-symbols-outlined text-base">label</span>
               <span className="tracking-wide">{currentBatch.batchNo}</span>
-              
+
               {/* 状态徽章 (Step 2 场景显示 SUCCESS/FAIL) */}
-              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ${
-                isSuccessOrPass
-                  ? 'bg-status-pass-bg text-status-pass-text border border-emerald-300 dark:border-emerald-800'
-                  : 'bg-status-fail-bg text-status-fail-text border border-red-300 dark:border-red-800'
-              }`}>
+              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ${isSuccessOrPass
+                ? 'bg-status-pass-bg text-status-pass-text border border-emerald-300 dark:border-emerald-800'
+                : 'bg-status-fail-bg text-status-fail-text border border-red-300 dark:border-red-800'
+                }`}>
                 {getVerdictBadgeText(currentBatch.verdict)}
               </span>
               <span className="material-symbols-outlined text-sm">arrow_drop_down</span>
@@ -259,11 +257,10 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                         onSelectBatch(currentDoc.docId, b.batchNo);
                         setBatchDropdownOpen(false);
                       }}
-                      className={`px-2.5 py-2 rounded-lg cursor-pointer flex items-center justify-between text-xs transition-colors ${
-                        isSelected
-                          ? 'bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim font-bold'
-                          : 'hover:bg-surface-container-low dark:hover:bg-surface-dark-low text-on-surface dark:text-surface-bright'
-                      }`}
+                      className={`px-2.5 py-2 rounded-lg cursor-pointer flex items-center justify-between text-xs transition-colors ${isSelected
+                        ? 'bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim font-bold'
+                        : 'hover:bg-surface-container-low dark:hover:bg-surface-dark-low text-on-surface dark:text-surface-bright'
+                        }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -275,13 +272,12 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                         </span>
                       </div>
 
-                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ml-2 ${
-                        b.verdict === 'PASS'
-                          ? 'bg-status-pass-bg text-status-pass-text'
-                          : b.verdict === 'FAIL'
+                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ml-2 ${b.verdict === 'PASS'
+                        ? 'bg-status-pass-bg text-status-pass-text'
+                        : b.verdict === 'FAIL'
                           ? 'bg-status-fail-bg text-status-fail-text'
                           : 'bg-status-hitl-bg text-status-hitl-text'
-                      }`}>
+                        }`}>
                         {getVerdictBadgeText(b.verdict)}
                       </span>
                     </div>
@@ -294,18 +290,18 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
 
         {/* 右侧：Session 总体概览 + 上一批次 / 下一批次 */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 ml-auto">
-          
+
           {/* Session 总体概览徽章 */}
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-on-surface-variant dark:text-outline-variant shrink-0">
+          <div className="flex items-center gap-1.5 text-[14px] text-on-surface-variant dark:text-outline-variant shrink-0">
             <span className="hidden md:inline">总进度:</span>
             <span className="font-bold text-on-surface dark:text-surface-bright">
               {currentFlatIndex + 1} / {allFlattenedBatches.length} 批次
             </span>
-            <span className="px-1.5 py-0.5 bg-status-pass-bg text-status-pass-text rounded font-bold text-[10px]">
+            <span className="px-1.5 py-1 bg-status-pass-bg text-status-pass-text rounded font-bold text-[14px]">
               {session.passedBatches} {mode === 'extraction' ? 'SUCCESS' : 'PASS'}
             </span>
             {session.failedBatches > 0 && (
-              <span className="px-1.5 py-0.5 bg-status-fail-bg text-status-fail-text rounded font-bold text-[10px]">
+              <span className="px-1.5 py-1 bg-status-fail-bg text-status-fail-text rounded font-bold text-[14px]">
                 {session.failedBatches} FAIL
               </span>
             )}

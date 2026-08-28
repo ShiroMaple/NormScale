@@ -31,7 +31,13 @@
   - 闭环模态框：物资合格放行单 (`PassReleaseModal`) 与不合格拒收处置通知书 (`RejectionNoticeModal`)
   - 全站中文语境、低饱和度工业极简美学与明暗主题一键切换
 - [ ] **Phase 8: NormScale 专用的 MTC 质保书内建解析层设计与实现 (Native Parser & OCR BBox Engine)**
-- [ ] **Phase 9: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 7 后置)**
+- [ ] **Phase 9: 多标准引用规则叠加与双标尺透明追溯引擎 (上线前必达 / Pre-launch Mandatory)**
+  - 核心定位：处理工业质保书同时引用多份标准（如通用产品标准 GB/T 13296 与特种设备订货技术条件 NB/T 47019.5）的复杂技术契约
+  - 算法实现：`composeMultiStandardSlices()` 纯函数切片合成器，实现“检验项目取并集、共有指标取严苛交集（包络线原则 / Strict Superiority）”
+  - 双标尺追溯：全景矩阵与核验报告中注入双标准对比依据，明确剪刀差归因责任边界
+  - 双轨制判定契约支持：后端接入放行仲裁矩阵（Release Arbitration Matrix）与双轨判定数据持久化，绝对不抹除系统客观计算结论，详见 [`cairn/dual-track-verdict.md`](file:///Users/shiromaple/Github/NormScale/cairn/dual-track-verdict.md)
+  - 关联规范：详见 [`cairn/multi-standard-engine.md`](file:///Users/shiromaple/Github/NormScale/cairn/multi-standard-engine.md) 与 [`cairn/dual-track-verdict.md`](file:///Users/shiromaple/Github/NormScale/cairn/dual-track-verdict.md)
+- [ ] **Phase 10: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 9)**
   - 扩充管材、板材、锻件等多品类标准规则库
   - 升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），对接生产级分布式向量库
   - 全链路结构化日志、可观测性追踪与 Docker 容器化打包
@@ -39,8 +45,9 @@
 ## 开放问题 (Open Questions)
 
 1. **[已解决] PDF 预览与字段对齐方案**：已在 Step 2 全面落地。采用多页高保真 2x Retina PNG 纵向平铺视窗，结合百分比自适应 BBox 标注层；鼠标悬浮右侧解析字段/实测数据行时平滑滚动至对应页并脉冲高亮源文档 BBox，悬浮左侧 BBox 同步反向高亮右侧对应项。
-2. **标准知识库浏览器入口形态**：标准知识库采用“顶部导航 Tab 切换独立页面”，还是“主看板内唤出右侧全屏 Drawer/Modal”？
-3. **DocEx 联调协议字段对齐**：DocEx 抽取端点输出结构是否严格以 NormScale 的 `RawCertificatePayload` 契约为准？
-4. **标准规则库存储演进触发点**：当前通过 Repository 接口层隔离文件系统，当标准数量超过多少（如 > 100 部）或引入多用户在线规则编辑时触发数据库存储插件化切换？
-5. **标准离线入库工具链**：离线标准结构化初期采用“人工编写模板”还是“LLM 自动结构化初提 + 人工核验”工作流？
-6. **提取层服务边界与 DocEx REST API 待办**：当前 DocEx 项目端尚未实现专用的 MTC 质保书提取 REST API 端点（此项为未来联动待办），因此 Phase 3 优先通过 `ICertificateExtractor` 接口抽象完成协议契约与适配层（Mock / Direct LLM / HTTP Client），待 DocEx API 就绪后直接填入 URL 配置即可无缝打通。
+2. **[待实现·上线前必达] 质保书双标准/多标准引用的叠加裁决**：当前两套标准规则切片已解耦入库，设计规范已在 `cairn/multi-standard-engine.md` 定稿。遵循“前端构建优先”原则暂缓后端大改，但上线前必须在引擎层闭环 `composeMultiStandardSlices` 与双标尺透出。
+3. **标准知识库浏览器入口形态**：标准知识库采用“顶部导航 Tab 切换独立页面”，还是“主看板内唤出右侧全屏 Drawer/Modal”？
+4. **DocEx 联调协议字段对齐**：DocEx 抽取端点输出结构是否严格以 NormScale 的 `RawCertificatePayload` 契约为准？
+5. **标准规则库存储演进触发点**：当前通过 Repository 接口层隔离文件系统，当标准数量超过多少（如 > 100 部）或引入多用户在线规则编辑时触发数据库存储插件化切换？
+6. **标准离线入库工具链**：离线标准结构化初期采用“人工编写模板”还是“LLM 自动结构化初提 + 人工核验”工作流？
+7. **提取层服务边界与 DocEx REST API 待办**：当前 DocEx 项目端尚未实现专用的 MTC 质保书提取 REST API 端点（此项为未来联动待办），因此 Phase 3 优先通过 `ICertificateExtractor` 接口抽象完成协议契约与适配层（Mock / Direct LLM / HTTP Client），待 DocEx API 就绪后直接填入 URL 配置即可无缝打通。
