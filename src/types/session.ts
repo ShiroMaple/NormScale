@@ -157,7 +157,7 @@ export const DEFAULT_INSPECTION_SESSION: InspectionSession = {
             { element: 'S', value: '0.005', confidence: '99%', status: 'ok' },
             { element: 'Cr', value: '17.41', confidence: '99%', status: 'ok' },
             { element: 'Ni', value: '9.08', confidence: '99%', status: 'ok' },
-            { element: 'Ti', value: '0.14', confidence: '98%', status: 'ok' },
+            { element: 'Ti', value: '0.14', confidence: '74%', status: 'warn', note: '质保书公章部分遮挡该数值，置信度较低需人工核对' },
             { element: 'N', value: '<0.01', confidence: '95%', status: 'ok' },
           ],
           mechanical: {
