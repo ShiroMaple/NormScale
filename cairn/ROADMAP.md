@@ -7,12 +7,14 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 8 - NormScale 专用的 MTC 质保书内建解析层设计与实现 (Native Parser & OCR BBox Engine)**
+**当前焦点**：**Phase 9 - 真实文档解析、Moonshot/Kimi 模型直连与 MD5 抽取结果持久化缓存引擎 (Real Document Parsing & MD5 Cache Engine)**
 - **待执行行动项清单（Next Steps）**：
-  1. **内建版面分析与表格识别 (Layout Analysis & Table Structure Recognition)**：设计 NormScale 专用的 MTC 质保书版面分析引擎，提取多语言、多表格布局与坐标；
-  2. **OCR 文本定位与 BBox 坐标对齐 (Word-level BBox Alignment)**：将识别出的理化指标与 PDF/图片视窗建立精确像素坐标级关联，支撑前端 Stage 2 的 BBox 高亮交互；
-  3. **标准 Schema 契约数据直通**：直接产出符合 `certificate.schema.ts` 的结构化单据，作为后续全流程唯一的真理来源（Single Source of Truth）；
-  4. **可插拔多源适配**：保留外部解析源（如 DocEx）的兼容抽象接口。
+  1. **真实文件上传与 MD5 存证指纹计算**：在步骤 1 支持真实本地 PDF / 图片拖拽上传，服务端秒级计算文件 `md5` / `sha256` 存证指纹；
+  2. **MD5 解析结果持久化缓存机制 (.cache/parses/<md5>.json)**：
+     - 若 MD5 命中缓存，直接秒级重放已解析的结构化数据与 BBox，Token 开销归零，耗时降至毫秒级；
+     - 支持 `forceReparse`（强制重新解析）机制，便于提示词迭代与质检员手动刷新；
+  3. **基于 config.json 的 Moonshot / Kimi 大模型直连抽取管线**：读取 `config.json` 中的 `standard` / `highspeed` 模型配置与 API Key，打通真实 MTC 结构化抽取与 SSE 流式输出；
+  4. **步骤 2 真实切图与 BBox 坐标联动呈现**：服务端将 PDF 渲染为高清切图，右侧数据表格与左侧真实切图建立精准像素级 BBox 联动。
 
 ## 里程碑 (Milestones)
 
@@ -23,21 +25,15 @@
 - [x] **Phase 5: LangGraph 状态图与人机协同编排**
 - [x] **Phase 6: API 服务层与物资验收决策看板原型**
 - [x] **Phase 7: NormScale 业务工作流与全套前端页面深度纵向贯通**
-  - 纵向瀑布流质检工作台（`WaterfallWorkbench`，吸顶步骤锚点 01~04）
-  - 原件 BBox 坐标解析核对与归一化（产生 `CertificateExtract` 唯一真理数据）
-  - 标准规则库切片与条款知识浏览器 (`StandardExplorer`，31个钢级切片与 AST 公式)
-  - 历史质检台账明细与任务回溯 (`AuditLedger`)
-  - 系统管理与运维配置控制台 (`AdminConsole`，模型/日志/权限)
-  - 闭环模态框：物资合格放行单 (`PassReleaseModal`) 与不合格拒收处置通知书 (`RejectionNoticeModal`)
-  - 全站中文语境、低饱和度工业极简美学与明暗主题一键切换
-- [ ] **Phase 8: NormScale 专用的 MTC 质保书内建解析层设计与实现 (Native Parser & OCR BBox Engine)**
-- [ ] **Phase 9: 多标准引用规则叠加与双标尺透明追溯引擎 (上线前必达 / Pre-launch Mandatory)**
+- [x] **Phase 8: NormScale 专用的 MTC 质保书内建解析层、多文档异步并发调度与流式终端 (Native Parser & Async Worker Pool)**
+- [ ] **Phase 9: 真实文档解析、Moonshot/Kimi 模型直连与 MD5 抽取结果持久化缓存引擎 (Real Document Parsing & MD5 Cache Engine)**
+- [ ] **Phase 10: 多标准引用规则叠加与双标尺透明追溯引擎 (上线前必达 / Pre-launch Mandatory)**
   - 核心定位：处理工业质保书同时引用多份标准（如通用产品标准 GB/T 13296 与特种设备订货技术条件 NB/T 47019.5）的复杂技术契约
   - 算法实现：`composeMultiStandardSlices()` 纯函数切片合成器，实现“检验项目取并集、共有指标取严苛交集（包络线原则 / Strict Superiority）”
   - 双标尺追溯：全景矩阵与核验报告中注入双标准对比依据，明确剪刀差归因责任边界
   - 双轨制判定契约支持：后端接入放行仲裁矩阵（Release Arbitration Matrix）与双轨判定数据持久化，绝对不抹除系统客观计算结论，详见 [`cairn/dual-track-verdict.md`](file:///Users/shiromaple/Github/NormScale/cairn/dual-track-verdict.md)
   - 关联规范：详见 [`cairn/multi-standard-engine.md`](file:///Users/shiromaple/Github/NormScale/cairn/multi-standard-engine.md) 与 [`cairn/dual-track-verdict.md`](file:///Users/shiromaple/Github/NormScale/cairn/dual-track-verdict.md)
-- [ ] **Phase 10: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 9)**
+- [ ] **Phase 11: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 10)**
   - 扩充管材、板材、锻件等多品类标准规则库
   - 升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），对接生产级分布式向量库
   - 全链路结构化日志、可观测性追踪与 Docker 容器化打包

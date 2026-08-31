@@ -1055,9 +1055,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       {/* 顶层轻量 Toast 反馈提示 (自动淡出) */}
       {toastInfo && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md transition-all animate-bounce-in border text-xs font-bold bg-inverse-surface text-inverse-on-surface border-outline-variant/30">
-          <span className={`material-symbols-outlined text-base ${
-            toastInfo.type === 'success' ? 'text-emerald-400' : toastInfo.type === 'error' ? 'text-red-400' : 'text-amber-400'
-          }`}>
+          <span className={`material-symbols-outlined text-base ${toastInfo.type === 'success' ? 'text-emerald-400' : toastInfo.type === 'error' ? 'text-red-400' : 'text-amber-400'
+            }`}>
             {toastInfo.type === 'success' ? 'check_circle' : toastInfo.type === 'error' ? 'error' : 'info'}
           </span>
           <span>{toastInfo.message}</span>
@@ -1268,7 +1267,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 />
               </div>
 
-              {/* 大模型实时解析流水终端 (可展开/自动折叠) */}
+              {/* 大模型实时解析流式终端 (可展开/自动折叠) */}
               {currentDocTask && (isStreamingTerminalExpanded || currentDocTask.status === 'parsing') && (
                 <div className="shrink-0 animate-fade-in transition-all duration-300">
                   <LlmStreamingTerminal
@@ -1382,9 +1381,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     <div
                       ref={pdfScrollContainerRef}
                       onMouseDown={handlePdfMouseDown}
-                      className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${
-                        isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
-                      }`}
+                      className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
+                        }`}
                     >
                       <div
                         className="w-full flex flex-col items-center gap-5 my-auto transition-[padding,min-width]"
@@ -2001,13 +1999,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                                 onFocus={() => handleFieldHover(row.fieldId)}
                                                 onMouseEnter={() => handleFieldHover(row.fieldId)}
                                                 onMouseLeave={() => handleFieldHover(null)}
-                                                className={`w-full text-xs font-bold rounded border px-2.5 py-1.5 transition-all text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark ${
-                                                  row.unit ? 'pr-9' : ''
-                                                } ${
-                                                  isValueHighlighted
+                                                className={`w-full text-xs font-bold rounded border px-2.5 py-1.5 transition-all text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark ${row.unit ? 'pr-9' : ''
+                                                  } ${isValueHighlighted
                                                     ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
                                                     : 'border-outline-variant/30 dark:border-border-dark hover:border-primary/50'
-                                                }`}
+                                                  }`}
                                                 title="常态处于可编辑状态；点击聚焦或悬浮可联动查看原件切图"
                                               />
                                               {row.unit && (
@@ -2026,9 +2022,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                                 >
                                                   ⚠️
                                                 </span>
-                                                <div className={`absolute right-0 ${
-                                                  idx === 0 ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
-                                                } hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20`}>
+                                                <div className={`absolute right-0 ${idx === 0 ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
+                                                  } hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20`}>
                                                   <div className="font-bold flex items-center gap-1.5 text-amber-300">
                                                     <span className="material-symbols-outlined text-sm">warning</span>
                                                     <span>OCR 置信度预警 ({row.confidence})</span>
@@ -2036,9 +2031,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                                   <p className="mt-1 text-[11px] text-inverse-on-surface/90 leading-snug">
                                                     {row.note || '抽取置信度低于 85% 工业安全阈值，请比对左侧原件切图核验'}
                                                   </p>
-                                                  <div className={`absolute ${
-                                                    idx === 0 ? 'bottom-full border-b-inverse-surface' : 'top-full border-t-inverse-surface'
-                                                  } right-2 border-4 border-transparent`} />
+                                                  <div className={`absolute ${idx === 0 ? 'bottom-full border-b-inverse-surface' : 'top-full border-t-inverse-surface'
+                                                    } right-2 border-4 border-transparent`} />
                                                 </div>
                                               </div>
                                             )}
@@ -3264,13 +3258,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               </div>
                             </div>
 
-                            {/* 右侧：操作按钮组 (高度采用 0.618 黄金比例居中，消除压迫感) */}
-                            <div className="flex items-center gap-2 shrink-0 my-auto">
+                            {/* 右侧：操作按钮组 (HITL 状态下先只提供高饱和琥珀黄处理按钮，流转后再显示拒收与审批) */}
+                            <div className="flex items-stretch gap-2 self-stretch py-0.5 shrink-0">
                               {isHitl ? (
                                 <button
                                   type="button"
                                   onClick={handleTriggerHitl}
-                                  className="px-5 py-1.5 h-8.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md border border-amber-600/40 flex items-center justify-center gap-1.5 transition-all cursor-pointer ring-2 ring-amber-400/30 whitespace-nowrap"
+                                  className="px-6 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md border border-amber-600/40 flex items-center justify-center gap-1.5 transition-all cursor-pointer ring-2 ring-amber-400/30 whitespace-nowrap self-stretch"
                                 >
                                   <span className="material-symbols-outlined text-base">emergency_home</span>
                                   <span>处理</span>
@@ -3281,7 +3275,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     type="button"
                                     onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'REJECT' ? null : 'REJECT')}
                                     title={currentBatch.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
-                                    className={`px-3.5 py-1.5 h-8.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
+                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
                                       ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs ring-2 ring-red-400/50'
                                       : 'border border-current bg-surface-container-lowest/80 dark:bg-surface-dark/80 hover:bg-red-500/10'
                                       }`}
@@ -3292,7 +3286,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     type="button"
                                     onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'PASS' ? null : 'PASS')}
                                     title={currentBatch.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
-                                    className={`px-4 py-1.5 h-8.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
+                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
                                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-400/50'
                                       : 'bg-primary hover:bg-primary-container text-on-primary shadow-xs'
                                       }`}
@@ -3722,7 +3716,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">
                     {isCapturing ? 'hourglass_top' : 'photo_camera'}
                   </span>
-                  <span>{isCapturing ? '生成截图中...' : '保存截图'}</span>
+                  <span>{isCapturing ? '生成截图中...' : '保存当前页面截图'}</span>
                 </button>
 
                 {/* 次要按钮 2：开启新任务 */}
