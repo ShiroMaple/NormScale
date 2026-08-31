@@ -3264,13 +3264,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               </div>
                             </div>
 
-                            {/* 右侧：操作按钮组 (HITL 状态下先只提供高饱和琥珀黄处理按钮，流转后再显示拒收与审批) */}
-                            <div className="flex items-stretch gap-2 self-stretch py-0.5 shrink-0">
+                            {/* 右侧：操作按钮组 (高度采用 0.618 黄金比例居中，消除压迫感) */}
+                            <div className="flex items-center gap-2 shrink-0 my-auto">
                               {isHitl ? (
                                 <button
                                   type="button"
                                   onClick={handleTriggerHitl}
-                                  className="px-6 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md border border-amber-600/40 flex items-center justify-center gap-1.5 transition-all cursor-pointer ring-2 ring-amber-400/30 whitespace-nowrap self-stretch"
+                                  className="px-5 py-1.5 h-8.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md border border-amber-600/40 flex items-center justify-center gap-1.5 transition-all cursor-pointer ring-2 ring-amber-400/30 whitespace-nowrap"
                                 >
                                   <span className="material-symbols-outlined text-base">emergency_home</span>
                                   <span>处理</span>
@@ -3281,7 +3281,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     type="button"
                                     onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'REJECT' ? null : 'REJECT')}
                                     title={currentBatch.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
-                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
+                                    className={`px-3.5 py-1.5 h-8.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
                                       ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs ring-2 ring-red-400/50'
                                       : 'border border-current bg-surface-container-lowest/80 dark:bg-surface-dark/80 hover:bg-red-500/10'
                                       }`}
@@ -3292,7 +3292,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     type="button"
                                     onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'PASS' ? null : 'PASS')}
                                     title={currentBatch.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
-                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
+                                    className={`px-4 py-1.5 h-8.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
                                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-400/50'
                                       : 'bg-primary hover:bg-primary-container text-on-primary shadow-xs'
                                       }`}
