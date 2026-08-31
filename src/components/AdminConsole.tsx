@@ -1,232 +1,428 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { LlmConfigItem, AppConfig } from '@/extractor/openai-compatible-extractor.ts';
 
-interface LogEntry {
-  id: string;
-  time: string;
-  tag: 'EXTRACTOR' | 'NORMALIZER' | 'ENGINE' | 'HITL' | 'PERF';
-  message: string;
-  duration?: number;
-}
-
-const SAMPLE_LOGS: LogEntry[] = [
-  { id: '1', time: '12:00:01.102', tag: 'EXTRACTOR', message: '解析引擎已加载，提取原始键值对 24 项' },
-  { id: '2', time: '12:00:01.215', tag: 'NORMALIZER', message: '牌号消歧: TP-316L 成功映射至 022Cr17Ni12Mo2 (S31603)' },
-  { id: '3', time: '12:00:01.320', tag: 'NORMALIZER', message: '物理单位换算: 58.5 kgf/mm² -> 573.68 MPa (精确度 0.01%)' },
-  { id: '4', time: '12:00:01.450', tag: 'ENGINE', message: '锁定规格切片: GB/T 13296-2023 / S31603，加载 15 条评定规则' },
-  { id: '5', time: '12:00:01.580', tag: 'ENGINE', message: '扫描发现 3 项强制出厂检验项目缺失 (压扁/承压/晶腐)，判定一票否决 FAIL' },
-  { id: '6', time: '12:00:01.602', tag: 'PERF', message: '全流程决策总耗时: 1.2ms (切片加载 0.3ms, 比对 0.9ms)', duration: 1.2 },
-];
-
-/**
- * ============================================================================
- * 系统管理与运维配置控制台组件 (Admin Console - MD3 规范)
- * ============================================================================
- */
 export const AdminConsole: React.FC = () => {
-  const [parserBackend, setParserBackend] = useState<'native' | 'docex' | 'llm'>('native');
-  const [llmModel, setLlmModel] = useState<string>('gemini-3.1-pro');
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [activeLogFilter, setActiveLogFilter] = useState<string>('ALL');
-  const [isSaved, setIsSaved] = useState<boolean>(false);
 
-  const handleSaveConfig = () => {
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+  // 拉取服务端 config.json
+  const fetchConfig = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/admin/config');
+      const data = await res.json();
+      if (data.success && data.config) {
+        setAppConfig(data.config);
+      } else {
+        setFeedback({ message: data.error || '拉取配置失败', type: 'error' });
+      }
+    } catch (err: any) {
+      setFeedback({ message: `网络请求失败: ${err.message}`, type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
+
+  // 保存配置至服务端 config.json
+  const handleSaveConfig = async () => {
+    if (!appConfig) return;
+    setIsSaving(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appConfig),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({ message: '配置已成功保存并即刻生效', type: 'success' });
+        setTimeout(() => setFeedback(null), 3000);
+      } else {
+        setFeedback({ message: data.error || '保存失败', type: 'error' });
+      }
+    } catch (err: any) {
+      setFeedback({ message: `保存失败: ${err.message}`, type: 'error' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const filteredLogs = SAMPLE_LOGS.filter(
-    log => activeLogFilter === 'ALL' || log.tag === activeLogFilter
-  );
+  // 切换默认模型配置
+  const handleSetDefault = (index: number) => {
+    if (!appConfig) return;
+    const updated = { ...appConfig };
+    updated.llm.configs.forEach((c, idx) => {
+      c.isDefault = idx === index;
+    });
+    setAppConfig(updated);
+  };
+
+  // 修改具体模型字段
+  const handleUpdateConfigItem = (index: number, field: keyof LlmConfigItem, value: any) => {
+    if (!appConfig) return;
+    const updated = { ...appConfig };
+    updated.llm.configs[index] = {
+      ...updated.llm.configs[index]!,
+      [field]: value,
+    };
+    setAppConfig(updated);
+  };
+
+  // 新增模型配置
+  const handleAddConfigItem = () => {
+    if (!appConfig) return;
+    const newId = `custom-model-${Date.now().toString().slice(-4)}`;
+    const newItem: LlmConfigItem = {
+      id: newId,
+      name: '自定义 OpenAI 兼容模型',
+      provider: 'OpenAI',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+      apiKey: 'OPENAI_API_KEY',
+      isDefault: false,
+    };
+    setAppConfig({
+      ...appConfig,
+      llm: {
+        ...appConfig.llm,
+        configs: [...appConfig.llm.configs, newItem],
+      },
+    });
+  };
+
+  // 删除模型配置
+  const handleDeleteConfigItem = (index: number) => {
+    if (!appConfig || appConfig.llm.configs.length <= 1) return;
+    const isDeletingDefault = appConfig.llm.configs[index]?.isDefault;
+    const filtered = appConfig.llm.configs.filter((_, idx) => idx !== index);
+    if (isDeletingDefault && filtered.length > 0) {
+      filtered[0]!.isDefault = true;
+    }
+    setAppConfig({
+      ...appConfig,
+      llm: {
+        ...appConfig.llm,
+        configs: filtered,
+      },
+    });
+  };
 
   return (
     <div className="space-y-5 h-[calc(100vh-4rem-2rem)] overflow-y-auto custom-scrollbar p-6 select-none">
       
-      {/* 顶部配置概览 */}
+      {/* 顶部配置概览与操作栏 */}
       <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-2xl">tune</span>
+            <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-2xl">tune</span>
             <span>系统管理与运行参数配置</span>
           </h2>
           <p className="text-xs text-on-surface-variant dark:text-outline-variant mt-0.5">
-            配置文档解析引擎后端、推理大模型、微秒级可观测性日志与质检员权限
+            实时管理 config.json 大模型配置、API 路由、执行超时与质检员授权
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleSaveConfig}
-          className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs shrink-0"
-        >
-          <span className="material-symbols-outlined text-base">
-            {isSaved ? 'check' : 'save'}
-          </span>
-          <span>{isSaved ? '配置已保存生效' : '保存系统配置'}</span>
-        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          {feedback && (
+            <span className={`text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
+              feedback.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400'
+            }`}>
+              <span className="material-symbols-outlined text-base">
+                {feedback.type === 'success' ? 'check_circle' : 'error'}
+              </span>
+              <span>{feedback.message}</span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={handleSaveConfig}
+            disabled={isSaving || isLoading}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-base">
+              {isSaving ? 'hourglass_top' : 'save'}
+            </span>
+            <span>{isSaving ? '正在保存...' : '保存系统配置'}</span>
+          </button>
+        </div>
       </div>
 
-      {/* 主体分栏：左侧 45% 模型与解析配置，右侧 55% 实时日志终端与权限 */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        
-        {/* 左侧：模型与解析源配置 */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-5 shadow-xs space-y-4">
-            <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-primary text-base">memory</span>
-              <span>质保书解析引擎与模型路由 (Parser & Model Engine)</span>
-            </h3>
-
-            {/* 解析源选择 */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-on-surface dark:text-surface-bright block">
-                文档版面分析与 OCR 解析源
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'native', label: 'NormScale 内建专用解析', desc: '支持像素级 BBox' },
-                  { id: 'docex', label: 'DocEx 跨项目服务', desc: 'REST API 桥接' },
-                  { id: 'llm', label: 'Direct LLM 多模态', desc: '纯视觉抽取' },
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setParserBackend(item.id as typeof parserBackend)}
-                    className={`p-3 rounded-xl border text-left transition-all ${
-                      parserBackend === item.id
-                        ? 'border-primary dark:border-primary-fixed-dim bg-primary/10 text-primary dark:text-primary-fixed-dim font-bold'
-                        : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant hover:text-on-surface'
-                    }`}
-                  >
-                    <span className="block text-xs">{item.label}</span>
-                    <span className="text-[10px] opacity-75 block mt-0.5">{item.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 大模型选择与 API 密钥掩码 */}
-            <div className="space-y-3 pt-2 border-t border-outline-variant/40 text-xs">
-              <div>
-                <label className="block text-on-surface-variant mb-1">主推理大模型 (Primary LLM)</label>
-                <select
-                  value={llmModel}
-                  onChange={e => setLlmModel(e.target.value)}
-                  className="w-full border border-outline-variant dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-2 px-3 text-on-surface dark:text-surface-bright focus:outline-none font-mono"
-                >
-                  <option value="gemini-3.1-pro">Gemini 3.1 Pro (推荐 · 工业级高精度)</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (极速响应)</option>
-                  <option value="claude-3.7-sonnet">Claude 3.7 Sonnet (备用通道)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-on-surface-variant mb-1">API Key 凭据配置 (环境变量已注入)</label>
-                <input
-                  type="password"
-                  value="sk-proj-normscale-industrial-20260823-masked"
-                  disabled
-                  className="w-full border border-outline-variant/40 rounded-lg bg-surface-container-low/50 py-2 px-3 text-on-surface-variant font-mono"
-                />
-              </div>
-            </div>
-          </div>
+      {isLoading ? (
+        <div className="h-64 flex flex-col items-center justify-center text-on-surface-variant gap-2 text-xs">
+          <span className="material-symbols-outlined text-3xl animate-spin text-primary">progress_activity</span>
+          <span>正在拉取系统配置...</span>
         </div>
-
-        {/* 右侧：实时日志流监视器与权限 */}
-        <div className="lg:col-span-7 space-y-4">
+      ) : !appConfig ? (
+        <div className="h-64 flex flex-col items-center justify-center text-red-500 gap-2 text-xs">
+          <span className="material-symbols-outlined text-3xl">error</span>
+          <span>无法加载 config.json 配置文件</span>
+        </div>
+      ) : (
+        /* 主体分栏：左侧 65% 模型配置卡片，右侧 35% 全局参数与审计日志 */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           
-          {/* 日志流监视器 */}
-          <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark overflow-hidden shadow-xs">
-            <div className="px-4 py-3 border-b border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-base">terminal</span>
-                <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider">
-                  领域引擎实时执行轨迹日志 (Microsecond Log Stream)
-                </h3>
-              </div>
-
-              {/* 标签过滤 */}
-              <div className="flex items-center gap-1 text-xs">
-                {['ALL', 'EXTRACTOR', 'NORMALIZER', 'ENGINE', 'PERF'].map(tag => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setActiveLogFilter(tag)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition-all ${
-                      activeLogFilter === tag
-                        ? 'bg-primary text-on-primary font-bold'
-                        : 'text-on-surface-variant hover:text-on-surface'
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 模拟终端视窗 */}
-            <div className="p-4 bg-[#090d16] text-slate-200 font-mono text-[11px] space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar">
-              {filteredLogs.map(log => (
-                <div key={log.id} className="flex gap-2">
-                  <span className="text-slate-500 shrink-0">{log.time}</span>
-                  <span className={`px-1.5 py-0.2 rounded font-bold shrink-0 text-[10px] ${
-                    log.tag === 'EXTRACTOR' ? 'bg-cyan-950 text-cyan-300' :
-                    log.tag === 'NORMALIZER' ? 'bg-blue-950 text-blue-300' :
-                    log.tag === 'ENGINE' ? 'bg-amber-950 text-amber-300' :
-                    log.tag === 'PERF' ? 'bg-emerald-950 text-emerald-300' : 'bg-slate-800 text-slate-300'
-                  }`}>
-                    [{log.tag}]
-                  </span>
-                  <span className="text-slate-300 font-sans">{log.message}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 质检员权限与 CA 证书 */}
-          <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs space-y-3">
+          {/* 左侧：大模型配置卡片列表 */}
+          <div className="lg:col-span-7 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-emerald-600 text-base">verified_user</span>
-                <span>质检员数字签名与 CA 证书权限</span>
+                <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-base">neurology</span>
+                <span>OpenAI 兼容协议模型路由列表 ({appConfig.llm.configs.length})</span>
               </h3>
+
               <button
                 type="button"
-                className="inline-flex items-center gap-1 text-[11px] text-primary font-bold hover:underline"
+                onClick={handleAddConfigItem}
+                className="flex items-center gap-1 text-xs text-primary dark:text-primary-fixed-dim font-bold hover:underline cursor-pointer"
               >
-                <span className="material-symbols-outlined text-xs">add</span>
-                <span>新增质检员</span>
+                <span className="material-symbols-outlined text-sm">add</span>
+                <span>新增模型配置</span>
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant border-b border-outline-variant/40 font-mono">
-                  <tr>
-                    <th className="px-3 py-2">姓名 / 员工号</th>
-                    <th className="px-3 py-2">岗位角色</th>
-                    <th className="px-3 py-2">授权标准品类</th>
-                    <th className="px-3 py-2">CA 证书状态</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant/20 text-[11px]">
-                  <tr>
-                    <td className="px-3 py-2 font-medium text-on-surface dark:text-surface-bright">张建华 (QA-8821)</td>
-                    <td className="px-3 py-2 text-on-surface-variant">主检工程师</td>
-                    <td className="px-3 py-2 font-mono">GB/T 13296 (不锈钢管)</td>
-                    <td className="px-3 py-2">
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-status-pass-bg text-status-pass-text">
-                        有效至 2027-12
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            {/* 模型卡片列表 */}
+            <div className="space-y-3.5">
+              {appConfig.llm.configs.map((configItem, idx) => {
+                const isDefault = Boolean(configItem.isDefault);
+                return (
+                  <div
+                    key={configItem.id || idx}
+                    className={`rounded-xl border p-4.5 transition-all space-y-3.5 ${
+                      isDefault
+                        ? 'border-primary dark:border-primary-fixed-dim ring-2 ring-primary/20 bg-surface-container-lowest dark:bg-surface-dark shadow-xs'
+                        : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                    }`}
+                  >
+                    {/* 卡片头部 */}
+                    <div className="flex items-center justify-between gap-2 border-b border-outline-variant/30 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-lg">
+                          {isDefault ? 'verified' : 'tune'}
+                        </span>
+                        <input
+                          type="text"
+                          value={configItem.name}
+                          onChange={e => handleUpdateConfigItem(idx, 'name', e.target.value)}
+                          className="font-bold text-xs text-on-surface dark:text-surface-bright bg-transparent border-b border-dashed border-outline-variant/50 focus:border-primary focus:outline-none px-1 py-0.5"
+                          placeholder="配置名称"
+                        />
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant font-medium">
+                          ID: {configItem.id}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {isDefault ? (
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-primary text-on-primary flex items-center gap-1 shadow-2xs">
+                            <span className="material-symbols-outlined text-xs">check</span>
+                            <span>默认推理模型</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefault(idx)}
+                            className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-outline-variant hover:border-primary text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+                          >
+                            设为默认
+                          </button>
+                        )}
+
+                        {appConfig.llm.configs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteConfigItem(idx)}
+                            title="删除该模型配置"
+                            className="text-on-surface-variant hover:text-red-600 transition-colors p-1"
+                          >
+                            <span className="material-symbols-outlined text-sm">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 表单字段 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block text-on-surface-variant text-[11px] mb-1 font-medium">服务商 (Provider)</label>
+                        <input
+                          type="text"
+                          value={configItem.provider}
+                          onChange={e => handleUpdateConfigItem(idx, 'provider', e.target.value)}
+                          className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-on-surface-variant text-[11px] mb-1 font-medium">模型名称 (Model Identifier)</label>
+                        <input
+                          type="text"
+                          value={configItem.model}
+                          onChange={e => handleUpdateConfigItem(idx, 'model', e.target.value)}
+                          className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary text-xs font-mono"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-on-surface-variant text-[11px] mb-1 font-medium">API Base URL (OpenAI 兼容端点)</label>
+                        <input
+                          type="text"
+                          value={configItem.baseUrl}
+                          onChange={e => handleUpdateConfigItem(idx, 'baseUrl', e.target.value)}
+                          className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary text-xs font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-on-surface-variant text-[11px] mb-1 font-medium">API Key 环境变量名</label>
+                        <input
+                          type="text"
+                          value={configItem.apiKey}
+                          onChange={e => handleUpdateConfigItem(idx, 'apiKey', e.target.value)}
+                          placeholder="例如 KIMI_API_KEY 或 OPENAI_API_KEY"
+                          className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary text-xs font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-on-surface-variant text-[11px] mb-1 font-medium">思考深度 (Thinking Effort)</label>
+                        <select
+                          value={configItem.thinkingEffort || 'medium'}
+                          onChange={e => handleUpdateConfigItem(idx, 'thinkingEffort', e.target.value)}
+                          className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary text-xs"
+                        >
+                          <option value="none">关闭思考 (None / Direct Output)</option>
+                          <option value="low">低消耗快速思考 (Low)</option>
+                          <option value="medium">标准工业深度思考 (Medium)</option>
+                          <option value="high">深度多轮校验思考 (High)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 右侧：全局调用参数、计费单价与系统日志 */}
+          <div className="lg:col-span-5 space-y-4">
+            
+            {/* 全局参数 */}
+            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs space-y-3">
+              <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-primary text-base">timer</span>
+                <span>全局调用控制参数</span>
+              </h3>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-on-surface-variant text-[11px] mb-1">单次推理超时阈值 (ms)</label>
+                  <input
+                    type="number"
+                    step={1000}
+                    value={appConfig.llm.timeoutMs}
+                    onChange={e => setAppConfig({
+                      ...appConfig,
+                      llm: { ...appConfig.llm, timeoutMs: Number(e.target.value) },
+                    })}
+                    className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-on-surface-variant text-[11px] mb-1">接口异常最大重试次数</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={5}
+                    value={appConfig.llm.maxRetries}
+                    onChange={e => setAppConfig({
+                      ...appConfig,
+                      llm: { ...appConfig.llm, maxRetries: Number(e.target.value) },
+                    })}
+                    className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary font-mono text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 定价参考 */}
+            {appConfig.llm.pricing && (
+              <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs space-y-2.5">
+                <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-emerald-600 text-base">payments</span>
+                  <span>模型推理计费单价参考 (每 1M Tokens / ¥)</span>
+                </h3>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant border-b border-outline-variant/40 font-mono text-[10px]">
+                      <tr>
+                        <th className="px-2.5 py-1.5">模型</th>
+                        <th className="px-2.5 py-1.5 text-right">输入 / 1M</th>
+                        <th className="px-2.5 py-1.5 text-right">输出 / 1M</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant/20 text-[11px] font-mono">
+                      {Object.entries(appConfig.llm.pricing).map(([mName, price]) => (
+                        <tr key={mName}>
+                          <td className="px-2.5 py-1.5 font-medium text-on-surface dark:text-surface-bright">{mName}</td>
+                          <td className="px-2.5 py-1.5 text-right">¥{price.inputPer1M.toFixed(2)}</td>
+                          <td className="px-2.5 py-1.5 text-right">¥{price.outputPer1M.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 系统执行轨迹日志视窗 */}
+            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark overflow-hidden shadow-xs">
+              <div className="px-4 py-2.5 border-b border-outline-variant/40 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-primary text-base">terminal</span>
+                  <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider">
+                    领域引擎运行状态
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-1 text-[10px]">
+                  {['ALL', 'EXTRACTOR', 'ENGINE', 'PERF'].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setActiveLogFilter(tag)}
+                      className={`px-1.5 py-0.5 rounded transition-all ${
+                        activeLogFilter === tag
+                          ? 'bg-primary text-on-primary font-bold'
+                          : 'text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-4 bg-surface-container-lowest dark:bg-surface-dark text-on-surface-variant text-xs flex flex-col items-center justify-center min-h-[140px] text-center gap-1.5">
+                <span className="material-symbols-outlined text-emerald-600 text-2xl">check_circle</span>
+                <span className="font-bold text-on-surface dark:text-surface-bright">系统各模块就绪待命</span>
+                <span className="text-[11px] text-on-surface-variant/80">工作台执行质检解析与规则比对时将在此实时输出性能日志</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

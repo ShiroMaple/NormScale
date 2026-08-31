@@ -1,76 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { InspectionSession, DEFAULT_INSPECTION_SESSION } from '@/types/session.ts';
+import { InspectionSession } from '@/types/session.ts';
 
 interface AuditLedgerProps {
   onLoadSessionToWorkbench?: (session: InspectionSession) => void;
 }
-
-// 模拟历史作业会话台账数据 (以 Session 为核心单元)
-const HISTORICAL_SESSIONS: InspectionSession[] = [
-  DEFAULT_INSPECTION_SESSION,
-  {
-    sessionId: 'SESS-20260825-091520-C3D4E5F6',
-    createdAt: '2026-08-25 09:15:20',
-    title: 'PetroChemical HeatEx Proj-02 · 特种承压合金管批次复验',
-    totalDocuments: 2,
-    totalBatches: 3,
-    passedBatches: 3,
-    failedBatches: 0,
-    hitlBatches: 0,
-    documents: [
-      {
-        docId: 'doc_hist_01',
-        filename: 'Zhejiang_SpecialPipe_MTC_20260825.pdf',
-        fileSize: '2.1 MB',
-        uploadTime: '2026-08-25 09:15',
-        ocrStatus: 'DONE',
-        pageCount: 2,
-        batches: [
-          {
-            batchNo: 'ZJ-2026-0881',
-            subBatchIndex: 1,
-            grade: '022Cr17Ni12Mo2 (S31603)',
-            standard: 'GB/T 13296-2023',
-            supplier: '浙江某特种不锈钢管业有限公司',
-            dimensions: 'OD 25.0mm × WT 2.0mm × L 6000mm',
-            heatNo: 'HT-2026-0881',
-            verdict: 'PASS',
-            verdictSummary: '全项符合 GB/T 13296-2023 锅炉管执行标准',
-            ocrConfidence: 98,
-            gradeMatchConfidence: 99,
-            chemical: [
-              { element: 'C', value: '0.025', confidence: '99%', status: 'ok' },
-              { element: 'Si', value: '0.45', confidence: '98%', status: 'ok' },
-              { element: 'Mn', value: '1.20', confidence: '99%', status: 'ok' },
-              { element: 'P', value: '0.028', confidence: '97%', status: 'ok' },
-              { element: 'S', value: '0.005', confidence: '99%', status: 'ok' },
-              { element: 'Ni', value: '12.10', confidence: '99%', status: 'ok' },
-              { element: 'Cr', value: '17.20', confidence: '99%', status: 'ok' },
-              { element: 'Mo', value: '2.15', confidence: '98%', status: 'ok' },
-            ],
-            mechanical: {
-              tensile_rm: '560 MPa',
-              yield_rp02: '240 MPa',
-              elongation_a: '48 %',
-              hardness: '165 HBW',
-            },
-            process: {
-              flattening: 'PASS',
-              flaring: 'PASS',
-              intergranularCorrosion: 'PASS',
-              ndt: '涡流探伤 (ET) 合格',
-            },
-            reportNo: 'QA-20260825-0881',
-            sha256Hash: 'd4c3b2a198fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b999',
-            inspector: 'OP-9921 (QA)',
-          },
-        ],
-      },
-    ],
-  },
-];
 
 /**
  * ============================================================================
@@ -81,9 +16,7 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
   onLoadSessionToWorkbench,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
-    new Set([DEFAULT_INSPECTION_SESSION.sessionId])
-  );
+  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(new Set());
   const [localSessions, setLocalSessions] = useState<InspectionSession[]>([]);
 
   useEffect(() => {
@@ -91,8 +24,9 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
       const stored = localStorage.getItem('normscale_saved_sessions');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           setLocalSessions(parsed);
+          setExpandedSessionIds(new Set([parsed[0].sessionId]));
         }
       }
     } catch {
@@ -101,9 +35,7 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
   }, []);
 
   const allSessions = useMemo(() => {
-    const customIds = new Set(localSessions.map(s => s.sessionId));
-    const base = HISTORICAL_SESSIONS.filter(s => !customIds.has(s.sessionId));
-    return [...localSessions, ...base];
+    return [...localSessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [localSessions]);
 
   const toggleExpand = (sessionId: string) => {
@@ -144,16 +76,27 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-on-surface-variant dark:text-outline-variant font-mono">
-            <span>总计会话: <strong className="text-on-surface dark:text-surface-bright">{HISTORICAL_SESSIONS.length}</strong></span>
+          <div className="flex items-center gap-4 text-xs text-on-surface-variant font-mono">
+            <span>总计会话: <strong className="text-on-surface dark:text-surface-bright">{allSessions.length}</strong></span>
             <span>•</span>
-            <span>已入库批次: <strong className="text-status-pass-text">8 PASS</strong></span>
+            <span>已保存批次: <strong className="text-status-pass-text">{allSessions.reduce((acc, s) => acc + (s.passedBatches || 0), 0)} PASS</strong></span>
           </div>
         </div>
       </div>
 
-      {/* 会话台账列表卡片 */}
-      <div className="space-y-4">
+      {/* 会话台账列表卡片 / 空状态 */}
+      {filteredSessions.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-12 text-center flex flex-col items-center justify-center gap-3 shadow-xs">
+          <span className="material-symbols-outlined text-4xl text-on-surface-variant/40">history_edu</span>
+          <div className="space-y-1">
+            <h3 className="font-bold text-sm text-on-surface dark:text-surface-bright">暂无已归档的历史质检台账</h3>
+            <p className="text-xs text-on-surface-variant dark:text-outline-variant max-w-md">
+              在质检工作台完成文档核验与标准比对后，点击步骤 3 底部【保存结果】即可在此建立永久追溯台账。
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
         {filteredSessions.map(session => {
           const isExpanded = expandedSessionIds.has(session.sessionId);
           return (
@@ -274,7 +217,8 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

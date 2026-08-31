@@ -101,7 +101,7 @@ export const AVAILABLE_GRADE_SLICES = STANDARDS_CATALOG.flatMap(s =>
  * ============================================================================
  */
 export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
-  samples,
+  samples: _samples,
   selectedSampleId,
   onSelectSample,
   isAuditing,
@@ -323,6 +323,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     status: '就绪' | '上传中' | '解析中';
     size: string;
     date: string;
+    md5?: string;
   }
 
   interface CachedDocItem {
@@ -330,29 +331,38 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     filename: string;
     date: string;
     size: string;
+    md5?: string;
   }
 
-  // 待处理文档队列状态（同 DocEx 契约设计：以物理文档为单位）
-  const [queuedDocs, setQueuedDocs] = useState<QueuedDocItem[]>(() => {
-    return samples.map(sample => ({
-      id: sample.id,
-      filename: sample.id === 's30408_messy_sample'
-        ? 'Baosteel_S30408_BoilerTube_MTC.pdf'
-        : sample.id === '316l_kgf_sample'
-          ? 'Tisco_06Cr19Ni10_PressurePlate_MTC.pdf'
-          : 'Wisco_Q345R_Custom_Specimen.pdf',
-      status: '就绪',
-      size: sample.id === 's30408_messy_sample' ? '1.2 MB' : sample.id === '316l_kgf_sample' ? '3.4 MB' : '800 KB',
-      date: '2026/8/26',
-    }));
-  });
+  // 待处理文档队列状态（初始完全清空为 0，由用户上传或从真实缓存载入）
+  const [queuedDocs, setQueuedDocs] = useState<QueuedDocItem[]>([]);
 
-  // 历史已缓存文档列表状态
-  const [cachedDocs, setCachedDocs] = useState<CachedDocItem[]>([
-    { id: 's30408_messy_sample', filename: 'Baosteel_S30408_BoilerTube_MTC.pdf', date: '2026/8/26', size: '1.2 MB' },
-    { id: '316l_kgf_sample', filename: 'Tisco_06Cr19Ni10_PressurePlate_MTC.pdf', date: '2026/8/26', size: '3.4 MB' },
-    { id: 'unknown_grade_hitl_sample', filename: 'Wisco_Q345R_Custom_Specimen.pdf', date: '2026/8/26', size: '800 KB' },
-  ]);
+  // 历史已缓存文档列表状态（由服务端 .cache/parses/ 动态提供）
+  const [cachedDocs, setCachedDocs] = useState<CachedDocItem[]>([]);
+
+  // 动态拉取服务端真实的已缓存文档列表
+  const refreshCachedDocs = useCallback(() => {
+    fetch('/api/documents/cached')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.documents)) {
+          setCachedDocs(
+            data.documents.map((d: any) => ({
+              id: d.docId,
+              md5: d.md5,
+              filename: d.filename,
+              date: new Date(d.parsedAt).toLocaleDateString(),
+              size: d.fileSize,
+            }))
+          );
+        }
+      })
+      .catch(err => console.warn('[WaterfallWorkbench] 拉取历史已解析缓存失败:', err));
+  }, []);
+
+  useEffect(() => {
+    refreshCachedDocs();
+  }, [refreshCachedDocs]);
 
   // 处理队列卡片右上角按钮点击：未上传完成的取消上传，已上传完成的移出队列并保留至历史缓存
   const handleRemoveOrCancelDoc = (doc: QueuedDocItem, e: React.MouseEvent) => {
@@ -360,14 +370,6 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
     // 移出待处理队列
     setQueuedDocs(prev => prev.filter(item => item.id !== doc.id));
-
-    // 若文档已上传完成（就绪态），确保其保留在历史已缓存文档列表中
-    if (doc.status === '就绪') {
-      setCachedDocs(prev => {
-        if (prev.some(c => c.id === doc.id)) return prev;
-        return [...prev, { id: doc.id, filename: doc.filename, date: doc.date, size: doc.size }];
-      });
-    }
 
     // 若被移除的正是当前选中的样本，自动切换至队列中下一个有效文档
     if (selectedSampleId === doc.id) {
@@ -380,13 +382,34 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   };
 
   // 从历史缓存恢复至待处理队列并选中
-  const handleRestoreFromCache = (item: CachedDocItem) => {
+  const handleRestoreFromCache = async (item: CachedDocItem) => {
     setQueuedDocs(prev => {
       if (prev.some(d => d.id === item.id)) return prev;
-      return [...prev, { id: item.id, filename: item.filename, status: '就绪', size: item.size, date: item.date }];
+      return [...prev, { id: item.id, filename: item.filename, status: '就绪', size: item.size, date: item.date, md5: item.md5 }];
     });
+
+    // 如果当前 session.documents 尚未包含该文档，从缓存端点读取填充
+    if (!session.documents.some(d => d.docId === item.id)) {
+      try {
+        const res = await fetch('/api/documents/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sampleId: item.id, filename: item.filename }),
+        });
+        const data = await res.json();
+        if (data.success && data.result?.sessionDocument) {
+          setSession(prev => ({
+            ...prev,
+            documents: [...prev.documents, data.result.sessionDocument],
+          }));
+        }
+      } catch (err) {
+        console.warn('[WaterfallWorkbench] 读取缓存单据失败:', err);
+      }
+    }
+
     onSelectSample(item.id);
-    onTriggerAudit();
+    showToast(`已从历史缓存载入: ${item.filename}`, 'info');
   };
 
   // 处理用户选择真实本地文件上传 (支持 PDF 与图片)
