@@ -17,6 +17,7 @@ interface BatchContextBarProps {
   sessionMetrics?: SessionTokenMetrics;
   isStreamingTerminalExpanded?: boolean;
   onToggleStreamingTerminal?: () => void;
+  onReparseDocument?: () => void;
 }
 
 /**
@@ -39,6 +40,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
   sessionMetrics,
   isStreamingTerminalExpanded,
   onToggleStreamingTerminal,
+  onReparseDocument,
 }) => {
   const [docDropdownOpen, setDocDropdownOpen] = useState(false);
   const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
@@ -174,6 +176,18 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
               <span className="material-symbols-outlined text-sm">
                 {isStreamingTerminalExpanded ? 'expand_less' : 'expand_more'}
               </span>
+            </button>
+          )}
+
+          {onReparseDocument && (
+            <button
+              type="button"
+              onClick={onReparseDocument}
+              className="flex items-center gap-1 text-xs text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim bg-surface-container-low dark:bg-surface-dark-low hover:bg-surface-container-high px-2.5 py-1 rounded-lg transition-colors border border-outline-variant/40 dark:border-border-dark cursor-pointer font-medium"
+              title="强制绕过本地 MD5 缓存，重新调用大模型解析当前文档"
+            >
+              <span className="material-symbols-outlined text-sm">refresh</span>
+              <span>重新解析</span>
             </button>
           )}
 

@@ -141,9 +141,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
 
   // 多文档异步并发解析工作池 Hook
-  const { tasks: parsingTasks, sessionMetrics, startParsingSession } = useDocumentParser();
+  const {
+    tasks: parsingTasks,
+    sessionMetrics,
+    lastError,
+    startParsingSession,
+    reparseDocument,
+  } = useDocumentParser();
   const [isStreamingTerminalExpanded, setIsStreamingTerminalExpanded] = useState<boolean>(true);
   const prevDocStatusMap = useRef<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+  const [uploadedFilesMap, setUploadedFilesMap] = useState<Record<string, File>>({});
 
   // 监听当前选中文档的解析状态，当解析从 parsing 变更为 ready 时，延迟 800ms 自动平滑折叠
   const currentDocTask = parsingTasks[selectedDocId];
@@ -380,6 +389,72 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     onTriggerAudit();
   };
 
+  // 处理用户选择真实本地文件上传 (支持 PDF 与图片)
+  const handleRealFiles = (files: FileList | File[]) => {
+    const fileArr = Array.from(files);
+    if (fileArr.length === 0) return;
+
+    fileArr.forEach(file => {
+      const docId = `doc_up_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const sizeStr = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+
+      setQueuedDocs(prev => [
+        ...prev,
+        {
+          id: docId,
+          filename: file.name,
+          status: '就绪',
+          size: sizeStr,
+          date: new Date().toLocaleDateString(),
+        },
+      ]);
+
+      setUploadedFilesMap(prev => ({
+        ...prev,
+        [docId]: file,
+      }));
+
+      // 同步追加到当前 session.documents
+      setSession(prev => {
+        const newDoc: SessionDocument = {
+          docId,
+          filename: file.name,
+          fileSize: sizeStr,
+          uploadTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          ocrStatus: 'PENDING',
+          pageCount: 1,
+          batches: [
+            {
+              batchNo: `${file.name.replace(/\.[^/.]+$/, '').slice(0, 8)}-01`,
+              subBatchIndex: 1,
+              grade: '待提取',
+              standard: '待提取',
+              supplier: '待提取',
+              dimensions: '待提取',
+              heatNo: '待提取',
+              verdict: 'PASS',
+              verdictSummary: '等待大模型提取中...',
+              ocrConfidence: 99,
+              gradeMatchConfidence: 99,
+              chemical: [],
+              mechanical: { tensile_rm: '', yield_rp02: '', elongation_a: '' },
+              process: { flattening: 'PASS', intergranularCorrosion: 'PASS', ndt: '' },
+              reportNo: '',
+              sha256Hash: '',
+              inspector: '',
+            },
+          ],
+        };
+        return {
+          ...prev,
+          documents: [...prev.documents, newDoc],
+        };
+      });
+
+      showToast(`已加入待处理队列: ${file.name}`, 'success');
+    });
+  };
+
   // 从 Step 1 触发新建 Session 并前往 Step 2 (启动 2~3 线程异步并发工作池)
   const handleStartNewSessionAndAdvance = () => {
     const newSessionId = generateSessionId();
@@ -398,8 +473,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         setSelectedBatchNo(firstBatch.batchNo);
       }
     }
-    // 启动多文档异步并发解析工作池
-    startParsingSession(newSession.documents);
+    // 启动多文档异步并发解析工作池 (传入真实文件流映射)
+    startParsingSession(newSession.documents, uploadedFilesMap);
     setIsStreamingTerminalExpanded(true);
     setCurrentStep(1);
   };
@@ -887,6 +962,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }, 3500);
   }, []);
 
+  // 监听大模型解析错误并阻断提示
+  useEffect(() => {
+    if (lastError) {
+      showToast(lastError, 'error');
+    }
+  }, [lastError, showToast]);
+
   // 1. 保存当前作业会话 (Session) 的全部系统和人工检验结果至本地台账
   const handleSaveSessionResults = useCallback((silent: boolean = false) => {
     try {
@@ -1086,13 +1168,44 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 </h1>
               </div>
 
+              {/* 隐藏式真实文件选择输入框 */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={e => {
+                  if (e.target.files) {
+                    handleRealFiles(e.target.files);
+                    e.target.value = '';
+                  }
+                }}
+                multiple
+                accept=".pdf,image/*"
+                className="hidden"
+              />
+
               {/* 左右分栏：左侧大拖拽区 + 右侧待处理文档队列 (DocEx 风格) */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
-                {/* 左侧：文档上传区（大虚线框，可拖拽或点击选取多个文档） */}
+                {/* 左侧：文档上传区（大虚线框，可拖拽或点击选取多个真实文档） */}
                 <div
-                  onClick={onTriggerAudit}
-                  className="lg:col-span-6 xl:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border-2 border-dashed border-outline-variant/60 dark:border-border-dark hover:border-primary dark:hover:border-primary-fixed-dim rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[300px] shadow-xs group"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => {
+                    e.preventDefault();
+                    setIsDraggingOver(true);
+                  }}
+                  onDragLeave={() => setIsDraggingOver(false)}
+                  onDrop={e => {
+                    e.preventDefault();
+                    setIsDraggingOver(false);
+                    if (e.dataTransfer.files) {
+                      handleRealFiles(e.dataTransfer.files);
+                    }
+                  }}
+                  className={`lg:col-span-6 xl:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[300px] shadow-xs group ${
+                    isDraggingOver
+                      ? 'border-primary ring-2 ring-primary/30 bg-primary/5'
+                      : 'border-outline-variant/60 dark:border-border-dark hover:border-primary dark:hover:border-primary-fixed-dim'
+                  }`}
                 >
                   <div className="w-14 h-14 rounded-2xl bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant group-hover:text-primary group-hover:bg-primary/10 flex items-center justify-center transition-all mb-4">
                     <span className="material-symbols-outlined text-3xl">
@@ -1100,10 +1213,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     </span>
                   </div>
                   <h3 className="text-sm font-bold text-on-surface dark:text-surface-bright mb-1.5">
-                    拖拽文件到此处，或点击卡片选取，支持同时上传多个文档
+                    拖拽文件到此处，或点击选取本地真实 PDF/图片
                   </h3>
                   <p className="text-xs text-on-surface-variant dark:text-outline-variant">
-                    支持 PDF / Word (.docx) / 图片 (.jpg, .jpeg, .png) 格式，单个文件最高支持 50MB
+                    自动计算文件 MD5 存证指纹并秒级检索缓存，单个文件最高支持 50MB
                   </p>
                 </div>
 
@@ -1252,6 +1365,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   sessionMetrics={sessionMetrics}
                   isStreamingTerminalExpanded={isStreamingTerminalExpanded}
                   onToggleStreamingTerminal={() => setIsStreamingTerminalExpanded(prev => !prev)}
+                  onReparseDocument={() => reparseDocument(selectedDocId)}
                   rightExtraAction={
                     isHitl ? (
                       <button

@@ -4,13 +4,21 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-08-31 · Phase 9 真实文档解析、OpenAI 兼容模型直连、MD5 结果缓存与严格错误门禁全链路落地
+
+- OpenAI 兼容协议抽取器 (`OpenAiCompatibleExtractor`)：遵循通用 `/v1/chat/completions` 标准，基于 `config.json` 解耦模型厂商；实现工业级 MTC 结构化抽取 Prompt 与 `SessionDocument` 装配；
+- MD5 抽取结果持久化缓存仓储 (`ParseCacheStore`)：持久化至 `.cache/parses/<md5>.json`，实现已解析文档毫秒级秒开（0 Token 消耗）；支持 `reparseDocument` 强制绕过缓存重新解析；
+- 文档解析与上传 API 端点 (`/api/documents/parse`)：计算物理文件 MD5 指纹，优先检索本地缓存；执行严格错误门禁（无 API Key 或网络失败时绝对不降级拟真，直接阻断并提示维护配置）；
+- 工作台全链路贯通 (`WaterfallWorkbench` & `BatchContextBar`)：步骤 1 开放真实本地文件选择/拖拽上传，步骤 2 标题栏集成【重新解析】操作；25 个测试套件（116 个单元测试）全部通过。
+
 ## 2026-08-31 · 路线图里程碑更新与文档 MD5 解析结果持久化缓存设计决策
 
 - ROADMAP 里程碑演进：勾选完成 Phase 8（多文档异步并发调度与流式终端），正式确立并插入 **Phase 9: 真实文档解析、Moonshot/Kimi 模型直连与 MD5 抽取结果持久化缓存引擎**；
 - MD5 抽取结果持久化缓存策略（`.cache/parses/<md5>.json`）：
   - 价值：消除重复文档在开发测试与生产重放时的 Token 与时间消耗，实现毫秒级秒开；
   - 契约：持久化文件哈希、解析时间戳、模型版本、Token 开销指标、原始打字流与结构化 `CertificateExtract` 数据；
-  - 机制：提供 `forceReparse: boolean` 参数支持质检员手动一键绕过缓存重新解析。
+  - 机制：提供 `forceReparse: boolean` 参数支持质检员手动一键绕过缓存重新解析；
+- 严格错误门禁（严禁静默拟真）：当未配置 API Key 或模型调用失败时，除非队列文档已全部命中缓存，否则一律阻断执行并显式提示联系管理员维护配置。
 
 ## 2026-08-31 · 多文档异步并发解析 (Worker Pool)、大模型实时流式终端与 Session 累计 Token 开销全景落地
 

@@ -7,14 +7,11 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 9 - 真实文档解析、Moonshot/Kimi 模型直连与 MD5 抽取结果持久化缓存引擎 (Real Document Parsing & MD5 Cache Engine)**
-- **待执行行动项清单（Next Steps）**：
-  1. **真实文件上传与 MD5 存证指纹计算**：在步骤 1 支持真实本地 PDF / 图片拖拽上传，服务端秒级计算文件 `md5` / `sha256` 存证指纹；
-  2. **MD5 解析结果持久化缓存机制 (.cache/parses/<md5>.json)**：
-     - 若 MD5 命中缓存，直接秒级重放已解析的结构化数据与 BBox，Token 开销归零，耗时降至毫秒级；
-     - 支持 `forceReparse`（强制重新解析）机制，便于提示词迭代与质检员手动刷新；
-  3. **基于 config.json 的 Moonshot / Kimi 大模型直连抽取管线**：读取 `config.json` 中的 `standard` / `highspeed` 模型配置与 API Key，打通真实 MTC 结构化抽取与 SSE 流式输出；
-  4. **步骤 2 真实切图与 BBox 坐标联动呈现**：服务端将 PDF 渲染为高清切图，右侧数据表格与左侧真实切图建立精准像素级 BBox 联动。
+**当前焦点**：**Phase 10 - 多标准引用规则叠加与双标尺透明追溯引擎 (上线前必达 / Pre-launch Mandatory)**
+- **核心定位**：处理工业质保书同时引用多份标准（如通用产品标准 GB/T 13296 与特种设备订货技术条件 NB/T 47019.5）的复杂技术契约；
+- **算法实现**：`composeMultiStandardSlices()` 纯函数切片合成器，实现“检验项目取并集、共有指标取严苛交集（包络线原则 / Strict Superiority）”；
+- **双标尺追溯**：全景矩阵与核验报告中注入双标准对比依据，明确剪刀差归因责任边界；
+- **双轨制判定契约支持**：后端接入放行仲裁矩阵（Release Arbitration Matrix）与双轨判定数据持久化，绝对不抹除系统客观计算结论。
 
 ## 里程碑 (Milestones)
 
@@ -26,7 +23,7 @@
 - [x] **Phase 6: API 服务层与物资验收决策看板原型**
 - [x] **Phase 7: NormScale 业务工作流与全套前端页面深度纵向贯通**
 - [x] **Phase 8: NormScale 专用的 MTC 质保书内建解析层、多文档异步并发调度与流式终端 (Native Parser & Async Worker Pool)**
-- [ ] **Phase 9: 真实文档解析、Moonshot/Kimi 模型直连与 MD5 抽取结果持久化缓存引擎 (Real Document Parsing & MD5 Cache Engine)**
+- [x] **Phase 9: 真实文档解析、OpenAI 兼容模型直连、MD5 抽取结果持久化缓存与严格错误门禁引擎 (Real Document Parsing & MD5 Cache Engine)**
 - [ ] **Phase 10: 多标准引用规则叠加与双标尺透明追溯引擎 (上线前必达 / Pre-launch Mandatory)**
   - 核心定位：处理工业质保书同时引用多份标准（如通用产品标准 GB/T 13296 与特种设备订货技术条件 NB/T 47019.5）的复杂技术契约
   - 算法实现：`composeMultiStandardSlices()` 纯函数切片合成器，实现“检验项目取并集、共有指标取严苛交集（包络线原则 / Strict Superiority）”
