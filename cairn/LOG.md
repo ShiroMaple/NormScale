@@ -9,6 +9,7 @@
 - 服务端配置与缓存检索 API (`/api/admin/config` & `/api/documents/cached`)：实现 `config.json` 的严格 Zod 契约校验读写持久化，以及 `.cache/parses/` 本地真实已解析文档摘要动态提取；
 - 系统管理页面全面重构 (`AdminConsole`)：彻底移除写死假模型与假日志；动态映射渲染全部 OpenAI 兼容模型卡片，支持在线编辑 BaseURL/Model/超时/Thinking Effort/环境变量名，支持一键切换默认模型与持久化保存；
 - 工作台与历史台账真实化 (`WaterfallWorkbench` & `AuditLedger`)：步骤 1 待处理队列初始清空，历史缓存栏自动请求真实已解析文件；历史台账移除假 Session 数据，纯读真实保存结果，无数据时呈现工业空台账状态；
+- 全量会话模型去假 (`DEFAULT_INSPECTION_SESSION` & `page.tsx`)：彻底剔除 Baosteel、Tisco、Wisco 等假文档与假批次统计（12 批次/7 SUCCESS/1 FAIL/4 HITL），仅保留基于物理 MTC `质保书.pdf` 真实 OCR 解析的 ZPJE 真实文档 (3 真实炉批)；移除页面加载时静默跑 Mock 样本的逻辑；
 - 全套 27 个测试套件（119 个测试用例）100% 全部通过。
 
 ## 2026-08-31 · Phase 9 真实文档解析、OpenAI 兼容模型直连、MD5 结果缓存与严格错误门禁全链路落地
