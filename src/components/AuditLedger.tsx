@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { InspectionSession, DEFAULT_INSPECTION_SESSION } from '@/types/session.ts';
 
 interface AuditLedgerProps {
@@ -43,21 +43,22 @@ const HISTORICAL_SESSIONS: InspectionSession[] = [
             chemical: [
               { element: 'C', value: '0.025', confidence: '99%', status: 'ok' },
               { element: 'Si', value: '0.45', confidence: '98%', status: 'ok' },
-              { element: 'Mn', value: '1.20', confidence: '97%', status: 'ok' },
-              { element: 'P', value: '0.035', confidence: '95%', status: 'ok' },
-              { element: 'S', value: '0.008', confidence: '96%', status: 'ok' },
-              { element: 'Ni', value: '10.20', confidence: '99%', status: 'ok' },
-              { element: 'Cr', value: '16.80', confidence: '98%', status: 'ok' },
-              { element: 'Mo', value: '2.05', confidence: '97%', status: 'ok' },
+              { element: 'Mn', value: '1.20', confidence: '99%', status: 'ok' },
+              { element: 'P', value: '0.028', confidence: '97%', status: 'ok' },
+              { element: 'S', value: '0.005', confidence: '99%', status: 'ok' },
+              { element: 'Ni', value: '12.10', confidence: '99%', status: 'ok' },
+              { element: 'Cr', value: '17.20', confidence: '99%', status: 'ok' },
+              { element: 'Mo', value: '2.15', confidence: '98%', status: 'ok' },
             ],
             mechanical: {
-              tensile_rm: '58.5 kgf/mm² (573.68 MPa)',
-              yield_rp02: '24.5 kgf/mm² (240.26 MPa)',
-              elongation_a: '45.0 %',
-              hardness: '85.0 HRB',
+              tensile_rm: '560 MPa',
+              yield_rp02: '240 MPa',
+              elongation_a: '48 %',
+              hardness: '165 HBW',
             },
             process: {
               flattening: 'PASS',
+              flaring: 'PASS',
               intergranularCorrosion: 'PASS',
               ndt: '涡流探伤 (ET) 合格',
             },
@@ -83,6 +84,27 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
     new Set([DEFAULT_INSPECTION_SESSION.sessionId])
   );
+  const [localSessions, setLocalSessions] = useState<InspectionSession[]>([]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('normscale_saved_sessions');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setLocalSessions(parsed);
+        }
+      }
+    } catch {
+      // 容错处理
+    }
+  }, []);
+
+  const allSessions = useMemo(() => {
+    const customIds = new Set(localSessions.map(s => s.sessionId));
+    const base = HISTORICAL_SESSIONS.filter(s => !customIds.has(s.sessionId));
+    return [...localSessions, ...base];
+  }, [localSessions]);
 
   const toggleExpand = (sessionId: string) => {
     const next = new Set(expandedSessionIds);
@@ -94,7 +116,7 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
     setExpandedSessionIds(next);
   };
 
-  const filteredSessions = HISTORICAL_SESSIONS.filter(sess => {
+  const filteredSessions = allSessions.filter(sess => {
     const q = searchQuery.toLowerCase();
     return (
       sess.sessionId.toLowerCase().includes(q) ||

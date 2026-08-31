@@ -14,6 +14,7 @@ import { BatchContextBar } from './BatchContextBar.tsx';
 import { getZPJEBBoxes, FieldBBox } from '@/types/bbox.ts';
 import { HitlDrawer } from './HitlDrawer.tsx';
 import { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.interface.ts';
+import { toPng } from 'html-to-image';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -109,7 +110,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 }) => {
   // 当前激活的步骤索引：0 (Step 1), 1 (Step 2), 2 (Step 3), 3 (Step 4)
   const [currentStep, setCurrentStep] = useState<number>(initialStep);
-  const [zoomLevel, setZoomLevel] = useState<number>(125);
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [selectedExportFormat, setSelectedExportFormat] = useState<string>('PDF');
   const [activeTabCategory, setActiveTabCategory] = useState<string>('all');
   // 步骤 3: 全景合规比对矩阵分类页签与标准/牌号双搜索控件状态
@@ -136,6 +137,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [currentDocPage, setCurrentDocPage] = useState<number>(1);
   const pdfScrollContainerRef = useRef<HTMLDivElement>(null);
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // 首次载入或文档/缩放变化时，确保 PDF 视窗水平居中
+  useEffect(() => {
+    const container = pdfScrollContainerRef.current;
+    if (!container) return;
+    const centerTimer = setTimeout(() => {
+      if (container.scrollWidth > container.clientWidth) {
+        container.scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
+      }
+    }, 50);
+    return () => clearTimeout(centerTimer);
+  }, [zoomLevel, currentDocPage, selectedDocId, currentStep]);
 
   // 组件卸载时安全清理定时器
   useEffect(() => {
@@ -822,14 +835,203 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
   };
 
+  // 截图导出加载状态
+  const [isCapturing, setIsCapturing] = useState<boolean>(false);
+
+  // 全局轻量 Toast 状态通知
+  const [toastInfo, setToastInfo] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+  } | null>(null);
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastInfo({ message, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToastInfo(null);
+      toastTimerRef.current = null;
+    }, 3500);
+  }, []);
+
+  // 1. 保存当前作业会话 (Session) 的全部系统和人工检验结果至本地台账
+  const handleSaveSessionResults = useCallback((silent: boolean = false) => {
+    try {
+      const storageKey = 'normscale_saved_sessions';
+      const existingRaw = localStorage.getItem(storageKey);
+      let sessionsList: InspectionSession[] = existingRaw ? JSON.parse(existingRaw) : [];
+
+      // 提取并更新当前 Session 数据（确保实测值、判定状态与最新修改同步存盘）
+      const sessionToSave: InspectionSession = {
+        ...session,
+        createdAt: session.createdAt || new Date().toISOString().replace('T', ' ').slice(0, 19),
+      };
+
+      // 覆盖已存在的同名 Session 或置顶追加
+      sessionsList = sessionsList.filter(s => s.sessionId !== sessionToSave.sessionId);
+      sessionsList.unshift(sessionToSave);
+
+      localStorage.setItem(storageKey, JSON.stringify(sessionsList));
+
+      if (!silent) {
+        showToast(`检验结果已成功保存至本地台账 (${sessionToSave.sessionId})`, 'success');
+      }
+    } catch {
+      if (!silent) {
+        showToast('保存台账失败，请检查浏览器本地存储权限', 'error');
+      }
+    }
+  }, [session, showToast]);
+
+  // PDF 预览视窗鼠标按住拖拽平移状态 (支持全向左右、上下与斜向自由平移)
+  const isDraggingPdfRef = useRef<boolean>(false);
+  const dragStartXRef = useRef<number>(0);
+  const dragStartYRef = useRef<number>(0);
+  const scrollStartXRef = useRef<number>(0);
+  const scrollStartYRef = useRef<number>(0);
+  const [isMouseDownDragging, setIsMouseDownDragging] = useState<boolean>(false);
+
+  const handlePdfMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // 仅响应鼠标左键
+    const container = pdfScrollContainerRef.current;
+    if (!container) return;
+
+    isDraggingPdfRef.current = true;
+    dragStartXRef.current = e.clientX;
+    dragStartYRef.current = e.clientY;
+    scrollStartXRef.current = container.scrollLeft;
+    scrollStartYRef.current = container.scrollTop;
+    setIsMouseDownDragging(true);
+  };
+
+  // 全局监听拖拽，保证斜向与跨边界拖拽极其顺滑
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!isDraggingPdfRef.current) return;
+      const container = pdfScrollContainerRef.current;
+      if (!container) return;
+
+      e.preventDefault();
+      const deltaX = e.clientX - dragStartXRef.current;
+      const deltaY = e.clientY - dragStartYRef.current;
+
+      container.scrollLeft = scrollStartXRef.current - deltaX;
+      container.scrollTop = scrollStartYRef.current - deltaY;
+    };
+
+    const handleGlobalMouseUp = () => {
+      if (isDraggingPdfRef.current) {
+        isDraggingPdfRef.current = false;
+        setIsMouseDownDragging(false);
+      }
+    };
+
+    if (isMouseDownDragging) {
+      window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
+      window.addEventListener('mouseup', handleGlobalMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isMouseDownDragging]);
+
+  // 2. 基于 html-to-image (调用浏览器底层原生渲染管线) 生成 100% 像素级对齐的无损 PNG 截图
+  const handleSaveStep3Screenshot = useCallback(async () => {
+    const targetElement = document.getElementById('step-3-workbench-panel');
+    if (!targetElement) {
+      showToast('无法定位步骤 3 结果视窗', 'error');
+      return;
+    }
+
+    setIsCapturing(true);
+
+    try {
+      // 确保字体全部加载度量就绪
+      if (document.fonts) {
+        await document.fonts.ready;
+      }
+
+      const isDark = document.documentElement.classList.contains('dark');
+      const targetWidth = targetElement.scrollWidth || targetElement.offsetWidth;
+      const targetHeight = targetElement.scrollHeight || targetElement.offsetHeight;
+
+      const pngData = await toPng(targetElement, {
+        quality: 1,
+        pixelRatio: 2, // 2x 视网膜级高清输出
+        backgroundColor: isDark ? '#141218' : '#ffffff',
+        cacheBust: true,
+        width: targetWidth,
+        height: targetHeight,
+        style: {
+          margin: '0',
+          transform: 'none',
+          left: '0',
+          top: '0',
+          maxWidth: 'none',
+          width: `${targetWidth}px`,
+          height: `${targetHeight}px`,
+        },
+      });
+
+      const downloadAnchor = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      downloadAnchor.download = `NormScale_合规比对结果_${currentBatch.batchNo}_${dateStr}.png`;
+      downloadAnchor.href = pngData;
+      downloadAnchor.click();
+
+      showToast('步骤 3 结果 PNG 截图已成功导出', 'success');
+    } catch (err) {
+      console.error('html-to-image screenshot failed:', err);
+      showToast('截图生成失败，请重试', 'error');
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [currentBatch.batchNo, showToast]);
+
   const goToStep = (stepIdx: number) => {
-    if (stepIdx >= 0 && stepIdx <= 3) {
+    if (stepIdx >= 0 && stepIdx <= 2) {
       setCurrentStep(stepIdx);
     }
   };
 
+  // 3. 开启新任务：自动归档当前 Session 结果并重置返回步骤 1
+  const handleStartNewTask = useCallback(() => {
+    // 自动静默保存当前作业会话
+    handleSaveSessionResults(true);
+
+    // 生成全新 Session ID 与干净初始化会话
+    const newSessionId = generateSessionId();
+    const freshSession: InspectionSession = {
+      ...DEFAULT_INSPECTION_SESSION,
+      sessionId: newSessionId,
+      createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+    };
+    setSession(freshSession);
+    setSelectedDocId(freshSession.documents[0]?.docId || 'doc_zpje_01');
+    setSelectedBatchNo(freshSession.documents[0]?.batches[0]?.batchNo || 'Z26022C-DB7');
+
+    // 重置步骤并返回步骤 1
+    goToStep(0);
+    showToast('已自动归档当前检验结果，已为您开启新任务', 'success');
+  }, [handleSaveSessionResults, showToast]);
+
   return (
-    <div className="w-full h-full flex flex-col overflow-hidden select-none">
+    <div className="w-full h-full flex flex-col overflow-hidden select-none relative">
+      {/* 顶层轻量 Toast 反馈提示 (自动淡出) */}
+      {toastInfo && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md transition-all animate-bounce-in border text-xs font-bold bg-inverse-surface text-inverse-on-surface border-outline-variant/30">
+          <span className={`material-symbols-outlined text-base ${
+            toastInfo.type === 'success' ? 'text-emerald-400' : toastInfo.type === 'error' ? 'text-red-400' : 'text-amber-400'
+          }`}>
+            {toastInfo.type === 'success' ? 'check_circle' : toastInfo.type === 'error' ? 'error' : 'info'}
+          </span>
+          <span>{toastInfo.message}</span>
+        </div>
+      )}
 
       {/* 4 步受控平滑滑动主容器 (Vertical Step Slider) */}
       <div className="flex-1 w-full overflow-hidden relative">
@@ -1037,12 +1239,46 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 (自带独立滚动条) */}
                 <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
                   {/* PDF 阅读器顶部工具栏 */}
-                  <div className="px-3.5 py-2 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between text-xs text-on-surface-variant shrink-0">
-                    <div className="flex items-center gap-1.5 truncate max-w-[200px]">
+                  <div className="px-3.5 py-2 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0">
+                    <div className="flex items-center gap-1.5 truncate max-w-[150px] sm:max-w-[180px] shrink-0">
                       <span className="material-symbols-outlined text-base text-red-500">picture_as_pdf</span>
                       <span className="font-bold truncate text-on-surface dark:text-surface-bright">{currentDoc.filename}</span>
                     </div>
-                    <div className="flex items-center gap-3">
+
+                    {/* 居中常驻放大与定位提示徽章（外形和颜色与原蓝色胶囊完全一致，独立于页面缩放，永不遮挡且在最顶端永远可点击） */}
+                    {(() => {
+                      const isPageMagnified = !!magnifiedFieldId;
+                      const activeFieldBox = (magnifiedFieldId || highlightedFieldId)
+                        ? bboxes.find(b => b.id === (magnifiedFieldId || highlightedFieldId))
+                        : null;
+                      if (!isPageMagnified && !activeFieldBox) return <div className="flex-1" />;
+
+                      return (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[280px]">
+                          <span className="material-symbols-outlined text-xs shrink-0">
+                            {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
+                          </span>
+                          <span className="truncate">
+                            {isPageMagnified ? '聚焦放大 200%' : '已定位'}: {activeFieldBox?.label || '当前项'}
+                          </span>
+                          {isPageMagnified && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleResetMagnify();
+                              }}
+                              className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
+                              title="按 ESC 键亦可快速退出放大"
+                            >
+                              退出 (ESC)
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    <div className="flex items-center gap-3 shrink-0">
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
@@ -1099,9 +1335,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   {currentDoc.samplePages && currentDoc.samplePages.length > 0 ? (
                     <div
                       ref={pdfScrollContainerRef}
-                      className="flex-1 p-4 overflow-y-auto overflow-x-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low scroll-smooth"
+                      onMouseDown={handlePdfMouseDown}
+                      className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${
+                        isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
+                      }`}
                     >
-                      <div className="w-fit min-w-full flex flex-col items-center gap-5">
+                      <div
+                        className="w-full flex flex-col items-center gap-5 my-auto transition-[padding,min-width]"
+                        style={{
+                          minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(120, (zoomLevel / 100) * (magnifiedFieldId ? 220 : 120))}%` : '100%',
+                          padding: magnifiedFieldId ? '20px 80px' : '10px 0px',
+                        }}
+                      >
                         {currentDoc.samplePages.map((pageSrc, pageIdx) => {
                           const pageNum = pageIdx + 1;
                           const pageBBoxes = bboxes.filter(b => b.page === pageNum);
@@ -1129,33 +1374,6 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out',
                               }}
                             >
-                              {/* 顶部高亮与放大提示徽章 (常驻于页面左上角空白边距，绝不遮挡任何表格与正文) */}
-                              {(isPageMagnified || pageBBoxes.some(b => b.id === highlightedFieldId)) && (
-                                <div className={`absolute top-2 left-2 px-2.5 py-1 bg-primary/95 text-on-primary text-[11px] font-bold rounded backdrop-blur-xs z-30 shadow-md flex items-center gap-2 animate-fade-in max-w-[85%] ${
-                                  isPageMagnified ? 'pointer-events-auto' : 'pointer-events-none'
-                                }`}>
-                                  <span className="material-symbols-outlined text-xs shrink-0">
-                                    {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
-                                  </span>
-                                  <span className="truncate">
-                                    {isPageMagnified ? '聚焦放大 200%' : '已定位'}: {pageBBoxes.find(b => b.id === (magnifiedFieldId || highlightedFieldId))?.label}
-                                  </span>
-                                  {isPageMagnified && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleResetMagnify();
-                                      }}
-                                      className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-[11px] font-normal transition-colors cursor-pointer shrink-0"
-                                      title="按 ESC 键亦可快速退出放大"
-                                    >
-                                      退出放大 (ESC)
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-
                               {/* 页码徽章 */}
                               <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white text-[11px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
                                 第 {pageNum} / {currentDoc.samplePages!.length} 页
@@ -2155,7 +2373,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           {/* 步骤 3: 质检工作台 - 比对标准 (挂载统一标题与批次选择条) */}
           {/* ========================================================================= */}
           <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar p-6 space-y-4">
-            <div className="max-w-[1440px] mx-auto w-full space-y-4">
+            <div id="step-3-workbench-panel" className="max-w-[1440px] mx-auto w-full space-y-4">
 
               {/* 顶部统一标题与两层树状批次选择条 */}
               <div className="relative z-30">
@@ -3106,7 +3324,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40 transition-colors"
                               >
                                 <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className={`px-2 py-0.5 rounded text-[12px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
+                                  <span className={`px-2 py-0.5 rounded text-[12px] font-bold border whitespace-nowrap inline-flex items-center justify-center leading-none ${row.categoryColor}`}>
                                     {row.categoryLabel}
                                   </span>
                                 </td>
@@ -3123,7 +3341,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   {row.deviation}
                                 </td>
                                 <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className={`px-2.5 py-0.5 rounded text-[12px] font-bold inline-block ${row.status === 'PASS'
+                                  <span className={`px-2.5 py-0.5 rounded text-[12px] font-bold inline-flex items-center justify-center leading-none ${row.status === 'PASS'
                                     ? 'bg-status-pass-bg text-status-pass-text'
                                     : row.status === 'FAIL'
                                       ? 'bg-status-fail-bg text-status-fail-text font-black'
@@ -3373,13 +3591,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       <footer className="h-16 shrink-0 bg-surface-container-lowest dark:bg-bg-industrial-slate border-t border-outline-variant/60 dark:border-border-dark flex justify-center items-center z-30 shadow-sheet select-none">
         <div className="w-[1440px] max-w-full px-6 flex justify-between items-center">
 
-          {/* 4 步骤连线指示器 */}
+          {/* 3 步骤连线指示器（步骤 4 暂时隐藏） */}
           <div className="flex items-center gap-2 sm:gap-4">
             {[
               { id: 0, title: '上传文档', icon: 'upload_file' },
               { id: 1, title: '核对数据', icon: 'fact_check' },
               { id: 2, title: '比对标准', icon: 'compare_arrows' },
-              { id: 3, title: '归档/导出', icon: 'archive' },
             ].map((step, idx) => {
               const isActive = currentStep === step.id;
               const isCompleted = currentStep > step.id;
@@ -3410,7 +3627,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             })}
           </div>
 
-          {/* 右侧动作流转按钮（Step 1 收窄为单一主按钮，触发新建 Session） */}
+          {/* 右侧动作流转按钮（Step 1: 上传解析; Step 2: 核对比对; Step 3: 保存截图 / 开启新任务 / 保存结果） */}
           <div className="flex items-center gap-3">
             {currentStep > 0 && (
               <button
@@ -3445,34 +3662,41 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             )}
 
             {currentStep === 2 && (
-              <button
-                type="button"
-                onClick={() => goToStep(3)}
-                className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
-              >
-                <span>{isPass ? '比对通过，生成质检报告' : '生成拒收说明'}</span>
-                <span className="material-symbols-outlined text-base">arrow_forward</span>
-              </button>
-            )}
-
-            {currentStep === 3 && (
               <>
+                {/* 次要按钮 1：保存截图 */}
                 <button
                   type="button"
-                  onClick={() => {
-                    window.print();
-                  }}
-                  className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                  onClick={handleSaveStep3Screenshot}
+                  disabled={isCapturing}
+                  className="px-4 py-2 rounded-lg border border-outline-variant dark:border-border-dark text-xs font-bold text-on-surface dark:text-surface-bright hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-2xs"
+                  title="生成当前步骤 3 比对结果的高清图片快照并下载"
                 >
-                  <span>确认导出</span>
-                  <span className="material-symbols-outlined text-base">file_download</span>
+                  <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">
+                    {isCapturing ? 'hourglass_top' : 'photo_camera'}
+                  </span>
+                  <span>{isCapturing ? '生成截图中...' : '保存截图'}</span>
                 </button>
+
+                {/* 次要按钮 2：开启新任务 */}
                 <button
                   type="button"
-                  onClick={() => goToStep(0)}
-                  className="px-4 py-2 rounded-lg border border-outline-variant dark:border-border-dark text-xs font-bold text-on-surface dark:text-surface-bright hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors"
+                  onClick={handleStartNewTask}
+                  className="px-4 py-2 rounded-lg border border-outline-variant dark:border-border-dark text-xs font-bold text-on-surface dark:text-surface-bright hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="自动归档当前检验结果，并重置创建新任务返回步骤 1"
                 >
-                  开启新任务
+                  <span className="material-symbols-outlined text-base text-outline-variant dark:text-outline-dark">add_task</span>
+                  <span>开启新任务</span>
+                </button>
+
+                {/* 主要按钮：保存结果 */}
+                <button
+                  type="button"
+                  onClick={() => handleSaveSessionResults(false)}
+                  className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="存储当前作业会话 (Session) 的全部系统和人工检验判定结果至本地台账"
+                >
+                  <span className="material-symbols-outlined text-base">check_circle</span>
+                  <span>保存结果</span>
                 </button>
               </>
             )}
