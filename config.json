@@ -26,20 +26,20 @@
     ],
     "pricing": {
       "kimi-k2.6": {
-        "inputPer1M": 6.50,
-        "outputPer1M": 27.00
+        "inputPer1M": 6.5,
+        "outputPer1M": 27
       },
       "kimi-k2.7-code": {
-        "inputPer1M": 6.50,
-        "outputPer1M": 27.00
+        "inputPer1M": 6.5,
+        "outputPer1M": 27
       },
       "kimi-k2.7-code-highspeed": {
-        "inputPer1M": 13.00,
-        "outputPer1M": 54.00
+        "inputPer1M": 13,
+        "outputPer1M": 54
       },
       "kimi-k3": {
-        "inputPer1M": 20.00,
-        "outputPer1M": 100.00
+        "inputPer1M": 20,
+        "outputPer1M": 100
       }
     }
   }

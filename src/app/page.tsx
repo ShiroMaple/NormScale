@@ -94,11 +94,6 @@ export default function DashboardPage() {
     [options]
   );
 
-  // 页面初始挂载时自动触发一次 316L 样本核验
-  useEffect(() => {
-    handleExecuteAudit('316l_kgf_sample');
-  }, [handleExecuteAudit]);
-
   // 3. 人机协同修正数据提交并恢复执行
   const handleResumeAudit = async (correction: HumanCorrectionInput) => {
     if (!currentTaskId) return;
