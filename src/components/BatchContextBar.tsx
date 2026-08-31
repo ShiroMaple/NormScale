@@ -2,9 +2,10 @@
 
 import React, { useState } from 'react';
 import { InspectionSession, SessionDocument, BatchSpecimen } from '@/types/session.ts';
+import { DocumentParsingTask, SessionTokenMetrics } from '@/types/parser.ts';
 
 interface BatchContextBarProps {
-  stepTitle: string; // 如 "Step2 解析数据核对", "Step3 标准规则比对", "Step4 报告归档与导出"
+  stepTitle: string; // 如 "步骤 2: 核对解析数据", "步骤 3: 比对执行标准", "步骤 4: 报告归档与导出"
   session: InspectionSession;
   selectedDocId: string;
   selectedBatchNo: string;
@@ -12,6 +13,10 @@ interface BatchContextBarProps {
   onSelectBatch: (docId: string, batchNo: string) => void;
   mode?: 'extraction' | 'compliance'; // 'extraction' 阶段显示 SUCCESS/FAIL，'compliance' 阶段显示 PASS/FAIL
   rightExtraAction?: React.ReactNode; // 标题行右侧额外插槽 (如 HITL 抽屉按钮)
+  docParsingTasks?: Record<string, DocumentParsingTask>;
+  sessionMetrics?: SessionTokenMetrics;
+  isStreamingTerminalExpanded?: boolean;
+  onToggleStreamingTerminal?: () => void;
 }
 
 /**
@@ -30,6 +35,10 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
   onSelectBatch,
   mode = 'compliance',
   rightExtraAction,
+  docParsingTasks,
+  sessionMetrics,
+  isStreamingTerminalExpanded,
+  onToggleStreamingTerminal,
 }) => {
   const [docDropdownOpen, setDocDropdownOpen] = useState(false);
   const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
@@ -116,14 +125,14 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
   return (
     <div className="w-full space-y-2.5 select-none relative z-30">
 
-      {/* 1. 顶部主标题行 (左侧步骤主标题，右侧可选操作) */}
-      <div className="flex items-center justify-between gap-4 px-1">
+      {/* 1. 顶部主标题行 (左侧步骤主标题，右侧 Session 累计 Token 开销与流水展开按钮) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim flex items-center justify-center font-bold shrink-0">
             <span className="material-symbols-outlined text-lg">
-              {stepTitle.startsWith('Step2')
+              {stepTitle.includes('核对') || stepTitle.startsWith('步骤 2') || stepTitle.startsWith('Step2')
                 ? 'fact_check'
-                : stepTitle.startsWith('Step3')
+                : stepTitle.includes('比对') || stepTitle.startsWith('步骤 3') || stepTitle.startsWith('Step3')
                   ? 'compare_arrows'
                   : 'archive'}
             </span>
@@ -133,12 +142,47 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
           </h1>
         </div>
 
-        {/* 右侧额外动作插槽 (如 HITL 介入按钮等) */}
-        {rightExtraAction && (
-          <div className="flex items-center gap-2">
-            {rightExtraAction}
-          </div>
-        )}
+        {/* 右侧：Session 累计 Token 开销、总耗时统计与大模型流水折叠开关 */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {sessionMetrics && (
+            <div className="flex items-center gap-2 text-xs font-medium text-on-surface-variant">
+              <span
+                title="当前 Session 所有文档累计消耗 Token 统计"
+                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg font-mono text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
+              >
+                <span className="material-symbols-outlined text-[14px] text-primary dark:text-primary-fixed-dim">memory</span>
+                <span>累计开销: 输入 {sessionMetrics.totalInputTokens.toLocaleString()} / 输出 {sessionMetrics.totalOutputTokens.toLocaleString()}</span>
+              </span>
+              <span
+                title="当前 Session 累计解析总耗时"
+                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg font-mono text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
+              >
+                <span className="material-symbols-outlined text-[14px] text-emerald-600 dark:text-emerald-400">timer</span>
+                <span>总耗时 {sessionMetrics.totalDurationSeconds.toFixed(1)}s</span>
+              </span>
+            </div>
+          )}
+
+          {onToggleStreamingTerminal && (
+            <button
+              type="button"
+              onClick={onToggleStreamingTerminal}
+              className="flex items-center gap-1 text-xs text-primary dark:text-primary-fixed-dim font-bold hover:underline bg-primary/5 hover:bg-primary/10 dark:bg-primary-fixed-dim/10 px-2.5 py-1 rounded-lg transition-colors border border-primary/20"
+            >
+              <span className="material-symbols-outlined text-sm">terminal</span>
+              <span>{isStreamingTerminalExpanded ? '收起大模型流水' : '查看大模型流水'}</span>
+              <span className="material-symbols-outlined text-sm">
+                {isStreamingTerminalExpanded ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+          )}
+
+          {rightExtraAction && (
+            <div className="flex items-center gap-2">
+              {rightExtraAction}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 2. 下部独立圆角选择器卡片 (单行不折叠设计，允许下拉菜单溢出浮层，杜绝遮挡与滚动条) */}
@@ -176,14 +220,25 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
               <span className="material-symbols-outlined text-sm text-on-surface-variant shrink-0">arrow_drop_down</span>
             </button>
 
-            {/* 下拉面板 1 */}
+            {/* 下拉面板 1 (多文档异步并发进度与状态集成，无 emoji) */}
             {docDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-72 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-lg z-50 p-1.5 space-y-1">
-                <div className="px-2 py-1 text-[11px] font-bold text-on-surface-variant dark:text-outline-variant uppercase tracking-wider">
-                  选择作业文档 (共 {session.documents.length} 份)
+              <div className="absolute left-0 top-full mt-1.5 w-80 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-lg z-50 p-2 space-y-1.5">
+                <div className="flex justify-between items-center px-2 py-1 text-[11px] font-bold text-on-surface-variant dark:text-outline-variant uppercase tracking-wider border-b border-outline-variant/30 pb-1.5">
+                  <span>选择作业文档 ({session.documents.length})</span>
+                  {sessionMetrics && sessionMetrics.totalDocsCount > 0 && (
+                    <span className="text-[11px] font-normal lowercase">
+                      {sessionMetrics.readyDocsCount}/{sessionMetrics.totalDocsCount} 已就绪
+                    </span>
+                  )}
                 </div>
                 {session.documents.map(doc => {
                   const isSelected = doc.docId === currentDoc.docId;
+                  const task = docParsingTasks?.[doc.docId];
+                  const isParsing = task?.status === 'parsing';
+                  const isReady = task?.status === 'ready' || (!task && doc.ocrStatus === 'DONE');
+                  const isQueued = task?.status === 'queued';
+                  const isError = task?.status === 'error';
+
                   return (
                     <div
                       key={doc.docId}
@@ -195,18 +250,43 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                         }
                         setDocDropdownOpen(false);
                       }}
-                      className={`px-2.5 py-2 rounded-lg cursor-pointer flex items-center justify-between text-xs transition-colors ${isSelected
-                        ? 'bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim font-bold'
+                      className={`px-2.5 py-2 rounded-lg cursor-pointer flex items-center justify-between text-xs transition-all ${isSelected
+                        ? 'bg-primary/10 dark:bg-primary-fixed-dim/20 text-primary dark:text-primary-fixed-dim font-bold border border-primary/30'
                         : 'hover:bg-surface-container-low dark:hover:bg-surface-dark-low text-on-surface dark:text-surface-bright'
                         }`}
                     >
-                      <div className="flex items-center gap-2 truncate">
-                        <span className="material-symbols-outlined text-sm text-red-500 fill-1">picture_as_pdf</span>
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <span className="material-symbols-outlined text-sm text-red-500 fill-1 shrink-0">picture_as_pdf</span>
                         <span className="truncate">{doc.filename}</span>
                       </div>
-                      <span className="text-[12px] text-on-surface-variant shrink-0 ml-2">
-                        {doc.batches.length} 炉批
-                      </span>
+
+                      {/* 多文档并发微状态指示徽标（无 emoji） */}
+                      <div className="shrink-0">
+                        {isParsing && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono font-bold bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
+                            <span>{task.progress}%</span>
+                          </span>
+                        )}
+                        {isReady && !isParsing && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                            <span>{doc.batches.length} 炉批</span>
+                          </span>
+                        )}
+                        {isQueued && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800">
+                            <span className="material-symbols-outlined text-[12px]">schedule</span>
+                            <span>排队中</span>
+                          </span>
+                        )}
+                        {isError && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-red-50 text-red-600">
+                            <span className="material-symbols-outlined text-[12px]">error</span>
+                            <span>异常</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

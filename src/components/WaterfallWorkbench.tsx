@@ -15,6 +15,8 @@ import { getZPJEBBoxes, FieldBBox } from '@/types/bbox.ts';
 import { HitlDrawer } from './HitlDrawer.tsx';
 import { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.interface.ts';
 import { toPng } from 'html-to-image';
+import { useDocumentParser } from '@/hooks/useDocumentParser.ts';
+import { LlmStreamingTerminal } from './LlmStreamingTerminal.tsx';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -137,6 +139,33 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [currentDocPage, setCurrentDocPage] = useState<number>(1);
   const pdfScrollContainerRef = useRef<HTMLDivElement>(null);
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // 多文档异步并发解析工作池 Hook
+  const { tasks: parsingTasks, sessionMetrics, startParsingSession } = useDocumentParser();
+  const [isStreamingTerminalExpanded, setIsStreamingTerminalExpanded] = useState<boolean>(true);
+  const prevDocStatusMap = useRef<Record<string, string>>({});
+
+  // 监听当前选中文档的解析状态，当解析从 parsing 变更为 ready 时，延迟 800ms 自动平滑折叠
+  const currentDocTask = parsingTasks[selectedDocId];
+  useEffect(() => {
+    if (!currentDocTask) return undefined;
+    const prevStatus = prevDocStatusMap.current[selectedDocId];
+    if (prevStatus === 'parsing' && currentDocTask.status === 'ready') {
+      const timer = setTimeout(() => {
+        setIsStreamingTerminalExpanded(false);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+    prevDocStatusMap.current[selectedDocId] = currentDocTask.status;
+    return undefined;
+  }, [currentDocTask, selectedDocId]);
+
+  // 当用户在顶栏选择器主动切换到正在解析中的文档时，自动展开该文档的流式终端
+  useEffect(() => {
+    if (currentDocTask && currentDocTask.status === 'parsing') {
+      setIsStreamingTerminalExpanded(true);
+    }
+  }, [selectedDocId, currentDocTask?.status]);
 
   // 首次载入或文档/缩放变化时，确保 PDF 视窗水平居中
   useEffect(() => {
@@ -351,7 +380,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     onTriggerAudit();
   };
 
-  // 从 Step 1 触发新建 Session 并前往 Step 2
+  // 从 Step 1 触发新建 Session 并前往 Step 2 (启动 2~3 线程异步并发工作池)
   const handleStartNewSessionAndAdvance = () => {
     const newSessionId = generateSessionId();
     const newSession: InspectionSession = {
@@ -369,7 +398,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         setSelectedBatchNo(firstBatch.batchNo);
       }
     }
-    onTriggerAudit();
+    // 启动多文档异步并发解析工作池
+    startParsingSession(newSession.documents);
+    setIsStreamingTerminalExpanded(true);
     setCurrentStep(1);
   };
 
@@ -1218,6 +1249,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     setSelectedBatchNo(batchNo);
                   }}
                   mode="extraction"
+                  docParsingTasks={parsingTasks}
+                  sessionMetrics={sessionMetrics}
+                  isStreamingTerminalExpanded={isStreamingTerminalExpanded}
+                  onToggleStreamingTerminal={() => setIsStreamingTerminalExpanded(prev => !prev)}
                   rightExtraAction={
                     isHitl ? (
                       <button
@@ -1232,6 +1267,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   }
                 />
               </div>
+
+              {/* 大模型实时解析流水终端 (可展开/自动折叠) */}
+              {currentDocTask && (isStreamingTerminalExpanded || currentDocTask.status === 'parsing') && (
+                <div className="shrink-0 animate-fade-in transition-all duration-300">
+                  <LlmStreamingTerminal
+                    task={currentDocTask}
+                    isExpanded={isStreamingTerminalExpanded}
+                    onToggleExpand={() => setIsStreamingTerminalExpanded(prev => !prev)}
+                  />
+                </div>
+              )}
 
               {/* 45% / 55% 左右分栏：充满剩余高度，左右各自独立纵向滚动 */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
@@ -2388,6 +2434,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     setSelectedBatchNo(batchNo);
                   }}
                   mode="compliance"
+                  docParsingTasks={parsingTasks}
+                  sessionMetrics={sessionMetrics}
                 />
               </div>
 
