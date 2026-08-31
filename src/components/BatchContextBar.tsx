@@ -148,14 +148,14 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
             <div className="flex items-center gap-2 text-xs font-medium text-on-surface-variant">
               <span
                 title="当前 Session 所有文档累计消耗 Token 统计"
-                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg font-mono text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
+                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
               >
                 <span className="material-symbols-outlined text-[14px] text-primary dark:text-primary-fixed-dim">memory</span>
-                <span>累计开销: 输入 {sessionMetrics.totalInputTokens.toLocaleString()} / 输出 {sessionMetrics.totalOutputTokens.toLocaleString()}</span>
+                <span>累计开销: 输入 {sessionMetrics.totalInputTokens.toLocaleString()} / 输出 {sessionMetrics.totalOutputTokens.toLocaleString()} Tokens</span>
               </span>
               <span
                 title="当前 Session 累计解析总耗时"
-                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg font-mono text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
+                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
               >
                 <span className="material-symbols-outlined text-[14px] text-emerald-600 dark:text-emerald-400">timer</span>
                 <span>总耗时 {sessionMetrics.totalDurationSeconds.toFixed(1)}s</span>
@@ -170,7 +170,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
               className="flex items-center gap-1 text-xs text-primary dark:text-primary-fixed-dim font-bold hover:underline bg-primary/5 hover:bg-primary/10 dark:bg-primary-fixed-dim/10 px-2.5 py-1 rounded-lg transition-colors border border-primary/20"
             >
               <span className="material-symbols-outlined text-sm">terminal</span>
-              <span>{isStreamingTerminalExpanded ? '收起大模型流水' : '查看大模型流水'}</span>
+              <span>{isStreamingTerminalExpanded ? '收起模型流式输出' : '查看模型流式输出'}</span>
               <span className="material-symbols-outlined text-sm">
                 {isStreamingTerminalExpanded ? 'expand_less' : 'expand_more'}
               </span>
@@ -263,7 +263,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                       {/* 多文档并发微状态指示徽标（无 emoji） */}
                       <div className="shrink-0">
                         {isParsing && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono font-bold bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                             <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
                             <span>{task.progress}%</span>
                           </span>
@@ -275,7 +275,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                           </span>
                         )}
                         {isQueued && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-zinc-500 bg-zinc-100 dark:bg-zinc-800">
                             <span className="material-symbols-outlined text-[12px]">schedule</span>
                             <span>排队中</span>
                           </span>
