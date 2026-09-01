@@ -106,7 +106,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   onSelectSample,
   isAuditing,
   onOpenHitlDrawer,
-  onTriggerAudit,
+  onTriggerAudit: _onTriggerAudit,
   loadedSession,
   initialStep = 0,
 }) => {
@@ -418,6 +418,28 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
     onSelectSample(item.id);
     showToast(`已从历史缓存载入: ${item.filename}`, 'info');
+  };
+
+  // 删除指定历史缓存
+  const handleDeleteCachedDoc = async (item: CachedDocItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // 优先使用 md5，其次 fallback 到 id
+    const targetKey = item.md5 || item.id;
+    try {
+      const res = await fetch(`/api/documents/cached?md5=${encodeURIComponent(targetKey)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setCachedDocs(prev => prev.filter(c => c.id !== item.id && (!item.md5 || c.md5 !== item.md5)));
+        showToast(`已删除缓存: ${item.filename}`, 'info');
+      } else {
+        showToast(data.error || '删除缓存失败', 'error');
+      }
+    } catch (err) {
+      showToast('删除缓存请求异常', 'error');
+    }
   };
 
   // 处理用户选择真实本地文件上传 (支持 PDF 与图片)
@@ -1354,7 +1376,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={onTriggerAudit}
+                    onClick={refreshCachedDocs}
                     className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors"
                   >
                     <span className="material-symbols-outlined text-sm">refresh</span>
@@ -1366,23 +1388,31 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                   {cachedDocs.map((item, idx) => (
                     <div
-                      key={idx}
+                      key={item.id || item.md5 || idx}
                       onClick={() => handleRestoreFromCache(item)}
-                      className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-3 shadow-xs flex items-center gap-3 cursor-pointer hover:border-primary transition-all"
+                      className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-3 shadow-xs flex items-center gap-3 cursor-pointer hover:border-primary transition-all group relative"
                     >
                       <div className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-600 flex items-center justify-center shrink-0">
                         <span className="material-symbols-outlined text-xl fill-1" style={{ fontVariationSettings: "'FILL' 1" }}>
                           picture_as_pdf
                         </span>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <span className="font-mono text-xs font-bold text-on-surface dark:text-surface-bright block truncate">
+                      <div className="min-w-0 flex-1 pr-1">
+                        <span className="font-mono text-xs font-bold text-on-surface dark:text-surface-bright block truncate" title={item.filename}>
                           {item.filename}
                         </span>
                         <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block mt-0.5">
                           {item.date} • {item.size}
                         </span>
                       </div>
+                      <button
+                        type="button"
+                        title="删除该条缓存"
+                        onClick={(e) => handleDeleteCachedDoc(item, e)}
+                        className="w-7 h-7 rounded-lg text-on-surface-variant hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center justify-center transition-colors shrink-0 opacity-80 hover:opacity-100"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
                     </div>
                   ))}
                 </div>

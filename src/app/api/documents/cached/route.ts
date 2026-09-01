@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { CachedParseResult } from '@/repository/parse-cache-store.ts';
+import { CachedParseResult, globalParseCacheStore } from '@/repository/parse-cache-store.ts';
 
 export interface CachedDocSummary {
   md5: string;
@@ -64,6 +64,63 @@ export async function GET() {
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: `读取缓存列表失败: ${err.message}` },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/documents/cached: 删除指定 md5 的本地缓存文件
+ */
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    let md5 = searchParams.get('md5') || searchParams.get('id');
+
+    if (!md5 && request.headers.get('content-type')?.includes('application/json')) {
+      const body = await request.json();
+      md5 = body.md5 || body.id;
+    }
+
+    if (!md5) {
+      return NextResponse.json(
+        { success: false, error: '缺少必需的 md5 参数' },
+        { status: 400 }
+      );
+    }
+
+    const deleted = globalParseCacheStore.delete(md5);
+    if (!deleted) {
+      // 容错扫描：匹配包含该 md5 或 docId 的缓存文件并删除
+      const cacheDir = path.join(process.cwd(), '.cache', 'parses');
+      if (fs.existsSync(cacheDir)) {
+        const files = fs.readdirSync(cacheDir);
+        for (const file of files) {
+          if (file.endsWith('.json')) {
+            const filePath = path.join(cacheDir, file);
+            try {
+              const raw = fs.readFileSync(filePath, 'utf-8');
+              const data = JSON.parse(raw) as CachedParseResult;
+              if (data.md5 === md5 || data.sessionDocument?.docId === md5) {
+                fs.unlinkSync(filePath);
+                return NextResponse.json({ success: true, md5 });
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+      return NextResponse.json(
+        { success: false, error: '未找到指定 MD5 的缓存文件' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, md5 });
+  } catch (err: any) {
+    return NextResponse.json(
+      { success: false, error: `删除缓存失败: ${err.message}` },
       { status: 500 }
     );
   }

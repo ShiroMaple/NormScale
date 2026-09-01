@@ -4,6 +4,13 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-01 · 历史已缓存文档前端独立删除与服务端磁盘清理端点落地
+
+- 服务端缓存删除 API (`DELETE /api/documents/cached`)：支持通过 Query 参数 `?md5=...` 或 JSON Body 请求删除 `.cache/parses/<md5>.json` 物理文件，集成 `ParseCacheStore.delete` 与容错扫描；
+- 工作台历史缓存卡片直删 (`WaterfallWorkbench`)：在各缓存文档卡片右侧增加独立的微型删除按钮（✕），点击即可直接清理该份文档的服务端磁盘缓存并弹出反馈 Toast；
+- 独立作用域保护：仅物理删除对应缓存文件并刷新历史列表，不影响用户当前正在待处理队列 (`queuedDocs`) 中编辑的任务；
+- 27 个测试套件（121 个单元测试）全部通过。
+
 ## 2026-09-01 · 推理模型 temperature 参数规范化与实际上传文件真实数据流贯通
 
 - 模型推理 temperature 修复：Kimi 及主流代码/推理模型严格要求 `temperature: 1`（修正原先 0.1 导致的 `HTTP 400 invalid temperature: only 1 is allowed for this model` 报错）；

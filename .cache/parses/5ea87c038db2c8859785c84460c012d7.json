@@ -1,0 +1,555 @@
+{
+  "md5": "5ea87c038db2c8859785c84460c012d7",
+  "filename": "GR2026-20,21.pdf",
+  "fileSize": "1.0 MB",
+  "model": "kimi-k2.7-code",
+  "provider": "Moonshot",
+  "parsedAt": "2026-09-01T00:15:10.421Z",
+  "tokenStats": {
+    "inputTokens": 670,
+    "outputTokens": 542,
+    "durationSeconds": 7.8,
+    "isFromCache": false
+  },
+  "rawStreamingJson": "{\n  \"error\": \"未收到 GR2026-20,21.pdf 的实际内容或文本，无法从文件名中提取质保书信息。请粘贴 PDF 文本内容或上传文件。\",\n  \"header\": {\n    \"certificateNo\": null,\n    \"productName\": null,\n    \"declaredStandard\": null,\n    \"declaredGrade\": null,\n    \"supplierName\": null,\n    \"constructionNo\": null,\n    \"heatNo\": null,\n    \"packNo\": null,\n    \"deliveryState\": null,\n    \"dimensions\": null\n  },\n  \"batches\": []\n}",
+  "sessionDocument": {
+    "docId": "doc_5ea87c03",
+    "filename": "GR2026-20,21.pdf",
+    "fileSize": "1.0 MB",
+    "uploadTime": "2026-09-01 00:15:10",
+    "ocrStatus": "DONE",
+    "pageCount": 3,
+    "samplePages": [
+      "/samples/zpje/page-1.png",
+      "/samples/zpje/page-2.png",
+      "/samples/zpje/page-3.png"
+    ],
+    "batches": [
+      {
+        "batchNo": "BATCH-001",
+        "subBatchIndex": 1,
+        "certificateNo": "MTC-EXTRACTED",
+        "constructionNo": "26715-7053",
+        "productName": "锅炉、热交换器用不锈钢无缝钢管",
+        "grade": "S32168",
+        "standard": "GB/T 13296-2023",
+        "supplier": "镇海石化建安工程股份有限公司制管厂",
+        "dimensions": "OD 15.0mm × WT 0.8mm × L 6000mm",
+        "heatNo": "YX2602-2207",
+        "packNo": "Z26022C",
+        "deliveryState": "光亮固溶 (Bright Solution Annealed)",
+        "verdict": "PASS",
+        "verdictSummary": "系统客观规则核验：全项指标合格符合 NB/T 47019.5 与 GB/T 13296",
+        "ocrConfidence": 99,
+        "gradeMatchConfidence": 99,
+        "chemical": [
+          {
+            "element": "C",
+            "value": "0.018",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Si",
+            "value": "0.44",
+            "confidence": "98%",
+            "status": "ok"
+          },
+          {
+            "element": "Mn",
+            "value": "1.16",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "P",
+            "value": "0.035",
+            "confidence": "97%",
+            "status": "ok"
+          },
+          {
+            "element": "S",
+            "value": "0.005",
+            "confidence": "98%",
+            "status": "ok"
+          },
+          {
+            "element": "Cr",
+            "value": "17.41",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Ni",
+            "value": "9.08",
+            "confidence": "98%",
+            "status": "ok"
+          },
+          {
+            "element": "Ti",
+            "value": "0.14",
+            "confidence": "95%",
+            "status": "ok"
+          }
+        ],
+        "mechanical": {
+          "tensile_rm": "621 MPa",
+          "yield_rp02": "268 MPa",
+          "elongation_a": "57.5 %",
+          "hardness": "139.3 HV1"
+        },
+        "process": {
+          "flattening": "PASS",
+          "flaring": "PASS",
+          "intergranularCorrosion": "PASS",
+          "ndt": "涡流探伤 (ET) 与超声检测 (UT) 均合格"
+        },
+        "reportNo": "QA-21710421",
+        "sha256Hash": "SHA256-CVB1K0HX",
+        "inspector": "Auto-AI-Inspector"
+      }
+    ]
+  },
+  "bboxes": [
+    {
+      "id": "meta_certificateNo",
+      "page": 1,
+      "x": 74,
+      "y": 13.5,
+      "w": 16,
+      "h": 2.2,
+      "label": "质保书编号 No. 20260704203",
+      "category": "meta"
+    },
+    {
+      "id": "meta_customer",
+      "page": 1,
+      "x": 10,
+      "y": 16.5,
+      "w": 38,
+      "h": 3.5,
+      "label": "客户名称: 镇海石化建安工程股份有限公司物资供应部",
+      "category": "meta"
+    },
+    {
+      "id": "meta_productName",
+      "page": 1,
+      "x": 48,
+      "y": 16.5,
+      "w": 30,
+      "h": 3.5,
+      "label": "产品名称: 换热管",
+      "category": "meta"
+    },
+    {
+      "id": "meta_grade",
+      "page": 1,
+      "x": 10,
+      "y": 22,
+      "w": 12,
+      "h": 3.5,
+      "label": "材质 Material: S32168",
+      "category": "meta"
+    },
+    {
+      "id": "meta_deliveryState",
+      "page": 1,
+      "x": 22,
+      "y": 22,
+      "w": 13,
+      "h": 3.5,
+      "label": "交货状态 Condition: 光亮固溶",
+      "category": "meta"
+    },
+    {
+      "id": "meta_standard",
+      "page": 1,
+      "x": 35,
+      "y": 22,
+      "w": 38,
+      "h": 3.5,
+      "label": "执行标准 Standards: NB/T47019.5-2021、GB/T13296-2023",
+      "category": "meta"
+    },
+    {
+      "id": "meta_heatNo",
+      "page": 1,
+      "x": 28,
+      "y": 29.5,
+      "w": 12,
+      "h": 2.5,
+      "label": "原材料炉号 Heat No.: YX2602-2207",
+      "category": "meta"
+    },
+    {
+      "id": "meta_packNo",
+      "page": 1,
+      "x": 64,
+      "y": 29.5,
+      "w": 10,
+      "h": 2.5,
+      "label": "钢管热处理炉号 Pack No.: Z26022C",
+      "category": "meta"
+    },
+    {
+      "id": "meta_supplier",
+      "page": 1,
+      "x": 28,
+      "y": 91.5,
+      "w": 44,
+      "h": 2.5,
+      "label": "供货厂家: 镇海石化建安工程股份有限公司制管厂",
+      "category": "meta"
+    },
+    {
+      "id": "chem_C",
+      "page": 1,
+      "x": 22.8,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "C: 0.018 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_Si",
+      "page": 1,
+      "x": 29.3,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "Si: 0.44 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_Mn",
+      "page": 1,
+      "x": 35.8,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "Mn: 1.16 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_P",
+      "page": 1,
+      "x": 42.3,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "P: 0.035 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_S",
+      "page": 1,
+      "x": 48.8,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "S: 0.005 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_Cr",
+      "page": 1,
+      "x": 55.3,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "Cr: 17.41 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_Ni",
+      "page": 1,
+      "x": 61.8,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "Ni: 9.08 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_Ti",
+      "page": 1,
+      "x": 68.3,
+      "y": 39.5,
+      "w": 6.2,
+      "h": 2.4,
+      "label": "Ti: 0.14 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "chem_N",
+      "page": 1,
+      "x": 81.3,
+      "y": 39.5,
+      "w": 7.2,
+      "h": 2.4,
+      "label": "N: <0.01 wt%",
+      "category": "chemical"
+    },
+    {
+      "id": "method_proc_flaring",
+      "page": 1,
+      "x": 30.2,
+      "y": 47.8,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "扩口试验标准: GB/T 242-2007",
+      "category": "process"
+    },
+    {
+      "id": "proc_flaring",
+      "page": 1,
+      "x": 60,
+      "y": 47.8,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "扩口试验结果: 合格 OK",
+      "category": "process"
+    },
+    {
+      "id": "method_proc_flattening",
+      "page": 1,
+      "x": 30.2,
+      "y": 50.4,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "压扁试验标准: GB/T 246-2017",
+      "category": "process"
+    },
+    {
+      "id": "proc_flattening",
+      "page": 1,
+      "x": 60,
+      "y": 50.4,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "压扁试验结果: 合格 OK",
+      "category": "process"
+    },
+    {
+      "id": "method_ndt_et",
+      "page": 1,
+      "x": 30.2,
+      "y": 53,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "涡流检测标准: GB/T 7735-2016",
+      "category": "ndt"
+    },
+    {
+      "id": "ndt_et",
+      "page": 1,
+      "x": 60,
+      "y": 53,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "涡流检测结果: 合格 OK",
+      "category": "ndt"
+    },
+    {
+      "id": "method_ndt_ut",
+      "page": 1,
+      "x": 30.2,
+      "y": 55.6,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "超声波检测标准: GB/T 5777-2019",
+      "category": "ndt"
+    },
+    {
+      "id": "ndt_ut",
+      "page": 1,
+      "x": 60,
+      "y": 55.6,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "超声波检测结果: 合格 OK",
+      "category": "ndt"
+    },
+    {
+      "id": "method_corrosion_intergranular",
+      "page": 1,
+      "x": 30.2,
+      "y": 58.2,
+      "w": 28.5,
+      "h": 3,
+      "label": "晶间腐蚀标准: GB/T 4334-2020 方法 E",
+      "category": "corrosion"
+    },
+    {
+      "id": "corrosion_intergranular",
+      "page": 1,
+      "x": 60,
+      "y": 58.2,
+      "w": 28.5,
+      "h": 3,
+      "label": "晶间腐蚀结果 (5.0%形变): 合格 OK",
+      "category": "corrosion"
+    },
+    {
+      "id": "method_geo_dimensions",
+      "page": 1,
+      "x": 30.2,
+      "y": 61.4,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "尺寸检验标准: GB/T 13296-2023",
+      "category": "process"
+    },
+    {
+      "id": "geo_dimensions",
+      "page": 1,
+      "x": 60,
+      "y": 61.4,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "尺寸检验结果: 合格 OK",
+      "category": "process"
+    },
+    {
+      "id": "method_surface_quality",
+      "page": 1,
+      "x": 30.2,
+      "y": 64,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "表面质量标准: GB/T 13296-2023",
+      "category": "process"
+    },
+    {
+      "id": "surface_quality",
+      "page": 1,
+      "x": 60,
+      "y": 64,
+      "w": 28.5,
+      "h": 2.4,
+      "label": "表面质量结果: 合格 OK",
+      "category": "process"
+    },
+    {
+      "id": "method_tensile",
+      "page": 2,
+      "x": 28,
+      "y": 16.5,
+      "w": 42,
+      "h": 1.8,
+      "label": "拉伸试验执行标准: GB/T 228.1-2021",
+      "category": "mechanical"
+    },
+    {
+      "id": "meta_batchNo",
+      "page": 2,
+      "x": 10.5,
+      "y": 22.8,
+      "w": 17.5,
+      "h": 2,
+      "label": "钢管批号 Lot No.: BATCH-001",
+      "category": "meta"
+    },
+    {
+      "id": "mech_yield",
+      "page": 2,
+      "x": 28,
+      "y": 22.8,
+      "w": 20,
+      "h": 2,
+      "label": "屈服强度 Y.S. Rp0.2",
+      "category": "mechanical"
+    },
+    {
+      "id": "mech_tensile",
+      "page": 2,
+      "x": 48,
+      "y": 22.8,
+      "w": 20,
+      "h": 2,
+      "label": "抗拉强度 T.S. Rm",
+      "category": "mechanical"
+    },
+    {
+      "id": "mech_elongation",
+      "page": 2,
+      "x": 68.8,
+      "y": 22.8,
+      "w": 19.8,
+      "h": 2,
+      "label": "延伸率 EL. A%",
+      "category": "mechanical"
+    },
+    {
+      "id": "method_hardness",
+      "page": 2,
+      "x": 30,
+      "y": 32.2,
+      "w": 29.5,
+      "h": 2.2,
+      "label": "硬度试验标准: GB/T 4340.1-2024",
+      "category": "mechanical"
+    },
+    {
+      "id": "method_grain",
+      "page": 2,
+      "x": 60,
+      "y": 32.2,
+      "w": 28.5,
+      "h": 2.2,
+      "label": "晶粒度测定标准: GB/T 6394-2017",
+      "category": "metallographic"
+    },
+    {
+      "id": "mech_hardness",
+      "page": 2,
+      "x": 30,
+      "y": 38.6,
+      "w": 29.5,
+      "h": 2,
+      "label": "硬度 Hardness (HV1) 实测值",
+      "category": "mechanical"
+    },
+    {
+      "id": "metallo_grain",
+      "page": 2,
+      "x": 60,
+      "y": 38.6,
+      "w": 28.5,
+      "h": 2,
+      "label": "晶粒度 Grain size 级实测值",
+      "category": "metallographic"
+    },
+    {
+      "id": "meta_constructionNo",
+      "page": 3,
+      "x": 11.5,
+      "y": 19.5,
+      "w": 32,
+      "h": 2.2,
+      "label": "施工号: 26715-7053",
+      "category": "meta"
+    },
+    {
+      "id": "meta_dimensions",
+      "page": 3,
+      "x": 41.5,
+      "y": 29,
+      "w": 16,
+      "h": 2,
+      "label": "交货规格: 15 × 0.8 mm",
+      "category": "meta"
+    },
+    {
+      "id": "meta_inventoryQuantity",
+      "page": 3,
+      "x": 57.5,
+      "y": 29,
+      "w": 32,
+      "h": 2,
+      "label": "支数与重量清单",
+      "category": "meta"
+    }
+  ]
+}
