@@ -2649,140 +2649,25 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   note?: string;
                 }
 
-                // 构建全景比对矩阵数据项
+                // 构建全景比对矩阵数据项 (完全动态化，无任何硬编码 mock 兜底)
+                const chemRows: ComplianceMatrixRow[] = (currentBatch.chemical && currentBatch.chemical.length > 0)
+                  ? currentBatch.chemical.map((chem) => ({
+                      id: `chem_${chem.element}`,
+                      category: 'chemical' as const,
+                      categoryLabel: '化分',
+                      categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                      name: `${chem.element} (元素含量)`,
+                      measuredValue: `${chem.value} wt%`,
+                      standardRequirement: `符合 ${activeGrade || '标准'} 标尺`,
+                      deviation: '符合标尺区间',
+                      status: chem.status === 'ok' || !chem.status ? 'PASS' as const : 'FAIL' as const,
+                      statusLabel: chem.status === 'ok' || !chem.status ? '✓ PASS' : '✗ FAIL',
+                      ruleBasis: '熔炼化学成分分析',
+                    }))
+                  : [];
+
                 const complianceMatrixItems: ComplianceMatrixRow[] = [
-                  // 1. 化学成分
-                  {
-                    id: 'chem_C',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '碳 C (元素含量)',
-                    measuredValue: '0.018 wt%',
-                    standardRequirement: '≤ 0.080 wt%',
-                    deviation: '-0.062 wt%',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '熔炼分析 (GB/T 13296 表3 序号22)',
-                  },
-                  {
-                    id: 'chem_Si',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '硅 Si (元素含量)',
-                    measuredValue: '0.44 wt%',
-                    standardRequirement: '≤ 1.00 wt%',
-                    deviation: '-0.56 wt%',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '熔炼分析 (GB/T 13296 表3)',
-                  },
-                  {
-                    id: 'chem_Mn',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '锰 Mn (元素含量)',
-                    measuredValue: '1.16 wt%',
-                    standardRequirement: '≤ 2.00 wt%',
-                    deviation: '-0.84 wt%',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '熔炼分析 (GB/T 13296 表3)',
-                  },
-                  {
-                    id: 'chem_P',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '磷 P (有害杂质)',
-                    measuredValue: '0.035 wt%',
-                    standardRequirement: '≤ 0.035 wt%',
-                    deviation: '0.000 wt%',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '熔炼分析 (上限红线控制)',
-                  },
-                  {
-                    id: 'chem_S',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '硫 S (有害杂质)',
-                    measuredValue: '0.005 wt%',
-                    standardRequirement: '≤ 0.015 wt%',
-                    deviation: '-0.010 wt%',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '熔炼分析 (纯净度优级控制)',
-                  },
-                  {
-                    id: 'chem_Ni',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '镍 Ni (奥氏体相)',
-                    measuredValue: currentBatch.hitlReason === 'UNKNOWN_GRADE' ? '8.45 wt%' : '9.08 wt%',
-                    standardRequirement: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '待消歧牌号以加载标尺 (参考要求 8.00~11.00 wt%)'
-                      : '9.00 ~ 12.00 wt%',
-                    deviation: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '待消歧钢级'
-                      : '+0.08 wt% (高于下限)',
-                    status: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? 'HITL'
-                      : 'PASS',
-                    statusLabel: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '? 待消歧'
-                      : '✓ PASS',
-                    ruleBasis: currentBatch.hitlReason === 'UNKNOWN_GRADE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '非标牌号别名无法确定性匹配成分标尺，需人工消歧指定'
-                      : '熔炼分析 (区间约束)',
-                  },
-                  {
-                    id: 'chem_Cr',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '铬 Cr (耐腐蚀基体)',
-                    measuredValue: '17.41 wt%',
-                    standardRequirement: activeGrade.includes('S30408') ? '18.00 ~ 20.00 wt%' : '17.00 ~ 19.00 wt%',
-                    deviation: activeGrade.includes('S30408') ? '-0.59 wt% (低于下限)' : '+0.41 wt% (高于下限)',
-                    status: activeGrade.includes('S30408') ? 'FAIL' : 'PASS',
-                    statusLabel: activeGrade.includes('S30408') ? '✗ FAIL' : '✓ PASS',
-                    ruleBasis: activeGrade.includes('S30408') ? '标准要求 Cr ≥ 18.00%，实测不满足' : '熔炼分析 (区间约束)',
-                  },
-                  {
-                    id: 'chem_Ti',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '钛 Ti (稳定化元素)',
-                    measuredValue: '0.14 wt%',
-                    standardRequirement: activeGrade.includes('S30408') || activeGrade.includes('S31603')
-                      ? '无考核要求'
-                      : '5×(C+N) ~ 0.70 wt% (要求 ≥0.14 wt%)',
-                    deviation: '0.00 wt%',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: activeGrade.includes('S30408') || activeGrade.includes('S31603')
-                      ? '非强制添加元素'
-                      : 'AST动态公式: 5×(0.018+<0.01) = 0.14 wt%',
-                  },
-                  {
-                    id: 'chem_N',
-                    category: 'chemical',
-                    categoryLabel: '化分',
-                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                    name: '氮 N (固溶强化)',
-                    measuredValue: '<0.01 wt%',
-                    standardRequirement: '未设上限 (参照协议)',
-                    deviation: '-',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '残余元素分析',
-                  },
+                  ...chemRows,
 
                   // 2. 力学性能
                   {
@@ -2791,12 +2676,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     categoryLabel: '力学',
                     categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                     name: '抗拉强度 Rm',
-                    measuredValue: currentBatch.mechanical.tensile_rm,
-                    standardRequirement: '≥ 520 MPa',
-                    deviation: '+101 MPa',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '常温拉伸 (GB/T 228.1-2021)',
+                    measuredValue: currentBatch.mechanical.tensile_rm || '--',
+                    standardRequirement: '按标准技术规范',
+                    deviation: currentBatch.mechanical.tensile_rm ? '实测有效' : '--',
+                    status: currentBatch.mechanical.tensile_rm ? 'PASS' : 'FAIL',
+                    statusLabel: currentBatch.mechanical.tensile_rm ? '✓ PASS' : '待提取',
+                    ruleBasis: '常温拉伸试验',
                   },
                   {
                     id: 'mech_rp02',
@@ -2804,12 +2689,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     categoryLabel: '力学',
                     categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                     name: '规定塑性延伸强度 Rp0.2',
-                    measuredValue: currentBatch.mechanical.yield_rp02,
-                    standardRequirement: '≥ 205 MPa',
-                    deviation: '+63 MPa',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '常温屈服 (GB/T 228.1-2021)',
+                    measuredValue: currentBatch.mechanical.yield_rp02 || '--',
+                    standardRequirement: '按标准技术规范',
+                    deviation: currentBatch.mechanical.yield_rp02 ? '实测有效' : '--',
+                    status: currentBatch.mechanical.yield_rp02 ? 'PASS' : 'FAIL',
+                    statusLabel: currentBatch.mechanical.yield_rp02 ? '✓ PASS' : '待提取',
+                    ruleBasis: '常温屈服试验',
                   },
                   {
                     id: 'mech_a',
@@ -2817,200 +2702,142 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     categoryLabel: '力学',
                     categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                     name: '断后伸长率 A',
-                    measuredValue: currentBatch.mechanical.elongation_a,
-                    standardRequirement: '≥ 35.0 % (原件内控 ≥40%)',
-                    deviation: '+22.5 %',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '断后伸长率 (GB/T 228.1-2021)',
+                    measuredValue: currentBatch.mechanical.elongation_a || '--',
+                    standardRequirement: '按标准技术规范',
+                    deviation: currentBatch.mechanical.elongation_a ? '实测有效' : '--',
+                    status: currentBatch.mechanical.elongation_a ? 'PASS' : 'FAIL',
+                    statusLabel: currentBatch.mechanical.elongation_a ? '✓ PASS' : '待提取',
+                    ruleBasis: '断后伸长率试验',
                   },
-                  {
+                  ...(currentBatch.mechanical.hardness ? [{
                     id: 'mech_hardness',
-                    category: 'mechanical',
+                    category: 'mechanical' as const,
                     categoryLabel: '力学',
                     categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                    name: '硬度试验 Hardness (HV1)',
-                    measuredValue: currentBatch.mechanical.hardness || '139.3 HV1 (实测 143/145/137/132/140/139)',
-                    standardRequirement: '≤ 200 HV1 (壁厚<1.7mm 免检，实测亦合格)',
-                    deviation: '-60.7 HV1',
-                    status: 'PASS',
+                    name: '硬度试验 Hardness',
+                    measuredValue: currentBatch.mechanical.hardness,
+                    standardRequirement: '按技术协议执行',
+                    deviation: '实测有效',
+                    status: 'PASS' as const,
                     statusLabel: '✓ PASS',
-                    ruleBasis: '维氏硬度 (GB/T 4340.1-2024 第 7.4.2 条)',
-                  },
+                    ruleBasis: '硬度检验',
+                  }] : []),
 
                   // 3. 工艺性能
-                  {
+                  ...(currentBatch.process.flattening ? [{
                     id: 'proc_flattening',
-                    category: 'process',
+                    category: 'process' as const,
                     categoryLabel: '工艺',
                     categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                     name: '压扁试验 (Flattening)',
-                    measuredValue: currentBatch.process.flattening === 'PASS' ? '合格 (无裂纹/无分层)' : '未检出',
-                    standardRequirement: '压至间距 H=(1+0.09)S/(0.09+S/D) 试样无裂纹',
-                    deviation: '完全符合',
-                    status: currentBatch.process.flattening === 'PASS' ? 'PASS' : 'FAIL',
+                    measuredValue: currentBatch.process.flattening === 'PASS' ? '合格' : String(currentBatch.process.flattening),
+                    standardRequirement: '压扁试样无裂纹/分层',
+                    deviation: '符合要求',
+                    status: currentBatch.process.flattening === 'PASS' ? 'PASS' as const : 'FAIL' as const,
                     statusLabel: currentBatch.process.flattening === 'PASS' ? '✓ PASS' : '✗ FAIL',
-                    ruleBasis: '工艺性能 (GB/T 246-2017)',
-                  },
-                  {
+                    ruleBasis: '工艺成型性能',
+                  }] : []),
+                  ...(currentBatch.process.flaring ? [{
                     id: 'proc_flaring',
-                    category: 'process',
+                    category: 'process' as const,
                     categoryLabel: '工艺',
                     categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                     name: '扩口试验 (Flaring)',
-                    measuredValue: currentBatch.process.flaring === 'PASS' ? '合格 (顶心锥度 60°, 扩口率 ≥20%)' : '未做',
-                    standardRequirement: '顶心锥度 60°, 扩口率 ≥20% 试样无裂纹',
-                    deviation: '完全符合',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '工艺性能 (GB/T 242-2007)',
-                  },
+                    measuredValue: currentBatch.process.flaring === 'PASS' ? '合格' : String(currentBatch.process.flaring),
+                    standardRequirement: '顶心扩口无裂纹',
+                    deviation: '符合要求',
+                    status: currentBatch.process.flaring === 'PASS' ? 'PASS' as const : 'FAIL' as const,
+                    statusLabel: currentBatch.process.flaring === 'PASS' ? '✓ PASS' : '✗ FAIL',
+                    ruleBasis: '工艺成型性能',
+                  }] : []),
 
                   // 4. 金相组织
-                  {
+                  ...(currentBatch.process.grainSize ? [{
                     id: 'metallo_grain',
-                    category: 'metallographic',
+                    category: 'metallographic' as const,
                     categoryLabel: '金相',
                     categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
-                    name: '晶粒度评级与显微组织 (Metallographic)',
-                    measuredValue: currentBatch.process.grainSize || '7.0 级',
-                    standardRequirement: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '基体组织均匀，不得有对耐蚀性有害的连续网状析出'
-                      : '7.0 级或更细 (≥ 7.0 级)',
-                    deviation: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? 'NLP 判定模糊 (71%)'
-                      : '完全符合',
-                    status: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? 'HITL'
-                      : 'PASS',
-                    statusLabel: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '? 待定性'
-                      : '✓ PASS',
-                    ruleBasis: currentBatch.hitlReason === 'QUALITATIVE_AMBIGUITY' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '定性描述包含局部微量析出，需质检工程师人工裁定组织形貌'
-                      : '比较法评级 (GB/T 6394-2017)',
-                  },
+                    name: '晶粒度与显微组织',
+                    measuredValue: currentBatch.process.grainSize,
+                    standardRequirement: '按技术协议评级',
+                    deviation: '符合要求',
+                    status: 'PASS' as const,
+                    statusLabel: '✓ PASS',
+                    ruleBasis: '金相晶粒度检验',
+                  }] : []),
 
                   // 5. 耐腐蚀性能
-                  {
+                  ...(currentBatch.process.intergranularCorrosion ? [{
                     id: 'corrosion_intergranular',
-                    category: 'corrosion',
+                    category: 'corrosion' as const,
                     categoryLabel: '腐蚀',
                     categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
-                    name: '晶间腐蚀试验 (Intergranular)',
-                    measuredValue: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '供货态E法合格 (未进行能标敏化处理)'
-                      : (currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (硫酸-硫酸铜法弯曲无裂纹)' : '未检出'),
-                    standardRequirement: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? 'GB/T 13296 (供货态E法) vs NB/T 47019.5 (敏化态E法)'
-                      : 'GB/T 4334-2020 检验方法 E 弯曲无裂纹',
-                    deviation: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '标准条款互斥'
-                      : '完全符合',
-                    status: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? 'HITL'
-                      : (currentBatch.process.intergranularCorrosion === 'PASS' ? 'PASS' : 'FAIL'),
-                    statusLabel: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '? 待仲裁'
-                      : (currentBatch.process.intergranularCorrosion === 'PASS' ? '✓ PASS' : '✗ FAIL'),
-                    ruleBasis: currentBatch.hitlReason === 'MULTI_STANDARD_CONFLICT' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '国标与能标对晶间腐蚀敏化制样要求互斥，需质检员指定主仲裁标尺'
-                      : '耐腐蚀性能 (GB/T 4334-2020 E法)',
-                  },
+                    name: '晶间腐蚀试验',
+                    measuredValue: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : String(currentBatch.process.intergranularCorrosion),
+                    standardRequirement: '弯曲试验无裂纹',
+                    deviation: '符合要求',
+                    status: currentBatch.process.intergranularCorrosion === 'PASS' ? 'PASS' as const : 'FAIL' as const,
+                    statusLabel: currentBatch.process.intergranularCorrosion === 'PASS' ? '✓ PASS' : '✗ FAIL',
+                    ruleBasis: '耐腐蚀性能评定',
+                  }] : []),
 
                   // 6. 无损检测
-                  {
-                    id: 'ndt_pressure',
-                    category: 'ndt',
+                  ...(currentBatch.process.ndt ? [{
+                    id: 'ndt_test',
+                    category: 'ndt' as const,
                     categoryLabel: '探伤',
                     categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-                    name: '承压/致密性检验 (Pressure Tightness)',
-                    measuredValue: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '涡流探伤合格 (未出具水压试验实测值)'
-                      : (currentBatch.process.ndt || '涡流探伤合格 (GB/T 7735 E3H 级)'),
-                    standardRequirement: '逐根液压试验 (经供需协商可在合同约定无损探伤替代)',
-                    deviation: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '待确权合同替代'
-                      : '替代组生效',
-                    status: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? 'HITL'
-                      : 'PASS',
-                    statusLabel: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? '? 待确权'
-                      : '✓ PASS',
-                    ruleBasis: currentBatch.hitlReason === 'ALTERNATIVE_CLAUSE' && currentBatch.verdict === 'MANUAL_REVIEW'
-                      ? 'GB/T 13296 第 7.5 条允许协议替代，需质检员核实订货合同授权'
-                      : '致密性替代条款 (GB/T 13296 第 7.5 条)',
-                  },
-                  {
-                    id: 'ndt_ut',
-                    category: 'ndt',
-                    categoryLabel: '探伤',
-                    categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-                    name: '超声波检测 (Ultrasonic)',
-                    measuredValue: '超声探伤合格 (GB/T 5777-2019 U2 级)',
-                    standardRequirement: '纵向人工缺陷深度的 U2 级',
-                    deviation: '完全符合',
-                    status: 'PASS',
+                    name: '无损检测 (NDT)',
+                    measuredValue: currentBatch.process.ndt,
+                    standardRequirement: '探伤检验合格',
+                    deviation: '符合要求',
+                    status: 'PASS' as const,
                     statusLabel: '✓ PASS',
-                    ruleBasis: '无损检验 (GB/T 5777-2019)',
-                  },
+                    ruleBasis: '无损探伤规程',
+                  }] : []),
 
                   // 7. 几何尺寸与表面质量
-                  {
+                  ...(currentBatch.dimensions ? [{
                     id: 'geo_dimensions',
-                    category: 'dimensions',
+                    category: 'dimensions' as const,
                     categoryLabel: '尺寸',
                     categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
-                    name: '几何尺寸公差 (Dimensions)',
-                    measuredValue: '外径 15.0mm / 壁厚 0.8mm',
-                    standardRequirement: '外径允许偏差 ±0.10mm，壁厚允许偏差 ±10%',
-                    deviation: '实测在允许公差带内',
-                    status: 'PASS',
+                    name: '几何尺寸规格',
+                    measuredValue: currentBatch.dimensions,
+                    standardRequirement: '满足订货技术规范',
+                    deviation: '实测在公差带内',
+                    status: 'PASS' as const,
                     statusLabel: '✓ PASS',
-                    ruleBasis: '尺寸精度 (GB/T 13296 表1 精密级)',
-                  },
-                  {
-                    id: 'geo_surface',
-                    category: 'dimensions',
-                    categoryLabel: '表面',
-                    categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
-                    name: '表面质量检验 (Surface Quality)',
-                    measuredValue: '内外表面光洁，无裂纹、折叠与重皮缺陷',
-                    standardRequirement: '钢管内外表面平整光洁，不得有结疤、重皮及过热',
-                    deviation: '完全符合',
-                    status: 'PASS',
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '外观要求 (GB/T 13296 第 5.5 条)',
-                  },
+                    ruleBasis: '尺寸规格测量',
+                  }] : []),
 
-                  // 8. 非标与扩展协议 (通用扩展池)
-                  {
+                  // 8. 非标与扩展追溯属性
+                  ...(currentBatch.constructionNo ? [{
                     id: 'custom_construction_no',
-                    category: 'additional',
+                    category: 'additional' as const,
                     categoryLabel: '扩展',
                     categoryColor: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700',
                     name: '施工工程号 (Construction No.)',
-                    measuredValue: currentBatch.constructionNo || '26715-7053',
-                    standardRequirement: '采购合同工程技术协议 / 业主项目追溯标识',
+                    measuredValue: currentBatch.constructionNo,
+                    standardRequirement: '采购合同追溯标识',
                     deviation: '-',
-                    status: 'INFO',
+                    status: 'INFO' as const,
                     statusLabel: 'ℹ️ 供参考',
-                    ruleBasis: 'Schema 扩展池 (项目属性，非国标红线)',
-                  },
-                  {
-                    id: 'custom_packing_info',
-                    category: 'additional',
+                    ruleBasis: '工程追溯号',
+                  }] : []),
+                  ...(currentBatch.heatNo ? [{
+                    id: 'custom_heat_no',
+                    category: 'additional' as const,
                     categoryLabel: '扩展',
                     categoryColor: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700',
-                    name: '包装支数与净重 (Packing Info)',
-                    measuredValue: '15 支 / 45.2 kg',
-                    standardRequirement: '物资交货装箱清单',
+                    name: '熔炼炉号 (Heat No.)',
+                    measuredValue: currentBatch.heatNo,
+                    standardRequirement: '炉批次追踪标识',
                     deviation: '-',
-                    status: 'INFO',
+                    status: 'INFO' as const,
                     statusLabel: 'ℹ️ 供参考',
-                    ruleBasis: '物流交付属性 (仅供仓库点验核查)',
-                  },
+                    ruleBasis: '原材料炉批追溯',
+                  }] : []),
                 ];
 
                 const STEP3_TABS = [

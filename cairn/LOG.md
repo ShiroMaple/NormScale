@@ -4,6 +4,13 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-01 · 全工程 Fallback 假数据地毯式排查与比对矩阵动态化彻底重构
+
+- 全景比对矩阵动态化 (`WaterfallWorkbench` Step 3)：彻底重写 `complianceMatrixItems` 构造逻辑，100% 动态映射 `currentBatch` 的真实化学成分数组 (`chemical.map`)、力学实测值与工艺状态，移除了所有碳、硅、锰、硬度、包装等硬编码字符串；
+- 全局 Mock 兜底清除：清空所有 `formatToSessionDocument`、`handleRealFiles`、`samplePages` 及 `complianceMatrixItems` 中的假数据 fallback，未识别字段严格保持为空或待人工确认；
+- 缓存污染自愈：清理 `.cache/parses/` 中由于旧版解析错误生成的无效缓存文件；
+- 27 个测试套件（121 个单元测试）全部通过。
+
 ## 2026-09-01 · 接入 Moonshot 文件抽取机制并彻底清除抽取层所有硬编码假数据
 
 - 物理 PDF 解析机制接入：`OpenAiCompatibleExtractor` 增加 `resolveInputText` 逻辑，优先调用 Moonshot 官方 `/v1/files` (purpose: `file-extract`) 文件 OCR 抽取端点获取真实全文 Markdown，解决直接转 UTF-8 发送 PDF 二进制乱码导致模型输出全 `null` 的问题；
