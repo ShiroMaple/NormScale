@@ -4,6 +4,12 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-01 · 推理模型 temperature 参数规范化与实际上传文件真实数据流贯通
+
+- 模型推理 temperature 修复：Kimi 及主流代码/推理模型严格要求 `temperature: 1`（修正原先 0.1 导致的 `HTTP 400 invalid temperature: only 1 is allowed for this model` 报错）；
+- 工作台真实上传文件流绑定：修正 `WaterfallWorkbench` 在进入步骤 2 时 Session 重新构建逻辑，优先采用用户实际加入队列并上传的真实文件与物理文件名（`file.name`），杜绝回退到默认写死文件名；
+- 异步工作池数据实时回流：`useDocumentParser` 增加 `onDocumentParsed` 回调，大模型解析就绪后即刻将抽取出的结构化批次、理化数据与 BBoxes 回填至工作台 Session。
+
 ## 2026-08-31 · 前端 Mock 数据彻底清理与 config.json 在 AdminConsole 系统管理页面的双向动态映射
 
 - 服务端配置与缓存检索 API (`/api/admin/config` & `/api/documents/cached`)：实现 `config.json` 的严格 Zod 契约校验读写持久化，以及 `.cache/parses/` 本地真实已解析文档摘要动态提取；
