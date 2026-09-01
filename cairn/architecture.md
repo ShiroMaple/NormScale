@@ -11,8 +11,10 @@ tags:
 contains:
   - decision
   - procedure
+  - lesson
+  - pitfall
 created: "2026-08-21"
-updated: "2026-08-27"
+updated: "2026-09-01"
 related:
   - cairn/mtc-schema-evolution.md
   - cairn/viewport-scroll-isolation.md
@@ -65,7 +67,30 @@ authoring_mode: ai_generated
 - **人机干预点（Interrupt/Resume）**：当遇到 OCR 提取关键字段置信度低、牌号未在规则库收录或发生严重质量偏差报警时，挂起等待质检人员确认后恢复。
 - **全局决策规则**：执行**一票否决制**（数值超标或强制项 MISSING 即判定 FAIL）。
 
+## 踩坑经验与反硬编码规范（2026-09-01 补充）
+
+### 踩坑 1：样本特化 ID 与伪造 Fallback 残留陷阱
+- **现象**：在对接真实多钢厂多格式质保书时，代码中残存 `if (docId === 'doc_zpje_01')`、`currentBatch.batchNo.includes('DB7')`、`if (!samplePages) return;` 等特化保护逻辑，导致新文件 BBox 坐标联动失效、尺寸数据写死、人工切换牌号时弹出虚假超标原因。
+- **根因**：早期 POC 演示为了高保真交互写死了静态样本，在后续真实 API 接入时采用“打补丁”式的条件分支保护，而非重构为通用的空值安全契约。
+- **工程规范**：
+  1. **Schema-First 驱动**：UI 组件 100% 消费标准数据结构，严禁编写任何针对具体业务 `docId` / `batchNo` 的判断分支；
+  2. **Zero-Mock by Default**：未提取字段严格留空（`''`）并显示浅色占位符（`placeholder="--"`），严禁编写任何带有业务假数据的默认 fallback；
+  3. **静态扫描与黑盒验证**：将历史测试样本特征词加入扫描门禁，编写全链路未知文档端到端测试。
+
+### 踩坑 2：流式打字状态高频触发导致 Object URL 泄漏与 iframe 剧烈重载
+- **现象**：流式打字（30ms/次）触发父组件频繁重渲染，PDF 预览视窗剧烈闪烁。
+- **根因**：在 JSX 渲染体内部直接调用 `URL.createObjectURL(uploadedFile)`，每次 re-render 生成新 Blob URL 导致 `<iframe src={url}>` 被浏览器判定为加载新页面而每秒重载数十次。
+- **工程规范**：
+  - 在文件加入队列时单次创建并在状态（`uploadedFileUrls`）中缓存 Blob URL，组件卸载时统一注销；JSX 中严格仅读取缓存 URL。
+
+### 踩坑 3：真实上传文档视窗缩放与 BBox 交互图层解耦
+- **现象**：物理上传 PDF 无法响应 `zoomLevel`（50%~300%）调节，且无法进行 BBox 高亮框聚焦。
+- **工程规范**：
+  - 真实上传文档统一渲染在标准画幅容器（`#pdf-page-1`）中，容器宽高与 `transform: scale(...)` 严格绑定 `zoomLevel` 与聚光灯放大状态；
+  - 画布上层叠加透明、高透光、零遮挡的百分比 BBox 交互标注图层，实现与右侧字段的双向平滑联动。
+
 ## 决策日志
 
+- **2026-09-01**：全面拔除全工程所有样本特化分支（`doc_zpje_01`、`DB7`、写死条款与假工号），确立零 Mock 动态契约规范；实现真实上传 PDF 的稳定去闪烁渲染、50%~300% 缩放与双向 BBox 定位联动。
 - **2026-08-22**：将标准规则库从单体 JSON 升级为通用规格切片（Specification Slice）与 `IRuleStore` 仓库模式；全量录入《GB/T 13296-2023》31 个钢级规则并构建离线校验工具链。
 - **2026-08-21**：确认独立构建 NormScale 项目，不与 DocEx 主干直接耦合；确立“离线结构化规则库 + 确定性计算引擎 + LangGraph 有状态编排”的系统基调。

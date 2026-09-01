@@ -71,10 +71,38 @@ export class ParseCacheStore {
     if (!md5 || !data) return;
     this.ensureDirExists();
     try {
+      // 自动清理同名旧缓存文件，确保同一文件只保留最新版本
+      if (data.filename) {
+        this.deleteByFilename(data.filename, md5);
+      }
       const filePath = this.getFilePath(md5);
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {
       console.error(`[ParseCacheStore] 写入缓存异常 (${md5}):`, err);
+    }
+  }
+
+  public deleteByFilename(filename: string, exceptMd5?: string): void {
+    if (!filename) return;
+    try {
+      if (!fs.existsSync(this.cacheDir)) return;
+      const files = fs.readdirSync(this.cacheDir);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          const filePath = path.join(this.cacheDir, file);
+          try {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const parsed = JSON.parse(content) as CachedParseResult;
+            if (parsed.filename === filename && parsed.md5 !== exceptMd5) {
+              fs.unlinkSync(filePath);
+            }
+          } catch {
+            // 忽略损坏文件
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[ParseCacheStore] 按文件名清理缓存异常:`, err);
     }
   }
 

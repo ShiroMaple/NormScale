@@ -11,8 +11,9 @@ contains:
   - pattern
   - pitfall
   - standard
+  - lesson
 created: "2026-08-27"
-updated: "2026-08-27"
+updated: "2026-09-01"
 related:
   - cairn/architecture.md
   - cairn/viewport-scroll-isolation.md
@@ -96,3 +97,16 @@ authoring_mode: ai_generated
       </div>
     )}
     ```
+
+---
+
+## 3. 架构踩坑与真实多文档渲染规范（2026-09-01 补充）
+
+### 踩坑 1：流式打字状态高频刷新导致 iframe 剧烈闪烁 (Object URL 泄漏与重载)
+- **现象**：大模型流式打字输出时，`tasks` 状态每 30ms 变更一次触发父组件重渲染，左侧 PDF 预览视窗剧烈闪烁。
+- **根因**：在 JSX 渲染体内部直接调用 `URL.createObjectURL(uploadedFile)`，每次 re-render 生成全新的 Blob URL，导致 `<iframe src={url}>` 被浏览器判定为加载新页面而每秒重载数十次。
+- **规范**：在文件加入待处理队列时，统一在 `uploadedFileUrls` 状态中单次创建并缓存固定 Object URL，组件卸载时统一定向 `revokeObjectURL`；JSX 中严格仅读取缓存 URL。
+
+### 踩坑 2：废除特定 ID 特化分支，统一为 BBox 动态字典契约
+- **教训**：严禁在 UI 层编写 `if (docId === 'doc_zpje_01')` 等样本 ID 分支；
+- **规范**：采用 `docBboxesMap: Record<string, FieldBBox[]>` 动态管理各文档坐标，模型解析成功后统一注入字典，彻底实现多文档无缝通用联动。

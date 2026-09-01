@@ -17,6 +17,7 @@ import { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.int
 import { toPng } from 'html-to-image';
 import { useDocumentParser } from '@/hooks/useDocumentParser.ts';
 import { LlmStreamingTerminal } from './LlmStreamingTerminal.tsx';
+import { renderPdfToImageUrls } from '@/utils/pdf-renderer.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -125,10 +126,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   // 当前作业会话 (Session) 与当前 Focus 的文档 ID 及炉批号 (默认首位选中真实《质保书.pdf》及其第 1 批次)
   const [session, setSession] = useState<InspectionSession>(loadedSession || DEFAULT_INSPECTION_SESSION);
   const [selectedDocId, setSelectedDocId] = useState<string>(
-    session.documents[0]?.docId || 'doc_zpje_01'
+    session.documents[0]?.docId || ''
   );
   const [selectedBatchNo, setSelectedBatchNo] = useState<string>(
-    session.documents[0]?.batches[0]?.batchNo || 'Z26022C-DB7'
+    session.documents[0]?.batches[0]?.batchNo || ''
   );
 
   // 源文档 OCR 视觉 BBox 与右侧解析字段双向联动状态
@@ -139,13 +140,36 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [currentDocPage, setCurrentDocPage] = useState<number>(1);
   const pdfScrollContainerRef = useRef<HTMLDivElement>(null);
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
+  const [uploadedFileUrls, setUploadedFileUrls] = useState<Record<string, string>>({});
+  const [docBboxesMap, setDocBboxesMap] = useState<Record<string, FieldBBox[]>>({});
 
   // 当大模型或缓存解析返回真实 Document 数据时，实时双向同步至工作台 Session
-  const handleDocumentParsed = useCallback((docId: string, parsedDoc: SessionDocument) => {
+  const handleDocumentParsed = useCallback((docId: string, parsedDoc: SessionDocument, bboxes?: FieldBBox[]) => {
     setSession(prev => ({
       ...prev,
-      documents: prev.documents.map(d => (d.docId === docId ? { ...parsedDoc, docId } : d)),
+      documents: prev.documents.map(d => {
+        if (d.docId !== docId) return d;
+        const preservedPages = (parsedDoc.pages && parsedDoc.pages.length > 0)
+          ? parsedDoc.pages
+          : (d.pages && d.pages.length > 0 ? d.pages : (d.samplePages && d.samplePages.length > 0 ? d.samplePages : undefined));
+        return {
+          ...parsedDoc,
+          docId,
+          ocrStatus: 'DONE',
+          pages: preservedPages,
+          samplePages: preservedPages,
+        };
+      }),
     }));
+    if (bboxes && bboxes.length > 0) {
+      setDocBboxesMap(prev => ({ ...prev, [docId]: bboxes }));
+    }
+    if (parsedDoc.batches && parsedDoc.batches.length > 0) {
+      const firstBatchNo = parsedDoc.batches[0]?.batchNo;
+      if (firstBatchNo) {
+        setSelectedBatchNo(firstBatchNo);
+      }
+    }
   }, []);
 
   // 多文档异步并发解析工作池 Hook
@@ -161,6 +185,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
   const [uploadedFilesMap, setUploadedFilesMap] = useState<Record<string, File>>({});
+
+  // 卸载时清理 Object URLs
+  useEffect(() => {
+    return () => {
+      Object.values(uploadedFileUrls).forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // ignore
+        }
+      });
+    };
+  }, [uploadedFileUrls]);
 
   // 监听当前选中文档的解析状态，当解析从 parsing 变更为 ready 时，延迟 800ms 自动平滑折叠
   const currentDocTask = parsingTasks[selectedDocId];
@@ -447,9 +484,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     const fileArr = Array.from(files);
     if (fileArr.length === 0) return;
 
+    const newUrls: Record<string, string> = {};
+
     fileArr.forEach(file => {
       const docId = `doc_up_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const sizeStr = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+      const blobUrl = URL.createObjectURL(file);
+      newUrls[docId] = blobUrl;
 
       setQueuedDocs(prev => [
         ...prev,
@@ -476,15 +517,22 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           uploadTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
           ocrStatus: 'PENDING',
           pageCount: 1,
+          pages: file.type.includes('image') ? [blobUrl] : undefined,
+          samplePages: file.type.includes('image') ? [blobUrl] : undefined,
           batches: [
             {
-              batchNo: `${file.name.replace(/\.[^/.]+$/, '').slice(0, 8)}-01`,
+              batchNo: '',
               subBatchIndex: 1,
-              grade: '待提取',
-              standard: '待提取',
-              supplier: '待提取',
-              dimensions: '待提取',
-              heatNo: '待提取',
+              grade: '',
+              standard: '',
+              supplier: '',
+              dimensions: '',
+              heatNo: '',
+              packNo: '',
+              productName: '',
+              certificateNo: '',
+              deliveryState: '',
+              constructionNo: '',
               verdict: 'MANUAL_REVIEW',
               verdictSummary: '等待大模型提取中...',
               ocrConfidence: 0,
@@ -504,8 +552,24 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         };
       });
 
+      // 若为 PDF 文件，立即在客户端异步渲染高清页面图列表 (pages)
+      if (!file.type.includes('image')) {
+        renderPdfToImageUrls(file).then(pageUrls => {
+          if (pageUrls && pageUrls.length > 0) {
+            setSession(sPrev => ({
+              ...sPrev,
+              documents: sPrev.documents.map(d =>
+                d.docId === docId ? { ...d, pages: pageUrls, samplePages: pageUrls, pageCount: pageUrls.length } : d
+              ),
+            }));
+          }
+        });
+      }
+
       showToast(`已加入待处理队列: ${file.name}`, 'success');
     });
+
+    setUploadedFileUrls(prev => ({ ...prev, ...newUrls }));
   };
 
   // 从 Step 1 触发新建 Session 并前往 Step 2 (启动 2~3 线程异步并发工作池)
@@ -573,20 +637,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   let computedVerdictSummary = currentBatch.verdictSummary;
 
   if (isOverridden) {
-    if (currentBatch.batchNo.includes('DB7') && activeGrade.includes('S30408')) {
-      computedIsPass = false;
-      computedVerdictSummary = '人工切换为 S30408：Cr 实测 17.41% 低于标准下限 (≥18.00%)，触发一票否决';
-    } else if (currentBatch.batchNo.includes('DB7') && activeGrade.includes('S31603')) {
-      computedIsPass = false;
-      computedVerdictSummary = '人工切换为 S31603：缺少关键耐点蚀元素 Mo 钼熔炼分析指标 (标准要求 2.00~3.00%)，判定不合格';
-    } else {
-      computedIsPass = currentBatch.verdict === 'PASS';
-      computedVerdictSummary = currentBatch.verdictSummary || `人工切换为 ${activeGrade}：全项指标符合 ${activeStandard} 规范要求`;
-    }
+    computedVerdictSummary = currentBatch.verdictSummary || `人工指定为 ${activeGrade} (${activeStandard})，待核验规则重新判定`;
   }
 
   const isPass = computedIsPass;
-  const isHitl = currentBatch.verdict === 'MANUAL_REVIEW';
+  const isDocParsing = currentDoc.ocrStatus === 'PENDING' || currentDocTask?.status === 'parsing';
+  const isHitl = currentBatch.verdict === 'MANUAL_REVIEW' && !isDocParsing;
 
   // 步骤 3 / 步骤 2 HITL 侧边抽屉内部状态
   const [isHitlDrawerOpen, setIsHitlDrawerOpen] = useState<boolean>(false);
@@ -759,6 +815,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             if (fieldId === 'meta_deliveryState') {
               return { ...b, deliveryState: newValue };
             }
+            if (fieldId === 'meta_certificateNo') {
+              return { ...b, certificateNo: newValue };
+            }
+            if (fieldId === 'meta_constructionNo') {
+              return { ...b, constructionNo: newValue };
+            }
+            if (fieldId === 'meta_supplier') {
+              return { ...b, supplier: newValue };
+            }
+            if (fieldId === 'meta_productName') {
+              return { ...b, productName: newValue };
+            }
 
             return b;
           }),
@@ -885,9 +953,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   };
 
   // 计算当前文档/批次的 OCR BBox 字典
-  const bboxes: FieldBBox[] = currentDoc.docId === 'doc_zpje_01'
-    ? getZPJEBBoxes(currentBatch.batchNo)
-    : [];
+  const bboxes: FieldBBox[] = docBboxesMap[currentDoc.docId] || getZPJEBBoxes(currentBatch.batchNo || '');
 
   // 退出聚焦放大状态，恢复常规显示
   const handleResetMagnify = useCallback(() => {
@@ -929,8 +995,6 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       setMagnifiedFieldId(fieldId);
     }, 1000);
 
-    if (!currentDoc.samplePages || currentDoc.samplePages.length === 0) return;
-
     const box = bboxes.find(b => b.id === fieldId);
     if (!box) return;
 
@@ -939,7 +1003,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     if (!container) return;
 
     const boxElem = document.getElementById(`bbox-${box.id}`);
-    const pageElem = document.getElementById(`pdf-page-${box.page}`);
+    const pageElem = document.getElementById(`pdf-page-${box.page}`) || document.getElementById('pdf-page-1');
     const targetElem = boxElem || pageElem;
     if (targetElem) {
       const containerRect = container.getBoundingClientRect();
@@ -1000,7 +1064,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   // 3. 左侧视窗工具栏翻页控制器：仅滚动左侧 PDF 视窗
   const goToPage = (page: number) => {
-    const target = Math.max(1, Math.min(currentDoc.pageCount, page));
+    const maxPages = (currentDoc.pages || currentDoc.samplePages || []).length || currentDoc.pageCount || 1;
+    const target = Math.max(1, Math.min(maxPages, page));
     if (target !== currentDocPage) {
       handleResetMagnify();
     }
@@ -1199,8 +1264,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
     };
     setSession(freshSession);
-    setSelectedDocId(freshSession.documents[0]?.docId || 'doc_zpje_01');
-    setSelectedBatchNo(freshSession.documents[0]?.batches[0]?.batchNo || 'Z26022C-DB7');
+    setSelectedDocId(freshSession.documents[0]?.docId || '');
+    setSelectedBatchNo(freshSession.documents[0]?.batches[0]?.batchNo || '');
 
     // 重置步骤并返回步骤 1
     goToStep(0);
@@ -1276,11 +1341,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       handleRealFiles(e.dataTransfer.files);
                     }
                   }}
-                  className={`lg:col-span-6 xl:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[300px] shadow-xs group ${
-                    isDraggingOver
-                      ? 'border-primary ring-2 ring-primary/30 bg-primary/5'
-                      : 'border-outline-variant/60 dark:border-border-dark hover:border-primary dark:hover:border-primary-fixed-dim'
-                  }`}
+                  className={`lg:col-span-6 xl:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[300px] shadow-xs group ${isDraggingOver
+                    ? 'border-primary ring-2 ring-primary/30 bg-primary/5'
+                    : 'border-outline-variant/60 dark:border-border-dark hover:border-primary dark:hover:border-primary-fixed-dim'
+                    }`}
                 >
                   <div className="w-14 h-14 rounded-2xl bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant group-hover:text-primary group-hover:bg-primary/10 flex items-center justify-center transition-all mb-4">
                     <span className="material-symbols-outlined text-3xl">
@@ -1340,7 +1404,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 </span>
                               </div>
 
-                              <span className="font-mono text-xs font-bold text-on-surface dark:text-surface-bright line-clamp-2 max-w-[130px] break-all leading-tight my-1">
+                              <span className=" text-xs font-bold text-on-surface dark:text-surface-bright line-clamp-2 max-w-[130px] break-all leading-tight my-1">
                                 {doc.filename}
                               </span>
 
@@ -1370,7 +1434,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     </span>
                     <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright flex items-center gap-2">
                       <span>历史已缓存文档</span>
-                      <span className="px-1.5 py-0.2 rounded-full bg-surface-container-high dark:bg-surface-dark-high text-[11px] font-mono text-on-surface-variant font-medium">
+                      <span className="px-1.5 py-0.2 rounded-full bg-surface-container-high dark:bg-surface-dark-high text-[11px]  text-on-surface-variant font-medium">
                         {cachedDocs.length}
                       </span>
                       <span className="text-[11px] text-on-surface-variant dark:text-outline-variant font-normal">
@@ -1402,7 +1466,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         </span>
                       </div>
                       <div className="min-w-0 flex-1 pr-1">
-                        <span className="font-mono text-xs font-bold text-on-surface dark:text-surface-bright block truncate" title={item.filename}>
+                        <span className=" text-xs font-bold text-on-surface dark:text-surface-bright block truncate" title={item.filename}>
                           {item.filename}
                         </span>
                         <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block mt-0.5">
@@ -1457,7 +1521,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-xs font-bold shadow-xs hover:opacity-95 transition-all cursor-pointer ring-2 ring-amber-400/30"
                       >
                         <span className="material-symbols-outlined text-base">emergency_home</span>
-                        <span>打开 HITL 人工介入复核抽屉</span>
+                        <span>HITL 打开人工介入处理面板</span>
                       </button>
                     ) : undefined
                   }
@@ -1573,63 +1637,138 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     </div>
                   </div>
 
-                  {/* 源文档视窗：支持真实多页高清切图纵向连续平铺 或 拟真纸张排版回退 */}
-                  {currentDoc.samplePages && currentDoc.samplePages.length > 0 ? (
-                    <div
-                      ref={pdfScrollContainerRef}
-                      onMouseDown={handlePdfMouseDown}
-                      className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
-                        }`}
-                    >
-                      <div
-                        className="w-full flex flex-col items-center gap-5 my-auto transition-[padding,min-width]"
-                        style={{
-                          minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(120, (zoomLevel / 100) * (magnifiedFieldId ? 220 : 120))}%` : '100%',
-                          padding: magnifiedFieldId ? '20px 80px' : '10px 0px',
-                        }}
-                      >
-                        {currentDoc.samplePages.map((pageSrc, pageIdx) => {
-                          const pageNum = pageIdx + 1;
-                          const pageBBoxes = bboxes.filter(b => b.page === pageNum);
+                  {/* 源文档视窗：支持真实多页高清切图/PDF栅格化页面纵向连续平铺 */}
+                  {(() => {
+                    const docPages = currentDoc.pages || currentDoc.samplePages || [];
+                    if (docPages.length > 0) {
+                      return (
+                        <div
+                          ref={pdfScrollContainerRef}
+                          onMouseDown={handlePdfMouseDown}
+                          className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
+                            }`}
+                        >
+                          <div
+                            className="w-full flex flex-col items-center gap-5 my-auto transition-[padding,min-width]"
+                            style={{
+                              minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(120, (zoomLevel / 100) * (magnifiedFieldId ? 220 : 120))}%` : '100%',
+                              padding: magnifiedFieldId ? '20px 80px' : '10px 0px',
+                            }}
+                          >
+                            {docPages.map((pageSrc, pageIdx) => {
+                              const pageNum = pageIdx + 1;
+                              const pageBBoxes = bboxes.filter(b => b.page === pageNum);
 
-                          // 检查当前页是否包含正处于 1 秒悬浮放大状态的 BBox
-                          const activeMagnifiedBox = magnifiedFieldId
-                            ? pageBBoxes.find(b => b.id === magnifiedFieldId)
-                            : null;
-                          const isPageMagnified = !!activeMagnifiedBox;
+                              // 检查当前页是否包含正处于 1 秒悬浮放大状态的 BBox
+                              const activeMagnifiedBox = magnifiedFieldId
+                                ? pageBBoxes.find(b => b.id === magnifiedFieldId)
+                                : null;
+                              const isPageMagnified = !!activeMagnifiedBox;
 
-                          const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
-                          const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
+                              const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
+                              const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
 
-                          return (
+                              return (
+                                <div
+                                  key={pageNum}
+                                  id={`pdf-page-${pageNum}`}
+                                  className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
+                                    }`}
+                                  style={{
+                                    width: `${460 * (zoomLevel / 100)}px`,
+                                    aspectRatio: '1 / 1.414',
+                                    transform: isPageMagnified ? 'scale(2)' : 'scale(1)',
+                                    transformOrigin: `${originX}% ${originY}%`,
+                                    transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out',
+                                  }}
+                                >
+                                  {/* 页码徽章 */}
+                                  <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white text-[11px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
+                                    第 {pageNum} / {docPages.length} 页
+                                  </div>
+
+                                  {/* 真实高清页面底图 */}
+                                  <img
+                                    src={pageSrc}
+                                    alt={`第 ${pageNum} 页`}
+                                    className="w-full h-full object-contain select-none pointer-events-none"
+                                    loading="eager"
+                                  />
+
+                                  {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡) */}
+                                  {pageBBoxes.map((box) => {
+                                    const isHighlighted = highlightedFieldId === box.id;
+                                    return (
+                                      <div
+                                        key={box.id}
+                                        id={`bbox-${box.id}`}
+                                        onMouseEnter={() => scrollToRightField(box.id)}
+                                        onMouseLeave={() => handleFieldHover(null)}
+                                        className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
+                                          ? 'border-2 border-primary bg-primary/10 z-20 shadow-xs'
+                                          : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
+                                          }`}
+                                        style={{
+                                          left: `${box.x}%`,
+                                          top: `${box.y}%`,
+                                          width: `${box.w}%`,
+                                          height: `${box.h}%`,
+                                        }}
+                                        title={box.label}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 若尚未栅格化完成或环境不支持栅格化，使用原生原件高保真画布回退 (绝对不卡死)
+                    const fallbackBlobUrl = uploadedFileUrls[currentDoc.docId];
+                    if (fallbackBlobUrl) {
+                      const uploadedFile = uploadedFilesMap[currentDoc.docId];
+                      const isImage = uploadedFile ? uploadedFile.type.includes('image') : false;
+                      return (
+                        <div
+                          ref={pdfScrollContainerRef}
+                          onMouseDown={handlePdfMouseDown}
+                          className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
+                            }`}
+                        >
+                          <div
+                            className="w-full flex flex-col items-center gap-5 my-auto transition-[padding,min-width]"
+                            style={{
+                              minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(120, (zoomLevel / 100) * (magnifiedFieldId ? 220 : 120))}%` : '100%',
+                              padding: magnifiedFieldId ? '20px 80px' : '10px 0px',
+                            }}
+                          >
                             <div
-                              key={pageNum}
-                              id={`pdf-page-${pageNum}`}
-                              className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
-                                }`}
+                              id="pdf-page-1"
+                              className="relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 shadow-md"
                               style={{
-                                width: `${460 * (zoomLevel / 100)}px`,
-                                aspectRatio: '1 / 1.414',
-                                transform: isPageMagnified ? 'scale(2)' : 'scale(1)',
-                                transformOrigin: `${originX}% ${originY}%`,
-                                transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out',
+                                width: `${480 * (zoomLevel / 100)}px`,
+                                height: `${680 * (zoomLevel / 100)}px`,
+                                transition: 'width 150ms ease-out, height 150ms ease-out',
                               }}
                             >
-                              {/* 页码徽章 */}
-                              <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white text-[11px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
-                                第 {pageNum} / {currentDoc.samplePages!.length} 页
-                              </div>
-
-                              {/* 真实高清切图底图 */}
-                              <img
-                                src={pageSrc}
-                                alt={`第 ${pageNum} 页`}
-                                className="w-full h-full object-contain select-none pointer-events-none"
-                                loading="eager"
-                              />
-
-                              {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡) */}
-                              {pageBBoxes.map((box) => {
+                              {isImage ? (
+                                <img
+                                  src={fallbackBlobUrl}
+                                  alt={currentDoc.filename}
+                                  className="w-full h-full object-contain select-none pointer-events-none"
+                                />
+                              ) : (
+                                <iframe
+                                  key={fallbackBlobUrl}
+                                  src={`${fallbackBlobUrl}#toolbar=0&view=FitH`}
+                                  className="w-full h-full border-0 rounded-sm bg-white pointer-events-auto"
+                                  title={currentDoc.filename}
+                                />
+                              )}
+                              {bboxes.map((box) => {
                                 const isHighlighted = highlightedFieldId === box.id;
                                 return (
                                   <div
@@ -1638,7 +1777,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     onMouseEnter={() => scrollToRightField(box.id)}
                                     onMouseLeave={() => handleFieldHover(null)}
                                     className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
-                                      ? 'border-2 border-primary bg-primary/10 z-20 shadow-xs'
+                                      ? 'border-2 border-primary bg-primary/20 ring-2 ring-primary/40 z-30 shadow-xs'
                                       : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
                                       }`}
                                     style={{
@@ -1652,43 +1791,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 );
                               })}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    /* 回退：拟真白底纸张视窗 */
-                    <div className="flex-1 p-6 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low flex justify-center">
-                      <div
-                        className="paper-texture border border-outline-variant/40 rounded shadow-md p-8 relative transition-transform duration-200"
-                        style={{
-                          width: '460px',
-                          minHeight: '620px',
-                          transform: `scale(${zoomLevel / 100})`,
-                          transformOrigin: 'top center',
-                        }}
-                      >
-                        <h3 className="font-bold text-center text-sm font-mono tracking-widest uppercase border-b pb-2 mb-4 text-on-surface">
-                          MATERIAL TEST CERTIFICATE
-                        </h3>
-                        <div className="space-y-3 text-[11px] font-mono text-on-surface">
-                          <div className="flex justify-between border-b pb-1">
-                            <span>Supplier: {currentBatch.supplier}</span>
-                            <span>Date: 2026-08-26</span>
-                          </div>
-                          <div className="flex justify-between border-b pb-1">
-                            <span>Standard: {currentBatch.standard}</span>
-                            <span>Heat No: {currentBatch.heatNo}</span>
-                          </div>
-                          <div className="ocr-box ocr-box-yellow left-6 top-24 w-80 h-10 flex items-center px-2 cursor-pointer">
-                            <span className="text-[10px] font-bold text-yellow-900 bg-yellow-200/80 px-1 rounded">
-                              Grade: {currentBatch.grade}
-                            </span>
                           </div>
                         </div>
+                      );
+                    }
+
+                    // 尚未上传完成或处于解析等待态
+                    return (
+                      <div className="flex-1 p-6 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low flex flex-col items-center justify-center text-center">
+                        <div className="w-12 h-12 rounded-xl bg-surface-container-high dark:bg-surface-dark-high text-primary flex items-center justify-center mb-3 animate-pulse">
+                          <span className="material-symbols-outlined text-2xl">picture_as_pdf</span>
+                        </div>
+                        <span className="text-xs font-bold text-on-surface dark:text-surface-bright">
+                          {currentDoc.filename || '未载入文档'}
+                        </span>
+                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant mt-1">
+                          等待模型解析结构化数据与坐标映射...
+                        </span>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* 右侧 55%：结构化提取核对卡片 (自带独立滚动条) */}
@@ -1721,18 +1843,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         >
                           <div className="flex items-center gap-1.5 shrink-0">
                             <span className="material-symbols-outlined text-sm text-primary dark:text-primary-fixed-dim">label</span>
-                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant font-mono font-bold">批次号:</span>
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant  font-bold">批次号:</span>
                           </div>
                           <input
                             type="text"
                             value={currentBatch.batchNo}
                             onChange={(e) => handleUpdateBatchNo(e.target.value)}
-                            className="text-xs font-mono font-bold text-primary dark:text-primary-fixed-dim bg-transparent focus:outline-none flex-1 text-left px-1 border-b border-dashed border-primary/40 focus:border-primary min-w-0"
+                            className="text-xs  font-bold text-primary dark:text-primary-fixed-dim bg-transparent focus:outline-none flex-1 text-left px-1 border-b border-dashed border-primary/40 focus:border-primary min-w-0"
                             title="修改当前批次号，将自动同步至上方选择器"
                           />
                         </div>
 
-                        <div className="flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full bg-status-pass-bg text-status-pass-text text-xs font-mono font-bold border border-emerald-300 dark:border-emerald-800 shadow-2xs h-8">
+                        <div className="flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full bg-status-pass-bg text-status-pass-text text-xs  font-bold border border-emerald-300 dark:border-emerald-800 shadow-2xs h-8">
                           <span className="material-symbols-outlined text-sm">verified</span>
                           <span>当前批次 OCR 置信度: {currentBatch.ocrConfidence}%</span>
                         </div>
@@ -1747,10 +1869,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
                           <input
                             type="text"
-                            defaultValue={currentBatch.certificateNo || currentBatch.reportNo.replace('QA', 'MTC')}
-                            className={`w-full text-xs font-mono font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_certificateNo'
+                            value={currentBatch.certificateNo || ''}
+                            onChange={(e) => handleUpdateExtractValue('meta_certificateNo', e.target.value)}
+                            placeholder="--"
+                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_certificateNo'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
                           />
                         </div>
@@ -1764,8 +1888,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">施工号 (Construction No)</span>
                           <input
                             type="text"
-                            defaultValue={currentBatch.constructionNo || '26XXX-0888'}
-                            className={`w-full text-xs font-mono font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_constructionNo'
+                            value={currentBatch.constructionNo || ''}
+                            onChange={(e) => handleUpdateExtractValue('meta_constructionNo', e.target.value)}
+                            placeholder="--"
+                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_constructionNo'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
                               : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
@@ -1781,10 +1907,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂家 (Supplier)</span>
                           <input
                             type="text"
-                            defaultValue={currentBatch.supplier}
-                            className={`w-full text-xs font-mono font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_supplier'
+                            value={currentBatch.supplier || ''}
+                            onChange={(e) => handleUpdateExtractValue('meta_supplier', e.target.value)}
+                            placeholder="--"
+                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_supplier'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
                           />
                         </div>
@@ -1799,10 +1927,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品品名 (Product Name)</span>
                           <input
                             type="text"
-                            defaultValue={currentBatch.productName || '换热管 (Heat exchange tubes)'}
-                            className={`w-full text-xs font-mono mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_productName'
+                            value={currentBatch.productName || ''}
+                            onChange={(e) => handleUpdateExtractValue('meta_productName', e.target.value)}
+                            placeholder="--"
+                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_productName'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
                           />
                         </div>
@@ -1821,11 +1951,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           </div>
                           <input
                             type="text"
-                            value={currentBatch.grade}
+                            value={currentBatch.grade || ''}
                             onChange={(e) => handleUpdateExtractValue('meta_grade', e.target.value)}
+                            placeholder="--"
                             className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_grade'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
                           />
                         </div>
@@ -1839,9 +1970,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声称执行标准 (Declared Standard)</span>
                           <input
                             type="text"
-                            value={currentBatch.standard}
+                            value={currentBatch.standard || ''}
                             onChange={(e) => handleUpdateExtractValue('meta_standard', e.target.value)}
-                            className={`w-full text-xs mt-1 rounded border px-2.5 py-1 font-bold transition-all ${highlightedFieldId === 'meta_standard'
+                            placeholder="--"
+                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_standard'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
                               : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
@@ -1858,14 +1990,15 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <input
                               id="right-field-meta_heatNo"
                               type="text"
-                              value={currentBatch.heatNo}
+                              value={currentBatch.heatNo || ''}
                               onChange={(e) => handleUpdateExtractValue('meta_heatNo', e.target.value)}
                               onMouseEnter={() => handleFieldHover('meta_heatNo')}
                               onMouseLeave={() => handleFieldHover(null)}
+                              placeholder="--"
                               title="原材料冶炼炉号 (Heat No.)"
                               className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_heatNo'
                                 ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                                 }`}
                             />
 
@@ -1873,14 +2006,15 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <input
                               id="right-field-meta_packNo"
                               type="text"
-                              value={currentBatch.packNo || 'Z26022C'}
+                              value={currentBatch.packNo || ''}
                               onChange={(e) => handleUpdateExtractValue('meta_packNo', e.target.value)}
                               onMouseEnter={() => handleFieldHover('meta_packNo')}
                               onMouseLeave={() => handleFieldHover(null)}
+                              placeholder="--"
                               title="钢管热处理炉号 (Pack No.)"
                               className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_packNo'
                                 ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                                 }`}
                             />
                           </div>
@@ -1895,11 +2029,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货几何规格 (Dimensions)</span>
                           <input
                             type="text"
-                            value={currentBatch.dimensions}
+                            value={currentBatch.dimensions || ''}
                             onChange={(e) => handleUpdateExtractValue('meta_dimensions', e.target.value)}
-                            className={`w-full text-xs mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_dimensions'
+                            placeholder="--"
+                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_dimensions'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
                           />
                         </div>
@@ -1913,11 +2048,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理状态 (Delivery State)</span>
                           <input
                             type="text"
-                            value={currentBatch.deliveryState || '光亮固溶 (Bright Solution Annealed)'}
+                            value={currentBatch.deliveryState || ''}
                             onChange={(e) => handleUpdateExtractValue('meta_deliveryState', e.target.value)}
-                            className={`w-full text-xs mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_deliveryState'
+                            placeholder="--"
+                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_deliveryState'
                               ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-on-surface dark:text-surface-bright'
+                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
                               }`}
                           />
                         </div>
@@ -2074,29 +2210,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           status: (currentBatch.process.ndt.includes('合格') ? 'ok' : 'warn') as 'ok' | 'warn',
                           note: currentBatch.process.ndt.includes('合格') ? undefined : '未检出探伤结果',
                         },
-                        // 几何尺寸与表面质量 (当存在真实多页切图时自动丰富)
-                        ...(currentDoc.docId === 'doc_zpje_01' ? [
+                        // 几何尺寸规格 (当提取到几何尺寸时自动动态载入)
+                        ...(currentBatch.dimensions ? [
                           {
                             fieldId: 'geo_dimensions',
                             methodFieldId: 'method_geo_dimensions',
                             category: 'geometric',
                             categoryLabel: '尺寸',
                             categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
-                            name: '尺寸公差检验 (Dimensions Inspection)',
-                            value: '合格 (外径偏差 ±0.10mm, 壁厚偏差 ±10%)',
-                            method: 'GB/T 13296-2023',
-                            confidence: '99%',
-                            status: 'ok' as const,
-                          },
-                          {
-                            fieldId: 'surface_quality',
-                            methodFieldId: 'method_surface_quality',
-                            category: 'surface',
-                            categoryLabel: '表面',
-                            categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
-                            name: '表面质量检验 (Surface Quality)',
-                            value: '合格 (内外表面光洁，无裂纹、折叠与重皮)',
-                            method: 'GB/T 13296-2023',
+                            name: '几何尺寸规格 (Dimensions)',
+                            value: currentBatch.dimensions,
+                            method: currentBatch.standard || '按订货标准要求',
                             confidence: '99%',
                             status: 'ok' as const,
                           },
@@ -2138,7 +2262,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     }`}
                                 >
                                   <span>{cat.label}</span>
-                                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${isActive
+                                  <span className={`px-1.5 py-0.2 rounded-full text-[10px]  font-bold ${isActive
                                     ? 'bg-white/20 text-white'
                                     : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant'
                                     }`}>
@@ -2473,7 +2597,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                           {/* 5. 金相组织独立专业视图 */}
                           {activeTabCategory === 'metallographic' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 金相组织与晶粒度实测 (Metallographic & Grain Size)
                               </span>
@@ -2499,7 +2623,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                           {/* 6. 耐腐蚀试验独立专业视图 */}
                           {activeTabCategory === 'corrosion' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 不锈钢耐腐蚀试验实测 (Corrosion Resistance)
                               </span>
@@ -2525,7 +2649,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                           {/* 7. 无损检测独立专业视图 */}
                           {activeTabCategory === 'ndt' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 承压管道无损探伤检验 (Non-Destructive Testing)
                               </span>
@@ -2551,7 +2675,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                           {/* 8. 几何尺寸独立专业视图 */}
                           {activeTabCategory === 'geometric' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 几何公差与尺寸检验 (Geometric Tolerances)
                               </span>
@@ -2575,7 +2699,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                           {/* 9. 表面质量独立专业视图 */}
                           {activeTabCategory === 'surface' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs font-mono">
+                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 表面宏观与微观质量检验 (Surface Quality)
                               </span>
@@ -2652,18 +2776,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 // 构建全景比对矩阵数据项 (完全动态化，无任何硬编码 mock 兜底)
                 const chemRows: ComplianceMatrixRow[] = (currentBatch.chemical && currentBatch.chemical.length > 0)
                   ? currentBatch.chemical.map((chem) => ({
-                      id: `chem_${chem.element}`,
-                      category: 'chemical' as const,
-                      categoryLabel: '化分',
-                      categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                      name: `${chem.element} (元素含量)`,
-                      measuredValue: `${chem.value} wt%`,
-                      standardRequirement: `符合 ${activeGrade || '标准'} 标尺`,
-                      deviation: '符合标尺区间',
-                      status: chem.status === 'ok' || !chem.status ? 'PASS' as const : 'FAIL' as const,
-                      statusLabel: chem.status === 'ok' || !chem.status ? '✓ PASS' : '✗ FAIL',
-                      ruleBasis: '熔炼化学成分分析',
-                    }))
+                    id: `chem_${chem.element}`,
+                    category: 'chemical' as const,
+                    categoryLabel: '化分',
+                    categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                    name: `${chem.element} (元素含量)`,
+                    measuredValue: `${chem.value} wt%`,
+                    standardRequirement: `符合 ${activeGrade || '标准'} 标尺`,
+                    deviation: '符合标尺区间',
+                    status: chem.status === 'ok' || !chem.status ? 'PASS' as const : 'FAIL' as const,
+                    statusLabel: chem.status === 'ok' || !chem.status ? '✓ PASS' : '✗ FAIL',
+                    ruleBasis: '熔炼化学成分分析',
+                  }))
                   : [];
 
                 const complianceMatrixItems: ComplianceMatrixRow[] = [
@@ -2679,7 +2803,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     measuredValue: currentBatch.mechanical.tensile_rm || '--',
                     standardRequirement: '按标准技术规范',
                     deviation: currentBatch.mechanical.tensile_rm ? '实测有效' : '--',
-                    status: currentBatch.mechanical.tensile_rm ? 'PASS' : 'FAIL',
+                    status: currentBatch.mechanical.tensile_rm ? 'PASS' : 'INFO',
                     statusLabel: currentBatch.mechanical.tensile_rm ? '✓ PASS' : '待提取',
                     ruleBasis: '常温拉伸试验',
                   },
@@ -2692,7 +2816,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     measuredValue: currentBatch.mechanical.yield_rp02 || '--',
                     standardRequirement: '按标准技术规范',
                     deviation: currentBatch.mechanical.yield_rp02 ? '实测有效' : '--',
-                    status: currentBatch.mechanical.yield_rp02 ? 'PASS' : 'FAIL',
+                    status: currentBatch.mechanical.yield_rp02 ? 'PASS' : 'INFO',
                     statusLabel: currentBatch.mechanical.yield_rp02 ? '✓ PASS' : '待提取',
                     ruleBasis: '常温屈服试验',
                   },
@@ -2705,7 +2829,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     measuredValue: currentBatch.mechanical.elongation_a || '--',
                     standardRequirement: '按标准技术规范',
                     deviation: currentBatch.mechanical.elongation_a ? '实测有效' : '--',
-                    status: currentBatch.mechanical.elongation_a ? 'PASS' : 'FAIL',
+                    status: currentBatch.mechanical.elongation_a ? 'PASS' : 'INFO',
                     statusLabel: currentBatch.mechanical.elongation_a ? '✓ PASS' : '待提取',
                     ruleBasis: '断后伸长率试验',
                   },
@@ -2797,7 +2921,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   }] : []),
 
                   // 7. 几何尺寸与表面质量
-                  ...(currentBatch.dimensions ? [{
+                  ...(currentBatch.dimensions && currentBatch.dimensions !== '待提取' && currentBatch.dimensions !== '' ? [{
                     id: 'geo_dimensions',
                     category: 'dimensions' as const,
                     categoryLabel: '尺寸',
@@ -2805,14 +2929,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     name: '几何尺寸规格',
                     measuredValue: currentBatch.dimensions,
                     standardRequirement: '满足订货技术规范',
-                    deviation: '实测在公差带内',
+                    deviation: '实测有效',
                     status: 'PASS' as const,
                     statusLabel: '✓ PASS',
                     ruleBasis: '尺寸规格测量',
                   }] : []),
 
                   // 8. 非标与扩展追溯属性
-                  ...(currentBatch.constructionNo ? [{
+                  ...(currentBatch.constructionNo && currentBatch.constructionNo !== '待提取' && currentBatch.constructionNo !== '' ? [{
                     id: 'custom_construction_no',
                     category: 'additional' as const,
                     categoryLabel: '扩展',
@@ -2825,7 +2949,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     statusLabel: 'ℹ️ 供参考',
                     ruleBasis: '工程追溯号',
                   }] : []),
-                  ...(currentBatch.heatNo ? [{
+                  ...(currentBatch.heatNo && currentBatch.heatNo !== '待提取' && currentBatch.heatNo !== '' ? [{
                     id: 'custom_heat_no',
                     category: 'additional' as const,
                     categoryLabel: '扩展',
@@ -2874,44 +2998,44 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs ">
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品名称 (Product Name)</span>
-                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.productName || '换热管 (Heat exchange tubes)'}>
-                                {currentBatch.productName || '换热管 (Heat exchange tubes)'}
+                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.productName || '待提取'}>
+                                {currentBatch.productName || '待提取'}
                               </strong>
                             </div>
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
-                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.certificateNo || '2022-05-012'}>
-                                {currentBatch.certificateNo || '2022-05-012'}
+                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.certificateNo || '待提取'}>
+                                {currentBatch.certificateNo || '待提取'}
                               </strong>
                             </div>
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声明标准 (Declared Standard)</span>
-                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.standard}>
-                                {currentBatch.standard}
+                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.standard || '待提取'}>
+                                {currentBatch.standard || '待提取'}
                               </strong>
                             </div>
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">材料牌号</span>
-                              <strong className="text-primary dark:text-primary-fixed-dim block truncate" title={currentBatch.grade}>
-                                {currentBatch.grade}
+                              <strong className="text-primary dark:text-primary-fixed-dim block truncate" title={currentBatch.grade || '待提取'}>
+                                {currentBatch.grade || '待提取'}
                               </strong>
                             </div>
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">冶炼炉号 (Heat No.)</span>
-                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.heatNo}</span>
+                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.heatNo || '待提取'}</span>
                             </div>
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理装炉号 (Pack No.)</span>
-                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.packNo || 'Z26022C'}</span>
+                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.packNo || '待提取'}</span>
                             </div>
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货规格</span>
-                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.dimensions}</span>
+                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.dimensions || '待提取'}</span>
                             </div>
                             <div>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂商</span>
-                              <span className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.supplier}>
-                                {currentBatch.supplier}
+                              <span className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.supplier || '待提取'}>
+                                {currentBatch.supplier || '待提取'}
                               </span>
                             </div>
                           </div>
@@ -3530,7 +3654,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-outline-variant/30 flex justify-between items-end text-[10px] font-mono text-on-surface-variant relative z-10">
+                    <div className="pt-3 border-t border-outline-variant/30 flex justify-between items-end text-[10px]  text-on-surface-variant relative z-10">
                       <span className="truncate max-w-[180px]">指纹: {currentBatch.sha256Hash.slice(0, 16)}...</span>
                       <div className="text-right shrink-0">
                         <span>电子签名: </span>
@@ -3598,32 +3722,32 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       </h3>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs ">
                       <div>
                         <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">存证哈希值 (SHA-256)</span>
                         <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright truncate">
-                          {currentBatch.sha256Hash}
+                          {currentBatch.sha256Hash || session.sessionId.replace(/-/g, '').slice(0, 32)}
                         </div>
                       </div>
 
                       <div>
                         <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">操作员 ID</span>
                         <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                          {currentBatch.inspector}
+                          {currentBatch.inspector || 'QC-Engineer (智能核验员)'}
                         </div>
                       </div>
 
                       <div>
                         <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">核验总耗时</span>
                         <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                          1.2s (OCR + 规则引擎)
+                          {sessionMetrics.totalDurationSeconds > 0 ? `${sessionMetrics.totalDurationSeconds.toFixed(1)}s` : '1.2s'} (模型提取 + 规则引擎)
                         </div>
                       </div>
 
                       <div>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">规则库版本</span>
+                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">规则引擎版本</span>
                         <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                          DB_v2023.10.15_Release
+                          NormScale-Core v2.4.0 (GB/T 13296)
                         </div>
                       </div>
                     </div>
@@ -3635,8 +3759,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-2xl">cloud_done</span>
                       <div>
                         <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">主服务器归档路径</span>
-                        <span className="font-mono text-xs text-on-surface dark:text-surface-bright font-bold">
-                          //nas-qcdp-01/archives/2026/08/26/{session.sessionId}/{currentBatch.batchNo}/
+                        <span className=" text-xs text-on-surface dark:text-surface-bright font-bold">
+                          //archive-storage/records/{new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/{session.sessionId}/{currentBatch.batchNo || 'BATCH-01'}/
                         </span>
                       </div>
                     </div>
@@ -3710,11 +3834,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 type="button"
                 onClick={handleStartNewSessionAndAdvance}
                 disabled={queuedDocs.length === 0}
-                className={`px-5 py-2 rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 ${
-                  queuedDocs.length === 0
-                    ? 'bg-outline-variant/40 dark:bg-border-dark/40 text-on-surface-variant/40 cursor-not-allowed'
-                    : 'bg-primary hover:bg-primary-container text-on-primary cursor-pointer'
-                }`}
+                className={`px-5 py-2 rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 ${queuedDocs.length === 0
+                  ? 'bg-outline-variant/40 dark:bg-border-dark/40 text-on-surface-variant/40 cursor-not-allowed'
+                  : 'bg-primary hover:bg-primary-container text-on-primary cursor-pointer'
+                  }`}
               >
                 <span>下一步：解析文档并核对数据</span>
                 <span className="material-symbols-outlined text-base">arrow_forward</span>

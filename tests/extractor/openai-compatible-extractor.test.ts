@@ -8,7 +8,7 @@ describe('OpenAiCompatibleExtractor', () => {
   it('应该正确初始化并读取默认模型配置', () => {
     const extractor = new OpenAiCompatibleExtractor();
     expect(extractor.providerName).toBe('openai-compatible-extractor');
-    expect((extractor as any).activeConfig.model).toBe('kimi-k2.7-code');
+    expect((extractor as any).activeConfig.model).toMatch(/kimi-k2\.7-code/);
     expect((extractor as any).activeConfig.baseUrl).toBe('https://api.moonshot.cn/v1');
   });
 

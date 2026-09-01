@@ -11,7 +11,7 @@
         "model": "kimi-k2.7-code",
         "thinkingEffort": "high",
         "apiKey": "KIMI_API_KEY",
-        "isDefault": true
+        "isDefault": false
       },
       {
         "id": "highspeed",
@@ -21,7 +21,7 @@
         "model": "kimi-k2.7-code-highspeed",
         "thinkingEffort": "high",
         "apiKey": "KIMI_API_KEY",
-        "isDefault": false
+        "isDefault": true
       }
     ],
     "pricing": {

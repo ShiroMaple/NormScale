@@ -363,7 +363,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
     filename: string,
     fileSize: string,
     rawExtract: any,
-    samplePages?: string[]
+    pages?: string[]
   ): SessionDocument {
     const header = rawExtract.header || {};
     const parsedBatches = Array.isArray(rawExtract.batches) ? rawExtract.batches : [];
@@ -404,14 +404,17 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       inspector: 'Auto-AI-Inspector',
     }));
 
+    const pagesList = pages || [];
+
     return {
       docId,
       filename,
       fileSize,
       uploadTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
       ocrStatus: 'DONE',
-      pageCount: samplePages?.length || 1,
-      samplePages: samplePages || [],
+      pageCount: pagesList.length || 1,
+      pages: pagesList,
+      samplePages: pagesList,
       batches,
     };
   }

@@ -76,7 +76,8 @@ export interface SessionDocument {
   uploadTime: string;          // 上传时间
   ocrStatus: 'DONE' | 'PROCESSING' | 'PENDING';
   pageCount: number;           // 页数
-  samplePages?: string[];      // 真实高清切图 URL 列表 (如 ["/samples/zpje/page-1.png", ...])
+  pages?: string[];            // 真实高清切图 / 页面 URL 列表 (如 [dataUrl1, dataUrl2, ...] 或 ["/samples/zpje/page-1.png", ...])
+  samplePages?: string[];      // 兼容旧字段别名
   batches: BatchSpecimen[];    // 文档内包含的各炉批号/试样
 }
 

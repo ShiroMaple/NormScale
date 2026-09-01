@@ -59,8 +59,8 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
     if (currentReason === 'ALTERNATIVE_CLAUSE') {
       setJustification(
         acceptAlternative
-          ? '依据采购合同及订货补充技术协议，确认质保书所附涡流检测（E3H 级）符合替代要求，准予替代液压试验。'
-          : '依据工程关键承压管道特定防泄漏要求，必须提供液压试验实测试验值，不予采纳探伤替代，作缺项否决。'
+          ? '依据采购合同及订货补充技术协议，确认质保书所附检测结果符合替代要求，准予采纳替代条款。'
+          : '依据工程特定技术协议要求，不予采纳替代方案，作缺项否决。'
       );
     } else if (currentReason === 'MULTI_STANDARD_CONFLICT') {
       setJustification(
@@ -74,7 +74,7 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
       );
     } else {
       setJustification(
-        '根据质保书化学成分及供货合同技术协议，确认该材料牌号对应国家标准 06Cr19Ni10 (S30408)，予以人工消歧锁定。'
+        '根据质保书化学成分及供货合同技术协议，确认该材料牌号，予以人工消歧锁定。'
       );
     }
   }, [currentReason, acceptAlternative, selectedArbitratedStandard, qualitativeVerdict]);
@@ -85,7 +85,7 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
 
   const handleSubmit = async () => {
     const payload: HumanCorrectionInput = {
-      inspector_id: '默认员工 (JAQA-8888)',
+      inspector_id: 'QC-Engineer (质检工程师)',
       waiver_notes: justification,
     };
 
@@ -261,14 +261,20 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
               <div className="p-3.5 rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-on-surface-variant">标准依据条款:</span>
-                  <span className="font-bold text-on-surface">GB/T 13296-2023 第 7.5 条</span>
+                  <span className="font-bold text-on-surface">
+                    {hitlContext?.alternative_details?.standard_id
+                      ? `${hitlContext.alternative_details.standard_id} ${hitlContext.alternative_details.clause_no || ''}`
+                      : '标准等效替代条款'}
+                  </span>
                 </div>
                 <div className="text-[12px] text-on-surface-variant leading-relaxed">
-                  标准原文：“钢管应逐根进行液压试验；供方可用涡流检测代替液压试验”。
+                  标准原文：“{hitlContext?.alternative_details?.clause_title || '标准允许经供需双方协商由供方出具符合要求的检验报告作为等效替代依据'}”。
                 </div>
                 <div className="border-t border-outline-variant/30 pt-2 flex items-center justify-between text-xs">
                   <span className="text-on-surface-variant">质保书出具事实:</span>
-                  <span className="font-bold text-primary">涡流探伤合格 (GB/T 7735 E3H 级)</span>
+                  <span className="font-bold text-primary">
+                    {hitlContext?.alternative_details?.raw_evidence || '质保书已出具相关检验合格报告'}
+                  </span>
                 </div>
               </div>
 
@@ -289,10 +295,10 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
                   />
                   <div>
                     <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
-                      认可替代（采纳涡流替代液压）
+                      认可替代（采纳替代检验方案）
                     </span>
                     <span className="text-[12px] text-on-surface-variant dark:text-outline-variant leading-relaxed block mt-0.5">
-                      确认订货技术协议允许以 E3H 级涡流探伤替代液压试验，致密性指标判定为合规通过 (PASS)。
+                      确认订货技术协议允许以该项检验替代常规试验，对应指标判定为合规通过 (PASS)。
                     </span>
                   </div>
                 </label>
@@ -315,7 +321,7 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
                       不予认可（按缺项否决处理）
                     </span>
                     <span className="text-[12px] text-on-surface-variant dark:text-outline-variant leading-relaxed block mt-0.5">
-                      工程属于高危受压环境，订货协议明确必须逐根打水压，由于未打水压数据作缺项否决 (FAIL)。
+                      订货协议未明确授权或工程场景要求特定实测，不予采纳替代，作缺项否决 (FAIL)。
                     </span>
                   </div>
                 </label>

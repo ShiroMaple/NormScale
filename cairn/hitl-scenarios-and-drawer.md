@@ -13,8 +13,9 @@ contains:
   - decision
   - specification
   - procedure
+  - lesson
 created: "2026-08-28"
-updated: "2026-08-28"
+updated: "2026-09-01"
 related:
   - cairn/dual-track-verdict.md
   - cairn/multi-standard-engine.md
@@ -113,3 +114,15 @@ authoring_mode: ai_generated
 1. **主屏无遮挡对照**：抽屉位于右侧，左侧全景比对矩阵和质保书信息依然可见，质检员无需关闭窗口即可查验表格数值；
 2. **轻量与可逆**：随时点击关闭或“挂起暂不处理”，批次状态保持 `MANUAL_REVIEW`，横幅常驻紫色【处理】按钮可随时重新唤起；
 3. **提交即重新计算**：质检员点击“确认裁决并恢复流转”后，参数注入状态机，系统立即重新触发确定性规则计算，横幅状态由 `HITL` 即时刷新为计算后的客观结果（PASS/FAIL），关闭抽屉。
+
+---
+
+## 4. 架构踩坑与动态数据契约规范（2026-09-01 补充）
+
+### 踩坑 1：抽屉内部写死样本条款与假工号 (Mock 残留陷阱)
+- **现象**：用户上传真实其他钢厂或其它标准的材料质保书并触发 HITL 时，抽屉依然写死展示“`GB/T 13296-2023 第 7.5 条`”、“`涡流探伤合格 (GB/T 7735 E3H 级)`”和工号“`JAQA-8888`”。
+- **根因**：组件直接使用了早期静态演示时写死的 DOM 文本，未通过 `HitlInterruptContext` 标准接口动态传参。
+- **规范**：
+  - 任务编号一律由当前真实批次号动态拼接（`TK-${batchNo}`）；
+  - 条款依据、条款原文及出具事实一律从 `hitlContext.alternative_details` 动态提取；
+  - 质检员审批日志采用统一注入标识（`QC-Engineer`），禁止硬编码任何虚拟工号。

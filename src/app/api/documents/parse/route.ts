@@ -104,7 +104,9 @@ export async function POST(request: Request) {
       fileSize,
       rawResult
     );
-    const bboxes = filename.includes('质保书') ? getZPJEBBoxes(sessionDoc.batches[0]?.batchNo || 'Z26022C-DB7') : [];
+    const bboxes = filename.includes('质保书') && sessionDoc.batches[0]?.batchNo
+      ? getZPJEBBoxes(sessionDoc.batches[0].batchNo)
+      : [];
 
     const cacheItem: CachedParseResult = {
       md5,
@@ -114,8 +116,8 @@ export async function POST(request: Request) {
       provider: (extractor as any).activeConfig?.provider || 'Moonshot',
       parsedAt: new Date().toISOString(),
       tokenStats: {
-        inputTokens: (rawResult as any).tokens?.input || 2180,
-        outputTokens: (rawResult as any).tokens?.output || 435,
+        inputTokens: (rawResult as any).tokens?.input || 0,
+        outputTokens: (rawResult as any).tokens?.output || 0,
         durationSeconds,
         isFromCache: false,
       },

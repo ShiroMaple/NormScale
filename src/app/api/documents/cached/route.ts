@@ -57,9 +57,23 @@ export async function GET() {
     // 按解析时间倒序排列
     documents.sort((a, b) => new Date(b.parsedAt).getTime() - new Date(a.parsedAt).getTime());
 
+    // 按文件名聚合去重，同名文件仅保留最新一次解析记录，并清理多余文件
+    const uniqueDocsMap = new Map<string, CachedDocSummary>();
+    const deduplicatedDocuments: CachedDocSummary[] = [];
+
+    for (const doc of documents) {
+      if (!uniqueDocsMap.has(doc.filename)) {
+        uniqueDocsMap.set(doc.filename, doc);
+        deduplicatedDocuments.push(doc);
+      } else {
+        // 多余的同名旧缓存文件，自动清理磁盘以防膨胀
+        globalParseCacheStore.delete(doc.md5);
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      documents,
+      documents: deduplicatedDocuments,
     });
   } catch (err: any) {
     return NextResponse.json(
