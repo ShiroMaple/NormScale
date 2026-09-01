@@ -113,5 +113,18 @@ export const AuditReportSchema = z.object({
   unmatched_certificate_records: z.array(TestRecordSchema).optional(), // 质保书中已报送但标准库中未定义比对规则的额外记录项
   audit_traces: z.array(AuditTraceItemSchema).optional(),     // 业务审验过程自然语言轨迹流（供前端看板抽屉可视化渲染）
   performance_metrics: PerformanceMetricsSchema.optional(), // 全流程微秒级耗时与各子阶段性能度量
+
+  // 扩展展示与上下文元数据 (用于单据打印、处置单及各模态框)
+  supplier_name: z.string().optional(),
+  supplier: z.string().optional(),
+  heat_number: z.string().optional(),
+  heatNo: z.string().optional(),
+  lot_number: z.string().optional(),
+  batch_number: z.string().optional(),
+  standard_name: z.string().optional(),
+  dimensions: z.string().optional(),
+  delivery_state: z.string().optional(),
+  inspector: z.string().optional(),
+  supervisor: z.string().optional(),
 });
 export type AuditReport = z.infer<typeof AuditReportSchema>;

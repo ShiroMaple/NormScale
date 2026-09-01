@@ -4,6 +4,14 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-01 · 前端代码全量硬编码逐段深度审计、默认会话严格隔离与弹窗全面动态化
+
+- 默认演示会话严格隔离 (`DEFAULT_INSPECTION_SESSION`)：工作台初始会话改为纯净空会话，彻底消除直接点击步骤 2/3 或创建新任务时 fallback 到演示样本的问题；增加空队列防跳步门禁与 Step 2/3/4 工业空状态保护卡片；`DEFAULT_INSPECTION_SESSION` 仅作为历史台账 `AuditLedger` 演示记录留存；
+- 步骤 2 压扁/扩口/晶间腐蚀输入回弹与硬编码修复：移除强制二值化截断逻辑，完整保留用户真实文本输入；消除假置信度与静态告警；工艺、耐腐蚀与表面质量独立子 Tab 100% 依据真实存在项动态渲染；
+- 独立弹窗与模态框全面动态化：`PassReleaseModal`、`RejectionNoticeModal`、`CertificateViewer` 彻底清除写死的“浙江某特种管道”、固定炉批号、尺寸、15 项假表格及假工程师工号；
+- 字段与 BBox 契约规范化：`bbox.ts` 标签去硬编码（语义化指标指示），`AuditReportSchema` 扩展上下文元数据，新增 `tests/extractor/session-isolation.test.ts`；
+- 28 个测试套件（125 个单元测试）100% 全部通过，`pnpm typecheck` 严格 0 错误通过。
+
 ## 2026-09-01 · 彻底解决解析中 HITL 按钮误弹与 pages 状态持久化覆盖
 
 - 解析中 HITL 按钮误弹修复 (`isHitl`)：在 `isHitl` 判定中加入 `!isDocParsing` 门禁，当文档处于 `ocrStatus === 'PENDING'` 或后台流式解析未完成时绝对不显示“HITL 打开人工介入处理面板”按钮；

@@ -7,7 +7,6 @@ import {
   InspectionSession,
   SessionDocument,
   BatchSpecimen,
-  DEFAULT_INSPECTION_SESSION,
   generateSessionId,
 } from '@/types/session.ts';
 import { BatchContextBar } from './BatchContextBar.tsx';
@@ -123,8 +122,21 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [standardSearchQuery, setStandardSearchQuery] = useState<string>('');
   const [gradeSearchQuery, setGradeSearchQuery] = useState<string>('');
 
-  // 当前作业会话 (Session) 与当前 Focus 的文档 ID 及炉批号 (默认首位选中真实《质保书.pdf》及其第 1 批次)
-  const [session, setSession] = useState<InspectionSession>(loadedSession || DEFAULT_INSPECTION_SESSION);
+  // 创建纯净空会话辅助函数
+  const createEmptySession = (): InspectionSession => ({
+    sessionId: generateSessionId(),
+    createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+    title: '现场实时质检作业会话',
+    totalDocuments: 0,
+    totalBatches: 0,
+    passedBatches: 0,
+    failedBatches: 0,
+    hitlBatches: 0,
+    documents: [],
+  });
+
+  // 当前作业会话 (Session) 与当前 Focus 的文档 ID 及炉批号 (初始为纯净空会话，由用户上传真实文档载入)
+  const [session, setSession] = useState<InspectionSession>(() => loadedSession || createEmptySession());
   const [selectedDocId, setSelectedDocId] = useState<string>(
     session.documents[0]?.docId || ''
   );
@@ -618,31 +630,29 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     setCurrentStep(1);
   };
 
-  // 获得当前选中的物理 Document 和 Batch
-  const currentDoc: SessionDocument =
+  // 获得当前选中的物理 Document 和 Batch (若无活动文档则保持 undefined，进入空状态视窗)
+  const currentDoc: SessionDocument | undefined =
     session.documents.find(d => d.docId === selectedDocId) ||
-    session.documents[0] ||
-    DEFAULT_INSPECTION_SESSION.documents[0]!;
+    session.documents[0];
 
-  const currentBatch: BatchSpecimen =
-    currentDoc.batches.find(b => b.batchNo === selectedBatchNo) ||
-    currentDoc.batches[0] ||
-    DEFAULT_INSPECTION_SESSION.documents[0]!.batches[0]!;
+  const currentBatch: BatchSpecimen | undefined =
+    currentDoc?.batches.find(b => b.batchNo === selectedBatchNo) ||
+    currentDoc?.batches[0];
 
-  const activeGrade = currentBatch.overrideGrade || currentBatch.grade;
-  const activeStandard = currentBatch.overrideStandard || currentBatch.standard;
-  const isOverridden = Boolean(currentBatch.overrideGrade || currentBatch.overrideStandard);
+  const activeGrade = currentBatch ? (currentBatch.overrideGrade || currentBatch.grade) : '';
+  const activeStandard = currentBatch ? (currentBatch.overrideStandard || currentBatch.standard) : '';
+  const isOverridden = Boolean(currentBatch && (currentBatch.overrideGrade || currentBatch.overrideStandard));
 
-  let computedIsPass = currentBatch.verdict === 'PASS';
-  let computedVerdictSummary = currentBatch.verdictSummary;
+  let computedIsPass = currentBatch?.verdict === 'PASS';
+  let computedVerdictSummary = currentBatch?.verdictSummary || '';
 
-  if (isOverridden) {
+  if (isOverridden && currentBatch) {
     computedVerdictSummary = currentBatch.verdictSummary || `人工指定为 ${activeGrade} (${activeStandard})，待核验规则重新判定`;
   }
 
   const isPass = computedIsPass;
-  const isDocParsing = currentDoc.ocrStatus === 'PENDING' || currentDocTask?.status === 'parsing';
-  const isHitl = currentBatch.verdict === 'MANUAL_REVIEW' && !isDocParsing;
+  const isDocParsing = Boolean(currentDoc && (currentDoc.ocrStatus === 'PENDING' || currentDocTask?.status === 'parsing'));
+  const isHitl = Boolean(currentBatch && currentBatch.verdict === 'MANUAL_REVIEW' && !isDocParsing);
 
   // 步骤 3 / 步骤 2 HITL 侧边抽屉内部状态
   const [isHitlDrawerOpen, setIsHitlDrawerOpen] = useState<boolean>(false);
@@ -651,6 +661,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   // 触发打开 HITL 抽屉 (根据当前批次动态适配场景)
   const handleTriggerHitl = () => {
+    if (!currentBatch) return;
     const reason: HitlInterruptContext['reason'] = currentBatch.hitlReason || (
       currentBatch.grade.includes('Special') || currentBatch.grade.includes('SUS') || currentBatch.grade.includes('未知')
         ? 'UNKNOWN_GRADE'
@@ -772,12 +783,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
             // 3. 工艺性能
             if (fieldId === 'proc_flattening') {
-              const isPass = !newValue.includes('不') && !newValue.includes('未') && !newValue.toUpperCase().includes('FAIL');
-              return { ...b, process: { ...b.process, flattening: isPass ? 'PASS' : 'FAIL' } };
+              return { ...b, process: { ...b.process, flattening: newValue } };
             }
             if (fieldId === 'proc_flaring') {
-              const isPass = !newValue.includes('不') && !newValue.includes('未') && !newValue.toUpperCase().includes('FAIL');
-              return { ...b, process: { ...b.process, flaring: isPass ? 'PASS' : 'FAIL' } };
+              return { ...b, process: { ...b.process, flaring: newValue } };
             }
 
             // 4. 金相组织
@@ -787,8 +796,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
             // 5. 耐腐蚀性能
             if (fieldId === 'corrosion_intergranular') {
-              const isPass = !newValue.includes('不') && !newValue.includes('未') && !newValue.toUpperCase().includes('FAIL');
-              return { ...b, process: { ...b.process, intergranularCorrosion: isPass ? 'PASS' : 'FAIL' } };
+              return { ...b, process: { ...b.process, intergranularCorrosion: newValue } };
             }
 
             // 6. 无损探伤
@@ -953,7 +961,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   };
 
   // 计算当前文档/批次的 OCR BBox 字典
-  const bboxes: FieldBBox[] = docBboxesMap[currentDoc.docId] || getZPJEBBoxes(currentBatch.batchNo || '');
+  const bboxes: FieldBBox[] = (currentDoc ? docBboxesMap[currentDoc.docId] : undefined) || getZPJEBBoxes(currentBatch?.batchNo || '');
 
   // 退出聚焦放大状态，恢复常规显示
   const handleResetMagnify = useCallback(() => {
@@ -1064,7 +1072,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   // 3. 左侧视窗工具栏翻页控制器：仅滚动左侧 PDF 视窗
   const goToPage = (page: number) => {
-    const maxPages = (currentDoc.pages || currentDoc.samplePages || []).length || currentDoc.pageCount || 1;
+    const maxPages = (currentDoc?.pages || currentDoc?.samplePages || []).length || currentDoc?.pageCount || 1;
     const target = Math.max(1, Math.min(maxPages, page));
     if (target !== currentDocPage) {
       handleResetMagnify();
@@ -1232,7 +1240,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
       const downloadAnchor = document.createElement('a');
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      downloadAnchor.download = `NormScale_合规比对结果_${currentBatch.batchNo}_${dateStr}.png`;
+      downloadAnchor.download = `NormScale_合规比对结果_${currentBatch?.batchNo || 'REPORT'}_${dateStr}.png`;
       downloadAnchor.href = pngData;
       downloadAnchor.click();
 
@@ -1243,9 +1251,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     } finally {
       setIsCapturing(false);
     }
-  }, [currentBatch.batchNo, showToast]);
+  }, [currentBatch?.batchNo, showToast]);
 
   const goToStep = (stepIdx: number) => {
+    if (stepIdx > 0 && (!session.documents || session.documents.length === 0)) {
+      showToast('请先在步骤 1 上传或选择待检验文档', 'info');
+      return;
+    }
     if (stepIdx >= 0 && stepIdx <= 2) {
       setCurrentStep(stepIdx);
     }
@@ -1256,16 +1268,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     // 自动静默保存当前作业会话
     handleSaveSessionResults(true);
 
-    // 生成全新 Session ID 与干净初始化会话
-    const newSessionId = generateSessionId();
-    const freshSession: InspectionSession = {
-      ...DEFAULT_INSPECTION_SESSION,
-      sessionId: newSessionId,
-      createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
-    };
+    // 生成全新 Session ID 与干净初始化空会话
+    const freshSession = createEmptySession();
     setSession(freshSession);
-    setSelectedDocId(freshSession.documents[0]?.docId || '');
-    setSelectedBatchNo(freshSession.documents[0]?.batches[0]?.batchNo || '');
+    setSelectedDocId('');
+    setSelectedBatchNo('');
 
     // 重置步骤并返回步骤 1
     goToStep(0);
@@ -1540,7 +1547,28 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               )}
 
               {/* 45% / 55% 左右分栏：充满剩余高度，左右各自独立纵向滚动 */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
+              {(!currentDoc || !currentBatch) ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-12 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs">
+                  <div className="w-16 h-16 rounded-2xl bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant flex items-center justify-center mb-4">
+                    <span className="material-symbols-outlined text-3xl">folder_open</span>
+                  </div>
+                  <h3 className="text-sm font-bold text-on-surface dark:text-surface-bright mb-1.5">
+                    暂无活动检验文档
+                  </h3>
+                  <p className="text-xs text-on-surface-variant dark:text-outline-variant max-w-sm mb-6">
+                    请先前往步骤 1 上传本地真实质量证明书（PDF / 图片）或从历史缓存中选取。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => goToStep(0)}
+                    className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-base">arrow_back</span>
+                    <span>前往步骤 1 上传文档</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
 
                 {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 (自带独立滚动条) */}
                 <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
@@ -2143,20 +2171,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           confidence: '96%',
                           status: 'ok' as const,
                         }] : []),
-                        // 工艺性能 (依据 Page 1 下表第二列标准)
-                        {
+                        // 工艺性能 (依据原件提取或按标准要求)
+                        ...(currentBatch.process.flattening ? [{
                           fieldId: 'proc_flattening',
                           methodFieldId: 'method_proc_flattening',
                           category: 'process',
                           categoryLabel: '工艺',
                           categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                           name: '压扁试验 (Flattening)',
-                          value: currentBatch.process.flattening === 'PASS' ? '合格 (无裂纹/无分层)' : '未检出',
-                          method: 'GB/T 246-2017',
-                          confidence: currentBatch.process.flattening === 'PASS' ? '98%' : '50%',
-                          status: (currentBatch.process.flattening === 'PASS' ? 'ok' : 'warn') as 'ok' | 'warn',
-                          note: currentBatch.process.flattening === 'PASS' ? undefined : '缺失压扁试验报告',
-                        },
+                          value: currentBatch.process.flattening === 'PASS' ? '合格' : currentBatch.process.flattening,
+                          method: 'GB/T 246',
+                          confidence: '98%',
+                          status: (currentBatch.process.flattening.includes('不') || currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
+                        }] : []),
                         ...(currentBatch.process.flaring ? [{
                           fieldId: 'proc_flaring',
                           methodFieldId: 'method_proc_flaring',
@@ -2164,10 +2191,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           categoryLabel: '工艺',
                           categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                           name: '扩口试验 (Flaring)',
-                          value: '合格 (顶心锥度 60°, 扩口率 ≥20%)',
-                          method: 'GB/T 242-2007',
-                          confidence: '99%',
-                          status: 'ok' as const,
+                          value: currentBatch.process.flaring === 'PASS' ? '合格' : currentBatch.process.flaring,
+                          method: 'GB/T 242',
+                          confidence: '98%',
+                          status: (currentBatch.process.flaring.includes('不') || currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
                         }] : []),
                         // 金相组织 (依据 Page 2 表头 GB/T 6394-2017)
                         ...(currentBatch.process.grainSize ? [{
@@ -2178,24 +2205,23 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
                           name: '晶粒度评级 (Grain Size)',
                           value: currentBatch.process.grainSize,
-                          method: 'GB/T 6394-2017',
+                          method: 'GB/T 6394',
                           confidence: '98%',
                           status: 'ok' as const,
                         }] : []),
                         // 耐腐蚀试验
-                        {
+                        ...(currentBatch.process.intergranularCorrosion ? [{
                           fieldId: 'corrosion_intergranular',
                           methodFieldId: 'method_corrosion_intergranular',
                           category: 'corrosion',
                           categoryLabel: '腐蚀',
                           categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
                           name: '晶间腐蚀试验 (Intergranular Corrosion)',
-                          value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (硫酸-硫酸铜法弯曲无裂纹)' : '未检出',
-                          method: 'GB/T 4334-2020 方法 E',
-                          confidence: currentBatch.process.intergranularCorrosion === 'PASS' ? '98%' : '50%',
-                          status: (currentBatch.process.intergranularCorrosion === 'PASS' ? 'ok' : 'warn') as 'ok' | 'warn',
-                          note: currentBatch.process.intergranularCorrosion === 'PASS' ? undefined : '缺失晶间腐蚀试验报告',
-                        },
+                          value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : currentBatch.process.intergranularCorrosion,
+                          method: 'GB/T 4334',
+                          confidence: '98%',
+                          status: (currentBatch.process.intergranularCorrosion.includes('不') || currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
+                        }] : []),
                         // 无损检测
                         {
                           fieldId: 'ndt_et',
@@ -2558,24 +2584,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 工艺成型试验条款实测 (Process Flattening & Bending)
                               </span>
-                              <div
-                                id="right-field-proc_flattening"
-                                onMouseEnter={() => handleFieldHover('proc_flattening')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flattening'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                  : 'border-outline-variant/30 hover:border-primary/50'
-                                  }`}
-                              >
-                                <div>
-                                  <strong className="text-on-surface dark:text-surface-bright block">压扁试验 (Flattening Test)</strong>
-                                  <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 246 金属管压扁试验方法</span>
+                              {currentBatch.process.flattening ? (
+                                <div
+                                  id="right-field-proc_flattening"
+                                  onMouseEnter={() => handleFieldHover('proc_flattening')}
+                                  onMouseLeave={() => handleFieldHover(null)}
+                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flattening'
+                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                    : 'border-outline-variant/30 hover:border-primary/50'
+                                    }`}
+                                >
+                                  <div>
+                                    <strong className="text-on-surface dark:text-surface-bright block">压扁试验 (Flattening Test)</strong>
+                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 246 金属管压扁试验方法</span>
+                                  </div>
+                                  <strong className={(!currentBatch.process.flattening.includes('不') && !currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
+                                    {currentBatch.process.flattening === 'PASS' ? '合格' : currentBatch.process.flattening}
+                                  </strong>
                                 </div>
-                                <strong className={currentBatch.process.flattening === 'PASS' ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
-                                  {currentBatch.process.flattening === 'PASS' ? '合格 (无裂纹/无分层)' : '未检出'}
-                                </strong>
-                              </div>
-                              {currentBatch.process.flaring && (
+                              ) : null}
+                              {currentBatch.process.flaring ? (
                                 <div
                                   id="right-field-proc_flaring"
                                   onMouseEnter={() => handleFieldHover('proc_flaring')}
@@ -2587,11 +2615,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 >
                                   <div>
                                     <strong className="text-on-surface dark:text-surface-bright block">扩口试验 (Flaring Test)</strong>
-                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 242 金属管扩口试验方法 (顶心锥度 60°)</span>
+                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 242 金属管扩口试验方法</span>
                                   </div>
-                                  <strong className="text-status-pass-text font-bold text-sm">合格 (扩口率 ≥20%)</strong>
+                                  <strong className={(!currentBatch.process.flaring.includes('不') && !currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
+                                    {currentBatch.process.flaring === 'PASS' ? '合格' : currentBatch.process.flaring}
+                                  </strong>
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                           )}
 
@@ -2627,23 +2657,25 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                 不锈钢耐腐蚀试验实测 (Corrosion Resistance)
                               </span>
-                              <div
-                                id="right-field-corrosion_intergranular"
-                                onMouseEnter={() => handleFieldHover('corrosion_intergranular')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'corrosion_intergranular'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                  : 'border-outline-variant/30 hover:border-primary/50'
-                                  }`}
-                              >
-                                <div>
-                                  <strong className="text-on-surface dark:text-surface-bright block">晶间腐蚀试验 (Intergranular Corrosion)</strong>
-                                  <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 4334 Method E (硫酸-硫酸铜腐蚀试验)</span>
+                              {currentBatch.process.intergranularCorrosion ? (
+                                <div
+                                  id="right-field-corrosion_intergranular"
+                                  onMouseEnter={() => handleFieldHover('corrosion_intergranular')}
+                                  onMouseLeave={() => handleFieldHover(null)}
+                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'corrosion_intergranular'
+                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                    : 'border-outline-variant/30 hover:border-primary/50'
+                                    }`}
+                                >
+                                  <div>
+                                    <strong className="text-on-surface dark:text-surface-bright block">晶间腐蚀试验 (Intergranular Corrosion)</strong>
+                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 4334 不锈钢晶间腐蚀试验方法</span>
+                                  </div>
+                                  <strong className={(!currentBatch.process.intergranularCorrosion.includes('不') && !currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
+                                    {currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : currentBatch.process.intergranularCorrosion}
+                                  </strong>
                                 </div>
-                                <strong className={currentBatch.process.intergranularCorrosion === 'PASS' ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
-                                  {currentBatch.process.intergranularCorrosion === 'PASS' ? '合格 (Method E 弯曲无裂纹)' : '未检出'}
-                                </strong>
-                              </div>
+                              ) : null}
                             </div>
                           )}
 
@@ -2716,7 +2748,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   <strong className="text-on-surface dark:text-surface-bright block">内外部表面缺陷目视与内窥镜检验</strong>
                                   <span className="text-[11px] text-on-surface-variant">无裂纹、折叠、轧折、离层和结疤</span>
                                 </div>
-                                <strong className="text-status-pass-text font-bold text-sm">合格 OK</strong>
+                                <strong className="text-status-pass-text font-bold text-sm">{currentBatch.surfaceQuality || '合格'}</strong>
                               </div>
                             </div>
                           )}
@@ -2726,6 +2758,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   </div>
                 </div>
               </div>
+              )}
             </div>
           </section>
 
@@ -2757,7 +2790,27 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               {/* ========================================================================= */}
               {/* 步骤 3 内容区：全景合规比对架构 */}
               {/* ========================================================================= */}
-              {(() => {
+              {(!currentDoc || !currentBatch) ? (
+                <div className="flex flex-col items-center justify-center text-center p-12 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs">
+                  <div className="w-16 h-16 rounded-2xl bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant flex items-center justify-center mb-4">
+                    <span className="material-symbols-outlined text-3xl">rule</span>
+                  </div>
+                  <h3 className="text-sm font-bold text-on-surface dark:text-surface-bright mb-1.5">
+                    暂无待比对批次
+                  </h3>
+                  <p className="text-xs text-on-surface-variant dark:text-outline-variant max-w-sm mb-6">
+                    请先在步骤 1 上传真实质保证书并完成解析核对。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => goToStep(0)}
+                    className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-base">arrow_back</span>
+                    <span>前往步骤 1 上传文档</span>
+                  </button>
+                </div>
+              ) : (() => {
                 interface ComplianceMatrixRow {
                   id: string;
                   category: 'chemical' | 'mechanical' | 'process' | 'metallographic' | 'corrosion' | 'ndt' | 'dimensions' | 'additional';
@@ -2857,8 +2910,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     measuredValue: currentBatch.process.flattening === 'PASS' ? '合格' : String(currentBatch.process.flattening),
                     standardRequirement: '压扁试样无裂纹/分层',
                     deviation: '符合要求',
-                    status: currentBatch.process.flattening === 'PASS' ? 'PASS' as const : 'FAIL' as const,
-                    statusLabel: currentBatch.process.flattening === 'PASS' ? '✓ PASS' : '✗ FAIL',
+                    status: (!currentBatch.process.flattening.includes('不') && !currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? ('PASS' as const) : ('FAIL' as const),
+                    statusLabel: (!currentBatch.process.flattening.includes('不') && !currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? '✓ PASS' : '✗ FAIL',
                     ruleBasis: '工艺成型性能',
                   }] : []),
                   ...(currentBatch.process.flaring ? [{
@@ -2870,8 +2923,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     measuredValue: currentBatch.process.flaring === 'PASS' ? '合格' : String(currentBatch.process.flaring),
                     standardRequirement: '顶心扩口无裂纹',
                     deviation: '符合要求',
-                    status: currentBatch.process.flaring === 'PASS' ? 'PASS' as const : 'FAIL' as const,
-                    statusLabel: currentBatch.process.flaring === 'PASS' ? '✓ PASS' : '✗ FAIL',
+                    status: (!currentBatch.process.flaring.includes('不') && !currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? ('PASS' as const) : ('FAIL' as const),
+                    statusLabel: (!currentBatch.process.flaring.includes('不') && !currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? '✓ PASS' : '✗ FAIL',
                     ruleBasis: '工艺成型性能',
                   }] : []),
 
@@ -2900,8 +2953,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     measuredValue: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : String(currentBatch.process.intergranularCorrosion),
                     standardRequirement: '弯曲试验无裂纹',
                     deviation: '符合要求',
-                    status: currentBatch.process.intergranularCorrosion === 'PASS' ? 'PASS' as const : 'FAIL' as const,
-                    statusLabel: currentBatch.process.intergranularCorrosion === 'PASS' ? '✓ PASS' : '✗ FAIL',
+                    status: (!currentBatch.process.intergranularCorrosion.includes('不') && !currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? ('PASS' as const) : ('FAIL' as const),
+                    statusLabel: (!currentBatch.process.intergranularCorrosion.includes('不') && !currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? '✓ PASS' : '✗ FAIL',
                     ruleBasis: '耐腐蚀性能评定',
                   }] : []),
 
@@ -3421,9 +3474,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'REJECT' ? null : 'REJECT')}
-                                    title={currentBatch.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
-                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'REJECT'
+                                    onClick={() => handleSetHumanVerdict(currentBatch?.humanVerdict === 'REJECT' ? null : 'REJECT')}
+                                    title={currentBatch?.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
+                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch?.humanVerdict === 'REJECT'
                                       ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs ring-2 ring-red-400/50'
                                       : 'border border-current bg-surface-container-lowest/80 dark:bg-surface-dark/80 hover:bg-red-500/10'
                                       }`}
@@ -3432,9 +3485,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleSetHumanVerdict(currentBatch.humanVerdict === 'PASS' ? null : 'PASS')}
-                                    title={currentBatch.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
-                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch.humanVerdict === 'PASS'
+                                    onClick={() => handleSetHumanVerdict(currentBatch?.humanVerdict === 'PASS' ? null : 'PASS')}
+                                    title={currentBatch?.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
+                                    className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch?.humanVerdict === 'PASS'
                                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-400/50'
                                       : 'bg-primary hover:bg-primary-container text-on-primary shadow-xs'
                                       }`}
@@ -3581,7 +3634,28 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {(!currentDoc || !currentBatch) ? (
+                <div className="flex flex-col items-center justify-center text-center p-12 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs">
+                  <div className="w-16 h-16 rounded-2xl bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant flex items-center justify-center mb-4">
+                    <span className="material-symbols-outlined text-3xl">description</span>
+                  </div>
+                  <h3 className="text-sm font-bold text-on-surface dark:text-surface-bright mb-1.5">
+                    暂无活动归档报告
+                  </h3>
+                  <p className="text-xs text-on-surface-variant dark:text-outline-variant max-w-sm mb-6">
+                    请先在步骤 1 上传真实质保证书并完成核验比对。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => goToStep(0)}
+                    className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-base">arrow_back</span>
+                    <span>前往步骤 1 上传文档</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
                 {/* 左侧 40%：A4 拟真打印预览纸张 (带 PASS / REJECT 对角线水印章) */}
                 <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-sheet flex flex-col items-center">
@@ -3612,22 +3686,22 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           {isPass ? '材料合规性核验报告' : '物资不合格拒收处置报告'}
                         </h4>
                         <span className=" text-[10px] text-on-surface-variant tracking-wider">
-                          REPORT NO: {currentBatch.reportNo}
+                          REPORT NO: {currentBatch?.reportNo || '--'}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-[11px]  border-b pb-3 border-outline-variant/30 text-on-surface">
                         <div>
                           <span className="text-on-surface-variant block">生成时间:</span>
-                          <strong>2026-08-26 15:30</strong>
+                          <strong>{new Date().toISOString().slice(0, 16).replace('T', ' ')}</strong>
                         </div>
                         <div>
                           <span className="text-on-surface-variant block">检验员:</span>
-                          <strong>{currentBatch.inspector}</strong>
+                          <strong>{currentBatch.inspector || 'QC-Engineer'}</strong>
                         </div>
                         <div>
                           <span className="text-on-surface-variant block">标准依据:</span>
-                          <strong>{currentBatch.standard}</strong>
+                          <strong>{currentBatch.standard || activeStandard || '--'}</strong>
                         </div>
                         <div>
                           <span className="text-on-surface-variant block">结论:</span>
@@ -3641,24 +3715,24 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         <span className="font-bold block text-on-surface">关键数据汇总:</span>
                         <div className="flex justify-between text-on-surface">
                           <span className="text-on-surface-variant">炉号:</span>
-                          <span>{currentBatch.heatNo}</span>
+                          <span>{currentBatch.heatNo || '--'}</span>
                         </div>
                         <div className="flex justify-between text-on-surface">
                           <span className="text-on-surface-variant">批次:</span>
-                          <span>{currentBatch.batchNo}</span>
+                          <span>{currentBatch.batchNo || '--'}</span>
                         </div>
                         <div className="flex justify-between text-on-surface">
                           <span className="text-on-surface-variant">牌号:</span>
-                          <span className="text-primary font-bold">{currentBatch.grade}</span>
+                          <span className="text-primary font-bold">{currentBatch.grade || activeGrade || '--'}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="pt-3 border-t border-outline-variant/30 flex justify-between items-end text-[10px]  text-on-surface-variant relative z-10">
-                      <span className="truncate max-w-[180px]">指纹: {currentBatch.sha256Hash.slice(0, 16)}...</span>
+                      <span className="truncate max-w-[180px]">指纹: {currentBatch.sha256Hash ? `${currentBatch.sha256Hash.slice(0, 16)}...` : session.sessionId.replace(/-/g, '').slice(0, 16)}</span>
                       <div className="text-right shrink-0">
                         <span>电子签名: </span>
-                        <strong className="italic text-primary font-serif">Signature (QA)</strong>
+                        <strong className="italic text-primary font-serif">{currentBatch.inspector || 'QA-Signature'}</strong>
                       </div>
                     </div>
                   </div>
@@ -3726,14 +3800,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       <div>
                         <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">存证哈希值 (SHA-256)</span>
                         <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright truncate">
-                          {currentBatch.sha256Hash || session.sessionId.replace(/-/g, '').slice(0, 32)}
+                          {currentBatch?.sha256Hash || session.sessionId.replace(/-/g, '').slice(0, 32)}
                         </div>
                       </div>
 
                       <div>
                         <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">操作员 ID</span>
                         <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                          {currentBatch.inspector || 'QC-Engineer (智能核验员)'}
+                          {currentBatch?.inspector || 'QC-Engineer (智能核验员)'}
                         </div>
                       </div>
 
@@ -3760,7 +3834,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       <div>
                         <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">主服务器归档路径</span>
                         <span className=" text-xs text-on-surface dark:text-surface-bright font-bold">
-                          //archive-storage/records/{new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/{session.sessionId}/{currentBatch.batchNo || 'BATCH-01'}/
+                          //archive-storage/records/{new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/{session.sessionId}/{currentBatch?.batchNo || 'BATCH-01'}/
                         </span>
                       </div>
                     </div>
@@ -3770,6 +3844,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   </div>
                 </div>
               </div>
+              )}
             </div>
           </section>
         </div>
@@ -3903,7 +3978,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         isOpen={isHitlDrawerOpen}
         onClose={() => setIsHitlDrawerOpen(false)}
         hitlContext={activeHitlContext}
-        taskId={`TK-${currentBatch.batchNo}`}
+        taskId={currentBatch ? `TK-${currentBatch.batchNo}` : 'TK-PENDING'}
         onSubmitResume={handleResolveHitl}
         isSubmitting={isHitlSubmitting}
       />

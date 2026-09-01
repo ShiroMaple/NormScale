@@ -64,7 +64,7 @@ export const CertificateViewer: React.FC<CertificateViewerProps> = ({
             <Building2 className="h-4 w-4 text-slate-500 shrink-0" />
             <span className="text-slate-400">供货单位:</span>
             <span className="font-medium text-slate-200 line-clamp-1">
-              浙江某不锈钢管道实业有限公司
+              {report.supplier_name || report.supplier || '--'}
             </span>
           </div>
 
@@ -72,7 +72,7 @@ export const CertificateViewer: React.FC<CertificateViewerProps> = ({
             <Shield className="h-4 w-4 text-slate-500 shrink-0" />
             <span className="text-slate-400">声明标准:</span>
             <span className="font-mono font-medium text-cyan-300">
-              {report.declared_standard}
+              {report.declared_standard || '--'}
             </span>
           </div>
 
@@ -81,7 +81,7 @@ export const CertificateViewer: React.FC<CertificateViewerProps> = ({
             <span className="text-slate-400">声明材料牌号:</span>
             <div className="flex items-center space-x-1.5">
               <span className="font-mono font-medium text-slate-200">
-                {report.declared_grade}
+                {report.declared_grade || '--'}
               </span>
               {isGradeNormalized && (
                 <div className="flex items-center space-x-1 text-xs text-cyan-400 bg-cyan-950/60 border border-cyan-800/80 px-1.5 py-0.2 rounded">
@@ -96,7 +96,7 @@ export const CertificateViewer: React.FC<CertificateViewerProps> = ({
             <Flame className="h-4 w-4 text-slate-500 shrink-0" />
             <span className="text-slate-400">冶炼炉号 / 批号:</span>
             <span className="font-mono font-medium text-slate-200">
-              H304-8891 / LOT-889101
+              {report.heat_number || '--'} / {report.lot_number || '--'}
             </span>
           </div>
         </div>
@@ -111,32 +111,18 @@ export const CertificateViewer: React.FC<CertificateViewerProps> = ({
           </h3>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
           <div className="rounded-lg bg-slate-950/60 border border-slate-800/80 p-2.5">
-            <span className="block text-xs text-slate-400">公称外径 D</span>
+            <span className="block text-xs text-slate-400">交货几何规格 (Dimensions)</span>
             <span className="mt-1 block font-mono text-base font-semibold text-slate-100">
-              38.0 <span className="text-xs font-normal text-slate-400">mm</span>
+              {report.dimensions || '--'}
             </span>
           </div>
 
           <div className="rounded-lg bg-slate-950/60 border border-slate-800/80 p-2.5">
-            <span className="block text-xs text-slate-400">公称壁厚 S</span>
-            <span className="mt-1 block font-mono text-base font-semibold text-slate-100">
-              3.0 <span className="text-xs font-normal text-slate-400">mm</span>
-            </span>
-          </div>
-
-          <div className="rounded-lg bg-slate-950/60 border border-slate-800/80 p-2.5">
-            <span className="block text-xs text-slate-400">定尺长度 L</span>
-            <span className="mt-1 block font-mono text-base font-semibold text-slate-100">
-              6000 <span className="text-xs font-normal text-slate-400">mm</span>
-            </span>
-          </div>
-
-          <div className="rounded-lg bg-slate-950/60 border border-slate-800/80 p-2.5">
-            <span className="block text-xs text-slate-400">交货热处理状态</span>
+            <span className="block text-xs text-slate-400">交货热处理状态 (Delivery State)</span>
             <span className="mt-1 block text-sm font-medium text-emerald-400 truncate">
-              固溶热处理 (水淬)
+              {report.delivery_state || '标准固溶/热处理交货'}
             </span>
           </div>
         </div>

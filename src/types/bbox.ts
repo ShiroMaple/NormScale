@@ -237,7 +237,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 47.8,
       w: 28.5,
       h: 2.4,
-      label: '扩口试验标准: GB/T 242-2007',
+      label: '扩口试验依据标准',
       category: 'process',
     },
     {
@@ -247,7 +247,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 47.8,
       w: 28.5,
       h: 2.4,
-      label: '扩口试验结果: 合格 OK',
+      label: '扩口试验实测结果',
       category: 'process',
     },
     // 2. 压扁试验
@@ -258,7 +258,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 50.4,
       w: 28.5,
       h: 2.4,
-      label: '压扁试验标准: GB/T 246-2017',
+      label: '压扁试验依据标准',
       category: 'process',
     },
     {
@@ -268,7 +268,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 50.4,
       w: 28.5,
       h: 2.4,
-      label: '压扁试验结果: 合格 OK',
+      label: '压扁试验实测结果',
       category: 'process',
     },
     // 3. 涡流检测
@@ -279,7 +279,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 53.0,
       w: 28.5,
       h: 2.4,
-      label: '涡流检测标准: GB/T 7735-2016',
+      label: '涡流检测依据标准',
       category: 'ndt',
     },
     {
@@ -289,7 +289,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 53.0,
       w: 28.5,
       h: 2.4,
-      label: '涡流检测结果: 合格 OK',
+      label: '涡流检测实测结果',
       category: 'ndt',
     },
     // 4. 超声波检测
@@ -300,7 +300,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 55.6,
       w: 28.5,
       h: 2.4,
-      label: '超声波检测标准: GB/T 5777-2019',
+      label: '超声波检测依据标准',
       category: 'ndt',
     },
     {
@@ -310,7 +310,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 55.6,
       w: 28.5,
       h: 2.4,
-      label: '超声波检测结果: 合格 OK',
+      label: '超声波检测实测结果',
       category: 'ndt',
     },
     // 5. 晶间腐蚀试验
@@ -321,7 +321,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 58.2,
       w: 28.5,
       h: 3.0,
-      label: '晶间腐蚀标准: GB/T 4334-2020 方法 E',
+      label: '晶间腐蚀试验依据标准',
       category: 'corrosion',
     },
     {
@@ -331,7 +331,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 58.2,
       w: 28.5,
       h: 3.0,
-      label: '晶间腐蚀结果 (5.0%形变): 合格 OK',
+      label: '晶间腐蚀试验实测结果',
       category: 'corrosion',
     },
     // 6. 尺寸检验
@@ -342,7 +342,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 61.4,
       w: 28.5,
       h: 2.4,
-      label: '尺寸检验标准: GB/T 13296-2023',
+      label: '几何尺寸检验依据标准',
       category: 'process',
     },
     {
@@ -352,7 +352,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 61.4,
       w: 28.5,
       h: 2.4,
-      label: '尺寸检验结果: 合格 OK',
+      label: '几何尺寸规格实测',
       category: 'process',
     },
     // 7. 表面质量
@@ -363,7 +363,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 64.0,
       w: 28.5,
       h: 2.4,
-      label: '表面质量标准: GB/T 13296-2023',
+      label: '表面质量检验依据标准',
       category: 'process',
     },
     {
@@ -373,7 +373,7 @@ export function getZPJEBBoxes(batchNo: string): FieldBBox[] {
       y: 64.0,
       w: 28.5,
       h: 2.4,
-      label: '表面质量结果: 合格 OK',
+      label: '表面质量实测结果',
       category: 'process',
     },
 

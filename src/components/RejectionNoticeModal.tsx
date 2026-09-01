@@ -21,24 +21,31 @@ export const RejectionNoticeModal: React.FC<RejectionNoticeModalProps> = ({
   report,
 }) => {
   const [dispositionChoice, setDispositionChoice] = useState<'return' | 'retest' | 'waiver'>('return');
-  const [dispositionNotes, setDispositionNotes] = useState<string>(
-    '该批 316L 换热管用于高压高温换热器关键承压受热面，缺少压扁与晶间腐蚀试验存在重大安全泄漏隐患，严格执行国家标准一票否决，作退货处置。'
+  const [dispositionNotes, setDispositionNotes] = useState<string>(() => 
+    report?.summary?.overall_status === 'FAIL' || (report?.missing_mandatory_items && report.missing_mandatory_items.length > 0)
+      ? '该批物资经国家标准规则比对，存在不合格/缺失强制检验项目，严格执行质量标准一票否决，建议作退货或复检处置。'
+      : ''
   );
 
   if (!isOpen) return null;
 
-  const certificateId = report?.certificate_no || 'MTC-2026-09102';
-  const supplier = '浙江某特种不锈钢管业有限公司';
-  const heatNumber = 'H316-9902';
-  const lotNumber = 'LOT-990201';
-  const standardCode = report?.declared_standard || 'GB/T 13296-2023';
-  const standardName = '锅炉、热交换器用不锈钢无缝钢管';
-  const gradeName = report?.matched_grade ? `${report.matched_grade} (${report.declared_grade})` : '022Cr17Ni12Mo2 (S31603 / 316L)';
+  const certificateId = report?.certificate_no || '--';
+  const supplier = report?.supplier_name || report?.supplier || '--';
+  const heatNumber = report?.heat_number || report?.heatNo || '--';
+  const lotNumber = report?.lot_number || report?.batch_number || '--';
+  const standardCode = report?.declared_standard || '--';
+  const standardName = report?.standard_name || '';
+  const gradeName = report?.matched_grade
+    ? `${report.matched_grade}${report.declared_grade ? ` (${report.declared_grade})` : ''}`
+    : (report?.declared_grade || '--');
 
-  const missingItems = report?.missing_mandatory_items || ['压扁试验', '承压致密性试验 (水压/涡流)', '晶间腐蚀试验 (E法)'];
+  const missingItems = report?.missing_mandatory_items || [];
   const failedRules: RuleEvaluationItemResult[] = (report?.item_results || []).filter(
     (r: RuleEvaluationItemResult) => r.status === 'FAIL'
   );
+  const inspectorName = report?.inspector || '智能质检责任工程师 (QA)';
+  const supervisorName = report?.supervisor || '质量审核主管 (QC)';
+  const noticeNo = `RJN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${certificateId.replace(/[^a-zA-Z0-9]/g, '').slice(-4) || '0001'}`;
 
   const handlePrint = () => {
     window.print();
@@ -46,12 +53,12 @@ export const RejectionNoticeModal: React.FC<RejectionNoticeModalProps> = ({
 
   const handleDownload = () => {
     const data = {
-      notice_number: 'RJN-2026-0824-002',
+      notice_number: noticeNo,
       certificate_id: certificateId,
       supplier,
       heat_number: heatNumber,
       lot_number: lotNumber,
-      standard: `${standardCode} ${standardName}`,
+      standard: `${standardCode} ${standardName}`.trim(),
       grade: gradeName,
       verdict: 'FAIL (不合格 / 一票否决)',
       missing_items: missingItems,
@@ -59,8 +66,8 @@ export const RejectionNoticeModal: React.FC<RejectionNoticeModalProps> = ({
       disposition: dispositionChoice,
       justification: dispositionNotes,
       inspectors: {
-        lead_inspector: '张建华 (QA-8821)',
-        supervisor: '李明德 (QC-002)',
+        lead_inspector: inspectorName,
+        supervisor: supervisorName,
       },
       timestamp: new Date().toISOString(),
     };
@@ -89,7 +96,7 @@ export const RejectionNoticeModal: React.FC<RejectionNoticeModalProps> = ({
                   物资进货检验不合格拒收与处置通知书
                 </h2>
                 <span className="rounded border border-rose-700/50 bg-rose-950/60 px-2 py-0.5 text-xs font-semibold text-rose-300 font-mono">
-                  通知编号: RJN-2026-0824-002
+                  通知编号: {noticeNo}
                 </span>
               </div>
               <p className="text-xs text-rose-300/80">
@@ -188,34 +195,44 @@ export const RejectionNoticeModal: React.FC<RejectionNoticeModalProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs">
-                {missingItems.map((item, idx) => (
-                  <tr key={`missing-${idx}`} className="hover:bg-rose-950/10 transition-colors">
-                    <td className="px-4 py-2.5 font-mono text-slate-400">{idx + 1}</td>
-                    <td className="px-4 py-2.5 font-semibold text-slate-200">{item}</td>
-                    <td className="px-4 py-2.5 text-rose-300 font-mono">未在质保证书中报送任何试验与实测记录</td>
-                    <td className="px-4 py-2.5 text-slate-300">
-                      违反《{standardCode}》第 {idx === 0 ? '6.4.1' : idx === 1 ? '6.5' : '6.6'} 条款规定
-                    </td>
-                    <td className="px-4 py-2.5 text-center">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-rose-950/80 text-rose-300 border border-rose-700/60">
-                        一票否决
-                      </span>
+                {missingItems.length === 0 && failedRules.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-slate-400 font-sans">
+                      暂无不合格或缺项事实记录
                     </td>
                   </tr>
-                ))}
-                {failedRules.map((r: RuleEvaluationItemResult, idx: number) => (
-                  <tr key={`failed-${idx}`} className="hover:bg-rose-950/10 transition-colors">
-                    <td className="px-4 py-2.5 font-mono text-slate-400">{missingItems.length + idx + 1}</td>
-                    <td className="px-4 py-2.5 font-semibold text-slate-200">{r.display_name}</td>
-                    <td className="px-4 py-2.5 text-rose-300 font-mono">实测: {r.actual_value_text || r.measured_value_raw || '-'} (超标)</td>
-                    <td className="px-4 py-2.5 text-slate-300">标准要求: {r.standard_requirement_text}</td>
-                    <td className="px-4 py-2.5 text-center">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-rose-950/80 text-rose-300 border border-rose-700/60">
-                        超标不合格
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                ) : (
+                  <>
+                    {missingItems.map((item, idx) => (
+                      <tr key={`missing-${idx}`} className="hover:bg-rose-950/10 transition-colors">
+                        <td className="px-4 py-2.5 font-mono text-slate-400">{idx + 1}</td>
+                        <td className="px-4 py-2.5 font-semibold text-slate-200">{item}</td>
+                        <td className="px-4 py-2.5 text-rose-300 font-mono">未在质保证书中报送任何试验与实测记录</td>
+                        <td className="px-4 py-2.5 text-slate-300">
+                          违反《{standardCode}》出厂强制检验条款要求
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-rose-950/80 text-rose-300 border border-rose-700/60">
+                            一票否决
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {failedRules.map((r: RuleEvaluationItemResult, idx: number) => (
+                      <tr key={`failed-${idx}`} className="hover:bg-rose-950/10 transition-colors">
+                        <td className="px-4 py-2.5 font-mono text-slate-400">{missingItems.length + idx + 1}</td>
+                        <td className="px-4 py-2.5 font-semibold text-slate-200">{r.display_name}</td>
+                        <td className="px-4 py-2.5 text-rose-300 font-mono">实测: {r.actual_value_text || r.measured_value_raw || '-'} (超标)</td>
+                        <td className="px-4 py-2.5 text-slate-300">标准要求: {r.standard_requirement_text}</td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-rose-950/80 text-rose-300 border border-rose-700/60">
+                            超标不合格
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                )}
               </tbody>
             </table>
           </div>
@@ -305,7 +322,7 @@ export const RejectionNoticeModal: React.FC<RejectionNoticeModalProps> = ({
               </div>
               <div>
                 <span className="text-xs text-slate-400 block">质检责任工程师 (初审)</span>
-                <span className="font-semibold text-slate-200">张建华 (QA-8821)</span>
+                <span className="font-semibold text-slate-200">{inspectorName}</span>
                 <span className="text-[11px] text-rose-400 block">建议全批拒收退货</span>
               </div>
             </div>
@@ -316,7 +333,7 @@ export const RejectionNoticeModal: React.FC<RejectionNoticeModalProps> = ({
               </div>
               <div>
                 <span className="text-xs text-slate-400 block">质保部/技术主管 (终审)</span>
-                <span className="font-semibold text-slate-200">李明德 (QC-002)</span>
+                <span className="font-semibold text-slate-200">{supervisorName}</span>
                 <span className="text-[11px] text-emerald-400 block">已审批同意拒收处置方案</span>
               </div>
             </div>

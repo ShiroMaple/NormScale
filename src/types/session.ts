@@ -61,7 +61,9 @@ export interface BatchSpecimen {
     intergranularCorrosion: 'PASS' | 'FAIL' | string;
     ndt: string;
     grainSize?: string;
+    surfaceQuality?: string;
   };
+  surfaceQuality?: string;   // 表面质量检验结果描述
   
   // 归档存证字段
   reportNo: string;            // 质检报告号，如 "QA-20260826-0881"
