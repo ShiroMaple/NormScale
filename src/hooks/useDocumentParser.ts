@@ -6,7 +6,9 @@ import { DocumentParsingTask, SessionTokenMetrics } from '@/types/parser.ts';
 
 const MAX_CONCURRENCY = 2; // 并发线程数：2
 
-export function useDocumentParser() {
+export function useDocumentParser(
+  onDocumentParsed?: (docId: string, parsedDoc: SessionDocument, bboxes?: any[]) => void
+) {
   const [tasks, setTasks] = useState<Record<string, DocumentParsingTask>>({});
   const [isParsingActive, setIsParsingActive] = useState<boolean>(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -132,6 +134,9 @@ export function useDocumentParser() {
         }
 
         const parseResult = data.result;
+        if (parseResult?.sessionDocument) {
+          onDocumentParsed?.(docId, parseResult.sessionDocument, parseResult.bboxes);
+        }
         const rawJsonText = parseResult.rawStreamingJson || JSON.stringify(parseResult.sessionDocument, null, 2);
         const isFromCache = parseResult.tokenStats?.isFromCache;
 

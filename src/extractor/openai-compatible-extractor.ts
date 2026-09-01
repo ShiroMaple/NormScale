@@ -199,7 +199,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
               content: `请对以下工业质保书内容进行结构化提取：\n\n${textContent.slice(0, 15000)}`,
             },
           ],
-          temperature: 0.1,
+          temperature: 1, // Kimi 及主流推理模型严格要求 temperature: 1
           response_format: { type: 'json_object' },
         };
 

@@ -140,6 +140,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const pdfScrollContainerRef = useRef<HTMLDivElement>(null);
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // 当大模型或缓存解析返回真实 Document 数据时，实时双向同步至工作台 Session
+  const handleDocumentParsed = useCallback((docId: string, parsedDoc: SessionDocument) => {
+    setSession(prev => ({
+      ...prev,
+      documents: prev.documents.map(d => (d.docId === docId ? { ...parsedDoc, docId } : d)),
+    }));
+  }, []);
+
   // 多文档异步并发解析工作池 Hook
   const {
     tasks: parsingTasks,
@@ -147,7 +155,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     lastError,
     startParsingSession,
     reparseDocument,
-  } = useDocumentParser();
+  } = useDocumentParser(handleDocumentParsed);
   const [isStreamingTerminalExpanded, setIsStreamingTerminalExpanded] = useState<boolean>(true);
   const prevDocStatusMap = useRef<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -481,14 +489,32 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   // 从 Step 1 触发新建 Session 并前往 Step 2 (启动 2~3 线程异步并发工作池)
   const handleStartNewSessionAndAdvance = () => {
     const newSessionId = generateSessionId();
+    // 优先采用用户实际加入队列/已上传的真实文档；若队列为空则回退至预置样本
+    const activeDocs = session.documents.filter(d => queuedDocs.some(q => q.id === d.docId));
+    const finalDocs = activeDocs.length > 0
+      ? activeDocs
+      : (session.documents.length > 0 ? session.documents : DEFAULT_INSPECTION_SESSION.documents);
+
+    const totalBatches = finalDocs.reduce((acc, d) => acc + d.batches.length, 0);
+    const passedBatches = finalDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'PASS').length, 0);
+    const failedBatches = finalDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'FAIL').length, 0);
+    const hitlBatches = finalDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'MANUAL_REVIEW').length, 0);
+
     const newSession: InspectionSession = {
-      ...DEFAULT_INSPECTION_SESSION,
       sessionId: newSessionId,
       createdAt: new Date().toLocaleString(),
-      title: '现场实时录入批次 · 承压装备材料合规检验',
+      title: activeDocs.length > 0
+        ? `现场实时录入批次 · 共 ${activeDocs.length} 份文档检验`
+        : '现场实时录入批次 · 承压装备材料合规检验',
+      totalDocuments: finalDocs.length,
+      totalBatches,
+      passedBatches,
+      failedBatches,
+      hitlBatches,
+      documents: finalDocs,
     };
     setSession(newSession);
-    const firstDoc = newSession.documents[0];
+    const firstDoc = finalDocs[0];
     if (firstDoc) {
       setSelectedDocId(firstDoc.docId);
       const firstBatch = firstDoc.batches[0];
@@ -497,7 +523,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       }
     }
     // 启动多文档异步并发解析工作池 (传入真实文件流映射)
-    startParsingSession(newSession.documents, uploadedFilesMap);
+    startParsingSession(finalDocs, uploadedFilesMap);
     setIsStreamingTerminalExpanded(true);
     setCurrentStep(1);
   };
