@@ -4,6 +4,12 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-01 · 步骤 1 空队列严格门禁与测试样本兜底回退彻底消除
+
+- 步骤 1 队列状态强校验：移除 `handleStartNewSessionAndAdvance` 中在队列为空时静默回退使用 `DEFAULT_INSPECTION_SESSION`（`doc_zpje_01`）发起解析的代码分支；
+- 下一步按钮状态联动：待处理队列为 0 份时，步骤 1 底部【下一步】按钮处于严格 `disabled` 禁用阻断态，杜绝空队列被误触发解析；
+- MD5 缓存双份成因消除：彻底根除了预设虚拟样本指纹与物理二进制指纹并存生成两份缓存的根源。
+
 ## 2026-09-01 · 历史已缓存文档前端独立删除与服务端磁盘清理端点落地
 
 - 服务端缓存删除 API (`DELETE /api/documents/cached`)：支持通过 Query 参数 `?md5=...` 或 JSON Body 请求删除 `.cache/parses/<md5>.json` 物理文件，集成 `ParseCacheStore.delete` 与容错扫描；

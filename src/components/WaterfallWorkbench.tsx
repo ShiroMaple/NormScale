@@ -510,33 +510,37 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   // 从 Step 1 触发新建 Session 并前往 Step 2 (启动 2~3 线程异步并发工作池)
   const handleStartNewSessionAndAdvance = () => {
-    const newSessionId = generateSessionId();
-    // 优先采用用户实际加入队列/已上传的真实文档；若队列为空则回退至预置样本
-    const activeDocs = session.documents.filter(d => queuedDocs.some(q => q.id === d.docId));
-    const finalDocs = activeDocs.length > 0
-      ? activeDocs
-      : (session.documents.length > 0 ? session.documents : DEFAULT_INSPECTION_SESSION.documents);
+    if (queuedDocs.length === 0) {
+      showToast('待处理队列为空，请先上传文档或从历史缓存选择', 'error');
+      return;
+    }
 
-    const totalBatches = finalDocs.reduce((acc, d) => acc + d.batches.length, 0);
-    const passedBatches = finalDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'PASS').length, 0);
-    const failedBatches = finalDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'FAIL').length, 0);
-    const hitlBatches = finalDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'MANUAL_REVIEW').length, 0);
+    const newSessionId = generateSessionId();
+    // 仅采用用户实际加入队列/已上传的真实文档
+    const activeDocs = session.documents.filter(d => queuedDocs.some(q => q.id === d.docId));
+    if (activeDocs.length === 0) {
+      showToast('队列中暂无有效待解析文档', 'error');
+      return;
+    }
+
+    const totalBatches = activeDocs.reduce((acc, d) => acc + d.batches.length, 0);
+    const passedBatches = activeDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'PASS').length, 0);
+    const failedBatches = activeDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'FAIL').length, 0);
+    const hitlBatches = activeDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'MANUAL_REVIEW').length, 0);
 
     const newSession: InspectionSession = {
       sessionId: newSessionId,
       createdAt: new Date().toLocaleString(),
-      title: activeDocs.length > 0
-        ? `现场实时录入批次 · 共 ${activeDocs.length} 份文档检验`
-        : '现场实时录入批次 · 承压装备材料合规检验',
-      totalDocuments: finalDocs.length,
+      title: `现场实时录入批次 · 共 ${activeDocs.length} 份文档检验`,
+      totalDocuments: activeDocs.length,
       totalBatches,
       passedBatches,
       failedBatches,
       hitlBatches,
-      documents: finalDocs,
+      documents: activeDocs,
     };
     setSession(newSession);
-    const firstDoc = finalDocs[0];
+    const firstDoc = activeDocs[0];
     if (firstDoc) {
       setSelectedDocId(firstDoc.docId);
       const firstBatch = firstDoc.batches[0];
@@ -545,7 +549,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       }
     }
     // 启动多文档异步并发解析工作池 (传入真实文件流映射)
-    startParsingSession(finalDocs, uploadedFilesMap);
+    startParsingSession(activeDocs, uploadedFilesMap);
     setIsStreamingTerminalExpanded(true);
     setCurrentStep(1);
   };
@@ -3878,7 +3882,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               <button
                 type="button"
                 onClick={handleStartNewSessionAndAdvance}
-                className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                disabled={queuedDocs.length === 0}
+                className={`px-5 py-2 rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 ${
+                  queuedDocs.length === 0
+                    ? 'bg-outline-variant/40 dark:bg-border-dark/40 text-on-surface-variant/40 cursor-not-allowed'
+                    : 'bg-primary hover:bg-primary-container text-on-primary cursor-pointer'
+                }`}
               >
                 <span>下一步：解析文档并核对数据</span>
                 <span className="material-symbols-outlined text-base">arrow_forward</span>

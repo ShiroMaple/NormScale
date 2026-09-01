@@ -1,22 +1,22 @@
 {
-  "md5": "5ea87c038db2c8859785c84460c012d7",
-  "filename": "GR2026-20,21.pdf",
+  "md5": "082ad4213dd02068027e71e568e8bbad",
+  "filename": "质保书.pdf",
   "fileSize": "1.0 MB",
   "model": "kimi-k2.7-code",
   "provider": "Moonshot",
-  "parsedAt": "2026-09-01T00:15:10.421Z",
+  "parsedAt": "2026-09-01T00:38:12.983Z",
   "tokenStats": {
-    "inputTokens": 670,
-    "outputTokens": 542,
-    "durationSeconds": 7.8,
+    "inputTokens": 665,
+    "outputTokens": 287,
+    "durationSeconds": 6.2,
     "isFromCache": false
   },
-  "rawStreamingJson": "{\n  \"error\": \"未收到 GR2026-20,21.pdf 的实际内容或文本，无法从文件名中提取质保书信息。请粘贴 PDF 文本内容或上传文件。\",\n  \"header\": {\n    \"certificateNo\": null,\n    \"productName\": null,\n    \"declaredStandard\": null,\n    \"declaredGrade\": null,\n    \"supplierName\": null,\n    \"constructionNo\": null,\n    \"heatNo\": null,\n    \"packNo\": null,\n    \"deliveryState\": null,\n    \"dimensions\": null\n  },\n  \"batches\": []\n}",
+  "rawStreamingJson": "{\n  \"header\": {\n    \"certificateNo\": null,\n    \"productName\": null,\n    \"declaredStandard\": null,\n    \"declaredGrade\": null,\n    \"supplierName\": null,\n    \"constructionNo\": null,\n    \"heatNo\": null,\n    \"packNo\": null,\n    \"deliveryState\": null,\n    \"dimensions\": null\n  },\n  \"batches\": [],\n  \"note\": \"未收到质保书文本内容，无法执行结构化提取。\"\n}",
   "sessionDocument": {
-    "docId": "doc_5ea87c03",
-    "filename": "GR2026-20,21.pdf",
+    "docId": "doc_082ad421",
+    "filename": "质保书.pdf",
     "fileSize": "1.0 MB",
-    "uploadTime": "2026-09-01 00:15:10",
+    "uploadTime": "2026-09-01 00:38:12",
     "ocrStatus": "DONE",
     "pageCount": 3,
     "samplePages": [
@@ -104,8 +104,8 @@
           "intergranularCorrosion": "PASS",
           "ndt": "涡流探伤 (ET) 与超声检测 (UT) 均合格"
         },
-        "reportNo": "QA-21710421",
-        "sha256Hash": "SHA256-CVB1K0HX",
+        "reportNo": "QA-23092982",
+        "sha256Hash": "SHA256-X2DGQ9AJ",
         "inspector": "Auto-AI-Inspector"
       }
     ]
