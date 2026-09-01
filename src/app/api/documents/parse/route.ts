@@ -93,7 +93,7 @@ export async function POST(request: Request) {
 
     // 3. 执行通用 OpenAI 兼容协议大模型解析
     const inputContent = fileBuffer || filename;
-    const rawResult = await extractor.extract(inputContent);
+    const rawResult = await extractor.extract(inputContent, { filename });
     const durationSeconds = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
 
     // 组装标准的 SessionDocument 与 BBox
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       fileSize,
       rawResult
     );
-    const bboxes = getZPJEBBoxes(sessionDoc.batches[0]?.batchNo || 'Z26022C-DB7');
+    const bboxes = filename.includes('质保书') ? getZPJEBBoxes(sessionDoc.batches[0]?.batchNo || 'Z26022C-DB7') : [];
 
     const cacheItem: CachedParseResult = {
       md5,

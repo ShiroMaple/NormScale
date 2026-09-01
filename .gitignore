@@ -28,6 +28,7 @@ pnpm-debug.log*
 # Temporary files
 *.tmp
 *.bak
+.cache/
 
 # LangGraph API
 .langgraph_api

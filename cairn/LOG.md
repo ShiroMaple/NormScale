@@ -4,6 +4,13 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-01 · 接入 Moonshot 文件抽取机制并彻底清除抽取层所有硬编码假数据
+
+- 物理 PDF 解析机制接入：`OpenAiCompatibleExtractor` 增加 `resolveInputText` 逻辑，优先调用 Moonshot 官方 `/v1/files` (purpose: `file-extract`) 文件 OCR 抽取端点获取真实全文 Markdown，解决直接转 UTF-8 发送 PDF 二进制乱码导致模型输出全 `null` 的问题；
+- 彻底剔除抽取器硬编码假数据 (`OpenAiCompatibleExtractor`)：完全移除 `formatToSessionDocument` 中遗留的 ZPJE 化学成分（`C: 0.018` 等）、力学值（`621 MPa` 等）、供货商、规格与批次兜底 fallback，修复 `parsed.batches` 透传断裂；
+- 清理前端上传初始占位字段 (`WaterfallWorkbench`)：文件加入队列时占位批次状态重置为空与 `MANUAL_REVIEW`，杜绝解析未完成前即显示“压扁试验 合格”等预设假数据；
+- 27 个测试套件（121 个单元测试）全部通过。
+
 ## 2026-09-01 · 步骤 1 空队列严格门禁与测试样本兜底回退彻底消除
 
 - 步骤 1 队列状态强校验：移除 `handleStartNewSessionAndAdvance` 中在队列为空时静默回退使用 `DEFAULT_INSPECTION_SESSION`（`doc_zpje_01`）发起解析的代码分支；

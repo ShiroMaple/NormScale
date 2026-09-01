@@ -56,9 +56,9 @@ export interface BatchSpecimen {
   
   // 模块 C: 工艺与定性条款
   process: {
-    flattening: 'PASS' | 'FAIL';
-    flaring?: 'PASS' | 'FAIL';
-    intergranularCorrosion: 'PASS' | 'FAIL';
+    flattening: 'PASS' | 'FAIL' | string;
+    flaring?: 'PASS' | 'FAIL' | string;
+    intergranularCorrosion: 'PASS' | 'FAIL' | string;
     ndt: string;
     grainSize?: string;
   };
