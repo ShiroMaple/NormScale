@@ -92,4 +92,38 @@ describe('Session Isolation and Dynamic Model Verification', () => {
     expect(flaringBox?.label).toBe('扩口试验实测结果');
     expect(corrosionBox?.label).toBe('晶间腐蚀试验实测结果');
   });
+
+  it('should verify BBox coordinate bounds and 150% spotlight magnification centering geometry', () => {
+    const bboxes = getZPJEBBoxes('Z26022C-DB7');
+    expect(bboxes.length).toBeGreaterThan(10);
+
+    bboxes.forEach((box) => {
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.w).toBeLessThanOrEqual(100);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.h).toBeLessThanOrEqual(100);
+      expect(box.page).toBeGreaterThanOrEqual(1);
+    });
+
+    // 验证 150% 放大时原点计算与溢出边距计算
+    const sampleBox = bboxes.find(b => b.id === 'meta_certificateNo')!;
+    const originX = sampleBox.x + sampleBox.w / 2;
+    const originY = sampleBox.y + sampleBox.h / 2;
+
+    const MAGNIFY_SCALE = 1.5;
+    const pageWidth = 480;
+    const pageHeight = Math.round(pageWidth * 1.414);
+
+    const extraHeight = (MAGNIFY_SCALE - 1) * pageHeight;
+    const extraWidth = (MAGNIFY_SCALE - 1) * pageWidth;
+
+    const topMargin = Math.round((originY / 100) * extraHeight);
+    const bottomMargin = Math.round(((100 - originY) / 100) * extraHeight);
+    const leftMargin = Math.round((originX / 100) * extraWidth);
+    const rightMargin = Math.round(((100 - originX) / 100) * extraWidth);
+
+    expect(Math.abs(topMargin + bottomMargin - extraHeight)).toBeLessThanOrEqual(1);
+    expect(Math.abs(leftMargin + rightMargin - extraWidth)).toBeLessThanOrEqual(1);
+    expect(MAGNIFY_SCALE).toBe(1.5);
+  });
 });

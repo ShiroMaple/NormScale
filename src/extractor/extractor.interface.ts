@@ -15,6 +15,12 @@
  * 提取请求的配置选项
  */
 export interface ExtractOptions {
+  /** 物理文件名 */
+  filename?: string;
+  /** 从 PDF 文本层预处理抽取的文本内容 */
+  extractedText?: string;
+  /** 分页切图 Base64 或 URL 列表（用于多模态视觉直连输入） */
+  pageImages?: string[];
   /** 请求超时时间（毫秒，默认 30000ms） */
   timeoutMs?: number;
   /** 是否要求提取器返回每个字段的 OCR/LLM 置信度打分（0.0 ~ 1.0） */

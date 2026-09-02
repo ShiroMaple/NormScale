@@ -15,7 +15,8 @@ export interface FieldBBox {
 }
 
 /**
- * 镇海石化建安《质保书.pdf》(ZPJE S32168) 全量 BBox 映射字典
+ * 镇海石化建安《质保书.pdf》(ZPJE S32168) 全量 BBox 基准坐标字典（测试与算法校验专用标定治具）
+ * 用于自动化单测 (tests/extractor/zpje-bbox.test.ts) 与坐标算法基准验证；生产业务代码已完全解耦。
  * 针对 3 个不同批次在 Page 2 / Page 3 的差异化行坐标提供精确映射
  */
 export function getZPJEBBoxes(batchNo: string): FieldBBox[] {

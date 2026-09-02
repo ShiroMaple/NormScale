@@ -15,6 +15,10 @@ const LlmConfigItemSchema = z.object({
 });
 
 const AdminConfigSchema = z.object({
+  parser: z.object({
+    version: z.string().min(1).default('1.0.0'),
+    description: z.string().optional(),
+  }).optional(),
   llm: z.object({
     timeoutMs: z.number().min(1000).max(600000),
     maxRetries: z.number().min(0).max(5),

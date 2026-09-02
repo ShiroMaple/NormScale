@@ -1,4 +1,8 @@
 {
+  "parser": {
+    "version": "1.0.0",
+    "description": "工业 MTC 质保书通用提取 Schema 与双模态 Prompt V1"
+  },
   "llm": {
     "timeoutMs": 60000,
     "maxRetries": 2,

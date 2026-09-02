@@ -70,3 +70,19 @@ authoring_mode: ai_generated
 |---|---|---|---|
 | **误将 Pack No. 覆写为 Heat No.** | 初版 Mock 仅定义 `heat_number` | 传统通用 OCR 无法识别冶炼与热处理的物理差异，将两个炉号混淆 | 严格按照理化机制拆分字段，力学性能比对必须关联至 `heat_treatment_lot_number` |
 | **严格模式 Zod 报错丢弃数据** | 外部 OCR 传入未声明字段 | 默认 Zod 对象会 strip 掉未定义字段 | 核心 Header Schema 必须配置 `.passthrough()` 保障数据韧性 |
+| **Schema 演进后旧缓存产生脏数据** | 新增了试验字段但复用了旧版解析 JSON | 早期缓存仅按 MD5 索引，未绑定 Schema / Prompt 版本号 | 引入 `parserConfigVersion` 门禁，版本不一致时自动使旧解析缓存失效 |
+
+---
+
+## 4. Schema 演进与配置项版本（parserConfigVersion）失效门禁联动
+
+随着后续质保书品类（板材、棒材、法兰、锻件）与特殊试验项目（晶粒度、夏比冲击、高温拉伸、高温持久）的增加，`certificate.schema.ts` 与大模型 System Prompt 会持续演进：
+
+1. **强绑定生命周期机制**：
+   - 每次在 `certificate.schema.ts` 中增删改核心字段，或重构大模型 System Prompt 时，**必须在 `config.json`（或通过 `AdminConsole` 运维控制台）中递增 `parser.version`**（如 `1.0.0` $\to$ `1.1.0`）；
+2. **两级缓存自动安全失效**：
+   - `ParseCacheStore.getValid(md5, currentVersion)` 在检测到版本不一致时判定缓存过期；
+   - 系统将无缝复用 `.cache/preprocessed/{md5}/` 下的高清切图与 `text.txt`，使用最新版 Schema 与 Prompt 重新向大模型发起提取，并将新版本号写入新缓存；
+3. **零重复切图开销**：
+   - Schema 与 Prompt 的升级仅使**第一级（模型解析 JSON）缓存**失效，**第二级（PDF 分页切图与文本层）缓存永久有效**，保证了版本升级后的重析速度与稳定性。
+

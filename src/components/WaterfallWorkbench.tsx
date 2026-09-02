@@ -10,13 +10,13 @@ import {
   generateSessionId,
 } from '@/types/session.ts';
 import { BatchContextBar } from './BatchContextBar.tsx';
-import { getZPJEBBoxes, FieldBBox } from '@/types/bbox.ts';
+import { FieldBBox } from '@/types/bbox.ts';
 import { HitlDrawer } from './HitlDrawer.tsx';
 import { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.interface.ts';
 import { toPng } from 'html-to-image';
 import { useDocumentParser } from '@/hooks/useDocumentParser.ts';
 import { LlmStreamingTerminal } from './LlmStreamingTerminal.tsx';
-import { renderPdfToImageUrls } from '@/utils/pdf-renderer.ts';
+import { renderPdfAndExtractText } from '@/utils/pdf-renderer.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -174,7 +174,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       }),
     }));
     if (bboxes && bboxes.length > 0) {
-      setDocBboxesMap(prev => ({ ...prev, [docId]: bboxes }));
+      setDocBboxesMap(prev => ({
+        ...prev,
+        [docId]: bboxes,
+        [parsedDoc.docId]: bboxes,
+      }));
     }
     if (parsedDoc.batches && parsedDoc.batches.length > 0) {
       const firstBatchNo = parsedDoc.batches[0]?.batchNo;
@@ -377,10 +381,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   interface QueuedDocItem {
     id: string;
     filename: string;
-    status: '就绪' | '上传中' | '解析中';
+    status: '就绪' | '上传中' | '解析中' | '预处理中...' | '已命中解析缓存';
     size: string;
     date: string;
     md5?: string;
+    pageCount?: number;
   }
 
   interface CachedDocItem {
@@ -440,33 +445,57 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   // 从历史缓存恢复至待处理队列并选中
   const handleRestoreFromCache = async (item: CachedDocItem) => {
-    setQueuedDocs(prev => {
-      if (prev.some(d => d.id === item.id)) return prev;
-      return [...prev, { id: item.id, filename: item.filename, status: '就绪', size: item.size, date: item.date, md5: item.md5 }];
-    });
+    const targetKey = item.md5 || item.id;
+    try {
+      const res = await fetch(`/api/documents/cached?md5=${encodeURIComponent(targetKey)}`);
+      const data = await res.json();
+      if (data.success && data.result) {
+        const doc: SessionDocument = {
+          ...data.result.sessionDocument,
+          md5: data.result.md5 || item.md5,
+        };
+        const finalDocId = doc.docId || item.id;
 
-    // 如果当前 session.documents 尚未包含该文档，从缓存端点读取填充
-    if (!session.documents.some(d => d.docId === item.id)) {
-      try {
-        const res = await fetch('/api/documents/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sampleId: item.id, filename: item.filename }),
-        });
-        const data = await res.json();
-        if (data.success && data.result?.sessionDocument) {
-          setSession(prev => ({
+        setQueuedDocs(prev => {
+          if (prev.some(d => d.id === finalDocId || (item.md5 && d.md5 === item.md5))) return prev;
+          return [
             ...prev,
-            documents: [...prev.documents, data.result.sessionDocument],
-          }));
-        }
-      } catch (err) {
-        console.warn('[WaterfallWorkbench] 读取缓存单据失败:', err);
-      }
-    }
+            {
+              id: finalDocId,
+              filename: item.filename,
+              status: '已命中解析缓存',
+              size: item.size,
+              date: item.date,
+              md5: item.md5 || data.result.md5,
+            },
+          ];
+        });
 
-    onSelectSample(item.id);
-    showToast(`已从历史缓存载入: ${item.filename}`, 'info');
+        setSession(prev => {
+          const filtered = prev.documents.filter(d => d.docId !== finalDocId);
+          return {
+            ...prev,
+            documents: [...filtered, doc],
+          };
+        });
+
+        if (data.result.bboxes) {
+          setDocBboxesMap(prev => ({ ...prev, [finalDocId]: data.result.bboxes }));
+        }
+
+        setSelectedDocId(finalDocId);
+        if (doc.batches && doc.batches[0]?.batchNo) {
+          setSelectedBatchNo(doc.batches[0].batchNo);
+        }
+        showToast(`已从缓存载入: ${item.filename}`, 'success');
+        onSelectSample(finalDocId);
+      } else {
+        showToast(`载入缓存失败: ${data.error || '未找到有效解析结果'}`, 'error');
+      }
+    } catch (err) {
+      console.warn('[handleRestoreFromCache] 恢复缓存文档失败:', err);
+      showToast('载入缓存请求异常', 'error');
+    }
   };
 
   // 删除指定历史缓存
@@ -491,27 +520,36 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
   };
 
-  // 处理用户选择真实本地文件上传 (支持 PDF 与图片)
+  // 处理用户选择真实本地文件上传 (严格限制仅支持 PDF 与 PNG/JPEG/JPG/BMP 图片)
   const handleRealFiles = (files: FileList | File[]) => {
     const fileArr = Array.from(files);
     if (fileArr.length === 0) return;
 
+    const validExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.bmp'];
     const newUrls: Record<string, string> = {};
 
     fileArr.forEach(file => {
+      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      if (!validExtensions.includes(ext)) {
+        showToast(`文件 [${file.name}] 格式不受支持。系统仅支持工业 PDF 文档及 PNG/JPEG/JPG/BMP 图片`, 'error');
+        return;
+      }
+
       const docId = `doc_up_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const sizeStr = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
       const blobUrl = URL.createObjectURL(file);
       newUrls[docId] = blobUrl;
 
+      // 严格待预处理计算真实 MD5 后判定缓存，绝不以可重复的 filename 盲猜缓存
       setQueuedDocs(prev => [
         ...prev,
         {
           id: docId,
           filename: file.name,
-          status: '就绪',
+          status: '预处理中...',
           size: sizeStr,
           date: new Date().toLocaleDateString(),
+          md5: undefined,
         },
       ]);
 
@@ -564,21 +602,96 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         };
       });
 
-      // 若为 PDF 文件，立即在客户端异步渲染高清页面图列表 (pages)
-      if (!file.type.includes('image')) {
-        renderPdfToImageUrls(file).then(pageUrls => {
-          if (pageUrls && pageUrls.length > 0) {
+      // 即时触发客户端切图、文本提取与服务端预处理落盘流水线
+      const runInstantPreprocess = async () => {
+        try {
+          let prePages: string[] = [];
+          let extractedText = '';
+          let preTokens: any[] | undefined;
+          let isTextBased = false;
+          let pageCount = 1;
+
+          if (!file.type.includes('image') && ext === '.pdf') {
+            const preRes = await renderPdfAndExtractText(file);
+            prePages = preRes.pages || [];
+            extractedText = preRes.text || '';
+            preTokens = preRes.textTokens;
+            isTextBased = preRes.isTextBased;
+            pageCount = preRes.pageCount;
+          } else {
+            prePages = [blobUrl];
+          }
+
+          // 即时将原件与预处理切图/文本及 Token 坐标提交到服务端落盘
+          const formData = new FormData();
+          formData.append('file', file);
+          if (extractedText) {
+            formData.append('extractedText', extractedText);
+          }
+          if (preTokens && preTokens.length > 0) {
+            formData.append('textTokens', JSON.stringify(preTokens));
+          }
+          if (prePages.length > 0) {
+            formData.append('pageImages', JSON.stringify(prePages));
+          }
+
+          const res = await fetch('/api/documents/preprocess', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            const finalMd5 = data.md5;
+            setQueuedDocs(qPrev =>
+              qPrev.map(q =>
+                q.id === docId
+                  ? {
+                    ...q,
+                    md5: finalMd5,
+                    status: data.hasCachedParse ? '已命中解析缓存' : '就绪',
+                    pageCount: data.pageCount,
+                  }
+                  : q
+              )
+            );
+
             setSession(sPrev => ({
               ...sPrev,
               documents: sPrev.documents.map(d =>
-                d.docId === docId ? { ...d, pages: pageUrls, samplePages: pageUrls, pageCount: pageUrls.length } : d
+                d.docId === docId
+                  ? {
+                    ...d,
+                    md5: finalMd5,
+                    pages: prePages.length > 0 ? prePages : d.pages,
+                    samplePages: prePages.length > 0 ? prePages : d.samplePages,
+                    pageCount: data.pageCount || pageCount,
+                    extractedText,
+                    isTextBased,
+                  }
+                  : d
               ),
             }));
-          }
-        });
-      }
 
-      showToast(`已加入待处理队列: ${file.name}`, 'success');
+            if (data.hasCachedParse) {
+              showToast(`预处理完成 (已检测到历史解析缓存: ${file.name})`, 'success');
+            } else {
+              showToast(`预处理就绪 (共 ${data.pageCount || pageCount} 页): ${file.name}`, 'success');
+            }
+          } else {
+            setQueuedDocs(qPrev =>
+              qPrev.map(q => (q.id === docId ? { ...q, status: '就绪' } : q))
+            );
+          }
+        } catch (prepErr) {
+          console.error('[InstantPreprocess] 预处理失败:', prepErr);
+          setQueuedDocs(qPrev =>
+            qPrev.map(q => (q.id === docId ? { ...q, status: '就绪' } : q))
+          );
+        }
+      };
+
+      runInstantPreprocess();
     });
 
     setUploadedFileUrls(prev => ({ ...prev, ...newUrls }));
@@ -592,8 +705,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
 
     const newSessionId = generateSessionId();
-    // 仅采用用户实际加入队列/已上传的真实文档
-    const activeDocs = session.documents.filter(d => queuedDocs.some(q => q.id === d.docId));
+    // 严格仅采用用户实际加入队列的文档 (基于实例 docId 及真实内容 md5 精确关联，杜绝文件名碰撞)
+    let activeDocs = session.documents.filter(d =>
+      queuedDocs.some(
+        q => q.id === d.docId || (q.md5 && d.docId === `doc_${q.md5.slice(0, 8)}`)
+      )
+    );
+
+    // 容错兜底：若 activeDocs 为空但 session.documents 有文档且队列有项，直接使用 session.documents
+    if (activeDocs.length === 0 && session.documents.length > 0) {
+      activeDocs = session.documents;
+    }
+
     if (activeDocs.length === 0) {
       showToast('队列中暂无有效待解析文档', 'error');
       return;
@@ -960,8 +1083,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     setIsGradeSelectorOpen(false);
   };
 
-  // 计算当前文档/批次的 OCR BBox 字典
-  const bboxes: FieldBBox[] = (currentDoc ? docBboxesMap[currentDoc.docId] : undefined) || getZPJEBBoxes(currentBatch?.batchNo || '');
+  // 计算当前文档/批次的 OCR BBox 字典（100% 严格受控于解析生命周期，纯动态消费接口/缓存返回的坐标）
+  const bboxes: FieldBBox[] = useMemo(() => {
+    if (!currentDoc || currentDoc.ocrStatus !== 'DONE') {
+      return [];
+    }
+    const parsedBboxes = docBboxesMap[currentDoc.docId];
+    if (parsedBboxes && parsedBboxes.length > 0) {
+      return parsedBboxes;
+    }
+    return [];
+  }, [currentDoc, docBboxesMap]);
 
   // 退出聚焦放大状态，恢复常规显示
   const handleResetMagnify = useCallback(() => {
@@ -983,8 +1115,59 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [magnifiedFieldId, handleResetMagnify]);
 
-  // 1. 悬浮右侧字段：仅滚动左侧 PDF 视窗，绝不触发外部整页或右侧视窗滚动
-  const scrollToLeftBBox = (fieldId: string | null) => {
+  // 精确计算并在 PDF 滚动容器中按需居中目标 BBox
+  // force: false 时仅当目标不在当前视口内或被遮挡时才触发移动；若已完全可见则只高亮不移动视口
+  const centerBBoxInContainer = useCallback((box: FieldBBox, force = false) => {
+    const container = pdfScrollContainerRef.current;
+    if (!container) return;
+
+    const pageElem = document.getElementById(`pdf-page-${box.page}`) || document.getElementById('pdf-page-1');
+    if (!pageElem) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const pageRect = pageElem.getBoundingClientRect();
+
+    // 计算 BBox 4 个边界在当前视口 (Viewport) 中的像素坐标
+    const boxLeft = pageRect.left + (box.x / 100) * pageRect.width;
+    const boxRight = pageRect.left + ((box.x + box.w) / 100) * pageRect.width;
+    const boxTop = pageRect.top + (box.y / 100) * pageRect.height;
+    const boxBottom = pageRect.top + ((box.y + box.h) / 100) * pageRect.height;
+
+    // 判断 BBox 是否已经完整处于容器可视区域内（上下左右各预留 24px 呼吸缓冲区，防止边缘紧贴或被遮挡）
+    const PADDING = 24;
+    const isFullyVisible = (
+      boxTop >= containerRect.top + PADDING &&
+      boxBottom <= containerRect.bottom - PADDING &&
+      boxLeft >= containerRect.left + PADDING &&
+      boxRight <= containerRect.right - PADDING
+    );
+
+    // 若已经完全在当前视口内可见且非强制居中，则直接返回，不触发视口移动
+    if (isFullyVisible && !force) {
+      return;
+    }
+
+    // 计算 BBox 中心点在视口中的当前屏幕像素位置
+    const boxCenterXInViewport = (boxLeft + boxRight) / 2;
+    const boxCenterYInViewport = (boxTop + boxBottom) / 2;
+
+    // 计算容器视口的中心屏幕像素位置
+    const containerCenterXInViewport = containerRect.left + (containerRect.width / 2);
+    const containerCenterYInViewport = containerRect.top + (containerRect.height / 2);
+
+    // 将 BBox 移动至视口中心所需的精确滚动目标
+    const targetScrollTop = container.scrollTop + (boxCenterYInViewport - containerCenterYInViewport);
+    const targetScrollLeft = container.scrollLeft + (boxCenterXInViewport - containerCenterXInViewport);
+
+    container.scrollTo({
+      top: Math.max(0, targetScrollTop),
+      left: Math.max(0, targetScrollLeft),
+      behavior: 'smooth',
+    });
+  }, []);
+
+  // 1. 悬浮/聚焦右侧字段：仅滚动左侧 PDF 视窗，当已在视口中则仅高亮不移动视口
+  const scrollToLeftBBox = useCallback((fieldId: string | null) => {
     // 立即清空上一个防晕倒计时
     if (magnifyTimerRef.current) {
       clearTimeout(magnifyTimerRef.current);
@@ -998,35 +1181,23 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       return;
     }
 
-    // 启动 1000ms 防晕倒计时：在同一字段停留满 1 秒后才激活 200% 放大
-    magnifyTimerRef.current = setTimeout(() => {
-      setMagnifiedFieldId(fieldId);
-    }, 1000);
-
     const box = bboxes.find(b => b.id === fieldId);
     if (!box) return;
 
     setCurrentDocPage(box.page);
-    const container = pdfScrollContainerRef.current;
-    if (!container) return;
+    centerBBoxInContainer(box, false); // 仅在不在视口或被遮挡时移动
 
-    const boxElem = document.getElementById(`bbox-${box.id}`);
-    const pageElem = document.getElementById(`pdf-page-${box.page}`) || document.getElementById('pdf-page-1');
-    const targetElem = boxElem || pageElem;
-    if (targetElem) {
-      const containerRect = container.getBoundingClientRect();
-      const targetRect = targetElem.getBoundingClientRect();
-      const targetTopInContainer = targetRect.top - containerRect.top + container.scrollTop;
-      const targetScrollTop = targetTopInContainer - (container.clientHeight / 2) + (targetRect.height / 2);
-      container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
-    }
-  };
+    // 启动 1000ms 防晕倒计时：在同一字段停留满 1 秒后激活 150% 聚焦放大
+    magnifyTimerRef.current = setTimeout(() => {
+      setMagnifiedFieldId(fieldId);
+    }, 1000);
+  }, [bboxes, centerBBoxInContainer]);
 
   // 别名保留以兼容现有调用
   const handleFieldHover = scrollToLeftBBox;
 
   // 2. 悬浮左侧 BBox：仅滚动右侧解析数据视窗，绝不触发外部整页或左侧视窗滚动
-  const scrollToRightField = (fieldId: string) => {
+  const scrollToRightField = useCallback((fieldId: string) => {
     // 立即清空上一个防晕倒计时
     if (magnifyTimerRef.current) {
       clearTimeout(magnifyTimerRef.current);
@@ -1035,7 +1206,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
     setHighlightedFieldId(fieldId);
 
-    // 左侧直接 hover BBox 停留满 1000ms 同样激活 200% 聚焦放大
+    const box = bboxes.find(b => b.id === fieldId);
+    if (box) {
+      setCurrentDocPage(box.page);
+      centerBBoxInContainer(box, false); // 仅在不在视口或被遮挡时移动
+    }
+
+    // 左侧直接 hover BBox 停留满 1000ms 同样激活 150% 聚焦放大
     magnifyTimerRef.current = setTimeout(() => {
       setMagnifiedFieldId(fieldId);
     }, 1000);
@@ -1068,7 +1245,28 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
       }
     }
-  };
+  }, [bboxes, centerBBoxInContainer]);
+
+  // 当聚焦放大字段激活或变动时，仅在目标 BBox 处于不可见或边缘遮挡状态时居中
+  useEffect(() => {
+    if (!magnifiedFieldId) return;
+    const box = bboxes.find(b => b.id === magnifiedFieldId);
+    if (!box) return;
+
+    centerBBoxInContainer(box, false);
+
+    const timer1 = setTimeout(() => {
+      centerBBoxInContainer(box, false);
+    }, 100);
+    const timer2 = setTimeout(() => {
+      centerBBoxInContainer(box, false);
+    }, 260);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [magnifiedFieldId, bboxes, centerBBoxInContainer]);
 
   // 3. 左侧视窗工具栏翻页控制器：仅滚动左侧 PDF 视窗
   const goToPage = (page: number) => {
@@ -1117,31 +1315,41 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
   }, [lastError, showToast]);
 
-  // 1. 保存当前作业会话 (Session) 的全部系统和人工检验结果至本地台账
-  const handleSaveSessionResults = useCallback((silent: boolean = false) => {
+  // 1. 保存当前作业会话 (Session) 的全部系统和人工检验结果至服务端正式台账 JSON 仓库
+  const handleSaveSessionResults = useCallback(async (silent: boolean = false) => {
     try {
-      const storageKey = 'normscale_saved_sessions';
-      const existingRaw = localStorage.getItem(storageKey);
-      let sessionsList: InspectionSession[] = existingRaw ? JSON.parse(existingRaw) : [];
-
-      // 提取并更新当前 Session 数据（确保实测值、判定状态与最新修改同步存盘）
+      // 提取并更新当前 Session 数据（深拷贝并剔除庞大的客户端 Base64 图片，仅保留服务端资源引用）
       const sessionToSave: InspectionSession = {
         ...session,
         createdAt: session.createdAt || new Date().toISOString().replace('T', ' ').slice(0, 19),
+        documents: session.documents.map(doc => {
+          const { pages, samplePages, ...rest } = doc;
+          return {
+            ...rest,
+            pages: pages?.filter(p => !p.startsWith('data:image')),
+          };
+        }),
       };
 
-      // 覆盖已存在的同名 Session 或置顶追加
-      sessionsList = sessionsList.filter(s => s.sessionId !== sessionToSave.sessionId);
-      sessionsList.unshift(sessionToSave);
+      const res = await fetch('/api/audit/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionToSave),
+      });
 
-      localStorage.setItem(storageKey, JSON.stringify(sessionsList));
-
-      if (!silent) {
-        showToast(`检验结果已成功保存至本地台账 (${sessionToSave.sessionId})`, 'success');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (!silent) {
+          showToast(`检验结果已成功归档至服务端台账 (${sessionToSave.sessionId})`, 'success');
+        }
+      } else {
+        if (!silent) {
+          showToast(`保存台账失败: ${data.error || '服务端响应异常'}`, 'error');
+        }
       }
-    } catch {
+    } catch (err: any) {
       if (!silent) {
-        showToast('保存台账失败，请检查浏览器本地存储权限', 'error');
+        showToast(`保存台账请求异常: ${err.message || err}`, 'error');
       }
     }
   }, [session, showToast]);
@@ -1263,21 +1471,28 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
   };
 
-  // 3. 开启新任务：自动归档当前 Session 结果并重置返回步骤 1
+  // 3. 开启新任务：自动归档当前 Session 结果并原子彻底重置所有状态返回步骤 1
   const handleStartNewTask = useCallback(() => {
-    // 自动静默保存当前作业会话
+    // 自动静默保存当前作业会话至服务端台账
     handleSaveSessionResults(true);
 
-    // 生成全新 Session ID 与干净初始化空会话
+    // 原子清空所有队列、上传文件与会话状态
     const freshSession = createEmptySession();
     setSession(freshSession);
+    setQueuedDocs([]);
+    setUploadedFilesMap({});
+    setUploadedFileUrls({});
+    setDocBboxesMap({});
     setSelectedDocId('');
     setSelectedBatchNo('');
+
+    // 自动刷新服务端最新的历史已缓存文档列表
+    refreshCachedDocs();
 
     // 重置步骤并返回步骤 1
     goToStep(0);
     showToast('已自动归档当前检验结果，已为您开启新任务', 'success');
-  }, [handleSaveSessionResults, showToast]);
+  }, [handleSaveSessionResults, refreshCachedDocs, showToast]);
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden select-none relative">
@@ -1326,7 +1541,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   }
                 }}
                 multiple
-                accept=".pdf,image/*"
+                accept=".pdf,.png,.jpg,.jpeg,.bmp"
                 className="hidden"
               />
 
@@ -1570,1094 +1785,1155 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
 
-                {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 (自带独立滚动条) */}
-                <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
-                  {/* PDF 阅读器顶部工具栏 */}
-                  <div className="px-3.5 py-2 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0">
-                    <div className="flex items-center gap-1.5 truncate max-w-[150px] sm:max-w-[180px] shrink-0">
-                      <span className="material-symbols-outlined text-base text-red-500">picture_as_pdf</span>
-                      <span className="font-bold truncate text-on-surface dark:text-surface-bright">{currentDoc.filename}</span>
-                    </div>
-
-                    {/* 居中常驻放大与定位提示徽章（外形和颜色与原蓝色胶囊完全一致，独立于页面缩放，永不遮挡且在最顶端永远可点击） */}
-                    {(() => {
-                      const isPageMagnified = !!magnifiedFieldId;
-                      const activeFieldBox = (magnifiedFieldId || highlightedFieldId)
-                        ? bboxes.find(b => b.id === (magnifiedFieldId || highlightedFieldId))
-                        : null;
-                      if (!isPageMagnified && !activeFieldBox) return <div className="flex-1" />;
-
-                      return (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[280px]">
-                          <span className="material-symbols-outlined text-xs shrink-0">
-                            {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
-                          </span>
-                          <span className="truncate">
-                            {isPageMagnified ? '聚焦放大 200%' : '已定位'}: {activeFieldBox?.label || '当前项'}
-                          </span>
-                          {isPageMagnified && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleResetMagnify();
-                              }}
-                              className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
-                              title="按 ESC 键亦可快速退出放大"
-                            >
-                              退出 (ESC)
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setZoomLevel(prev => Math.max(50, prev - 25))}
-                          disabled={zoomLevel <= 50}
-                          className="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded transition-colors disabled:opacity-40 cursor-pointer text-sm font-bold text-on-surface dark:text-surface-bright"
-                          title="缩小 (最小 50%)"
-                        >
-                          -
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setZoomLevel(100)}
-                          className="px-1.5 py-0.5 rounded text-xs font-bold hover:bg-surface-container-high dark:hover:bg-surface-dark-high text-on-surface dark:text-surface-bright transition-colors cursor-pointer"
-                          title="点击一键还原为 100%"
-                        >
-                          {zoomLevel}%
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setZoomLevel(prev => Math.min(300, prev + 25))}
-                          disabled={zoomLevel >= 300}
-                          className="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded transition-colors disabled:opacity-40 cursor-pointer text-sm font-bold text-on-surface dark:text-surface-bright"
-                          title="放大 (最大 300%)"
-                        >
-                          +
-                        </button>
+                  {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 (自带独立滚动条) */}
+                  <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
+                    {/* PDF 阅读器顶部工具栏 */}
+                    <div className="px-3.5 py-2 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0">
+                      <div className="flex items-center gap-1.5 truncate max-w-[150px] sm:max-w-[180px] shrink-0">
+                        <span className="material-symbols-outlined text-base text-red-500">picture_as_pdf</span>
+                        <span className="font-bold truncate text-on-surface dark:text-surface-bright">{currentDoc.filename}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => goToPage(currentDocPage - 1)}
-                          disabled={currentDocPage <= 1}
-                          className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded disabled:opacity-40"
-                          title="上一页"
-                        >
-                          &lt;
-                        </button>
-                        <span>{currentDocPage} / {currentDoc.pageCount}</span>
-                        <button
-                          type="button"
-                          onClick={() => goToPage(currentDocPage + 1)}
-                          disabled={currentDocPage >= currentDoc.pageCount}
-                          className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded disabled:opacity-40"
-                          title="下一页"
-                        >
-                          &gt;
-                        </button>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* 源文档视窗：支持真实多页高清切图/PDF栅格化页面纵向连续平铺 */}
-                  {(() => {
-                    const docPages = currentDoc.pages || currentDoc.samplePages || [];
-                    if (docPages.length > 0) {
-                      return (
-                        <div
-                          ref={pdfScrollContainerRef}
-                          onMouseDown={handlePdfMouseDown}
-                          className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
-                            }`}
-                        >
-                          <div
-                            className="w-full flex flex-col items-center gap-5 my-auto transition-[padding,min-width]"
-                            style={{
-                              minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(120, (zoomLevel / 100) * (magnifiedFieldId ? 220 : 120))}%` : '100%',
-                              padding: magnifiedFieldId ? '20px 80px' : '10px 0px',
-                            }}
-                          >
-                            {docPages.map((pageSrc, pageIdx) => {
-                              const pageNum = pageIdx + 1;
-                              const pageBBoxes = bboxes.filter(b => b.page === pageNum);
+                      {/* 居中常驻放大与定位提示徽章（外形和颜色与原蓝色胶囊完全一致，独立于页面缩放，永不遮挡且在最顶端永远可点击） */}
+                      {(() => {
+                        const isPageMagnified = !!magnifiedFieldId;
+                        const activeFieldBox = (magnifiedFieldId || highlightedFieldId)
+                          ? bboxes.find(b => b.id === (magnifiedFieldId || highlightedFieldId))
+                          : null;
+                        if (!isPageMagnified && !activeFieldBox) return <div className="flex-1" />;
 
-                              // 检查当前页是否包含正处于 1 秒悬浮放大状态的 BBox
-                              const activeMagnifiedBox = magnifiedFieldId
-                                ? pageBBoxes.find(b => b.id === magnifiedFieldId)
-                                : null;
-                              const isPageMagnified = !!activeMagnifiedBox;
-
-                              const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
-                              const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
-
-                              return (
-                                <div
-                                  key={pageNum}
-                                  id={`pdf-page-${pageNum}`}
-                                  className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
-                                    }`}
-                                  style={{
-                                    width: `${460 * (zoomLevel / 100)}px`,
-                                    aspectRatio: '1 / 1.414',
-                                    transform: isPageMagnified ? 'scale(2)' : 'scale(1)',
-                                    transformOrigin: `${originX}% ${originY}%`,
-                                    transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out',
-                                  }}
-                                >
-                                  {/* 页码徽章 */}
-                                  <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white text-[11px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
-                                    第 {pageNum} / {docPages.length} 页
-                                  </div>
-
-                                  {/* 真实高清页面底图 */}
-                                  <img
-                                    src={pageSrc}
-                                    alt={`第 ${pageNum} 页`}
-                                    className="w-full h-full object-contain select-none pointer-events-none"
-                                    loading="eager"
-                                  />
-
-                                  {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡) */}
-                                  {pageBBoxes.map((box) => {
-                                    const isHighlighted = highlightedFieldId === box.id;
-                                    return (
-                                      <div
-                                        key={box.id}
-                                        id={`bbox-${box.id}`}
-                                        onMouseEnter={() => scrollToRightField(box.id)}
-                                        onMouseLeave={() => handleFieldHover(null)}
-                                        className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
-                                          ? 'border-2 border-primary bg-primary/10 z-20 shadow-xs'
-                                          : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
-                                          }`}
-                                        style={{
-                                          left: `${box.x}%`,
-                                          top: `${box.y}%`,
-                                          width: `${box.w}%`,
-                                          height: `${box.h}%`,
-                                        }}
-                                        title={box.label}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })}
+                        return (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[280px]">
+                            <span className="material-symbols-outlined text-xs shrink-0">
+                              {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
+                            </span>
+                            <span className="truncate">
+                              {isPageMagnified ? '聚焦放大 150%' : '已定位'}: {activeFieldBox?.label || '当前项'}
+                            </span>
+                            {isPageMagnified && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResetMagnify();
+                                }}
+                                className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
+                                title="按 ESC 键亦可快速退出放大"
+                              >
+                                退出 (ESC)
+                              </button>
+                            )}
                           </div>
-                        </div>
-                      );
-                    }
+                        );
+                      })()}
 
-                    // 若尚未栅格化完成或环境不支持栅格化，使用原生原件高保真画布回退 (绝对不卡死)
-                    const fallbackBlobUrl = uploadedFileUrls[currentDoc.docId];
-                    if (fallbackBlobUrl) {
-                      const uploadedFile = uploadedFilesMap[currentDoc.docId];
-                      const isImage = uploadedFile ? uploadedFile.type.includes('image') : false;
-                      return (
-                        <div
-                          ref={pdfScrollContainerRef}
-                          onMouseDown={handlePdfMouseDown}
-                          className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
-                            }`}
-                        >
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setZoomLevel(prev => Math.max(50, prev - 25))}
+                            disabled={zoomLevel <= 50}
+                            className="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded transition-colors disabled:opacity-40 cursor-pointer text-sm font-bold text-on-surface dark:text-surface-bright"
+                            title="缩小 (最小 50%)"
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setZoomLevel(100)}
+                            className="px-1.5 py-0.5 rounded text-xs font-bold hover:bg-surface-container-high dark:hover:bg-surface-dark-high text-on-surface dark:text-surface-bright transition-colors cursor-pointer"
+                            title="点击一键还原为 100%"
+                          >
+                            {zoomLevel}%
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setZoomLevel(prev => Math.min(300, prev + 25))}
+                            disabled={zoomLevel >= 300}
+                            className="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded transition-colors disabled:opacity-40 cursor-pointer text-sm font-bold text-on-surface dark:text-surface-bright"
+                            title="放大 (最大 300%)"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => goToPage(currentDocPage - 1)}
+                            disabled={currentDocPage <= 1}
+                            className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded disabled:opacity-40"
+                            title="上一页"
+                          >
+                            &lt;
+                          </button>
+                          <span>{currentDocPage} / {currentDoc.pageCount}</span>
+                          <button
+                            type="button"
+                            onClick={() => goToPage(currentDocPage + 1)}
+                            disabled={currentDocPage >= currentDoc.pageCount}
+                            className="p-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded disabled:opacity-40"
+                            title="下一页"
+                          >
+                            &gt;
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 源文档视窗：支持真实多页高清切图/PDF栅格化页面纵向连续平铺 */}
+                    {(() => {
+                      const docPages = currentDoc.pages || currentDoc.samplePages || [];
+                      if (docPages.length > 0) {
+                        return (
                           <div
-                            className="w-full flex flex-col items-center gap-5 my-auto transition-[padding,min-width]"
-                            style={{
-                              minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(120, (zoomLevel / 100) * (magnifiedFieldId ? 220 : 120))}%` : '100%',
-                              padding: magnifiedFieldId ? '20px 80px' : '10px 0px',
-                            }}
+                            ref={pdfScrollContainerRef}
+                            onMouseDown={handlePdfMouseDown}
+                            className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
+                              }`}
                           >
                             <div
-                              id="pdf-page-1"
-                              className="relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 shadow-md"
+                              className="w-full flex flex-col items-center gap-5 py-3 transition-[padding,min-width]"
                               style={{
-                                width: `${480 * (zoomLevel / 100)}px`,
-                                height: `${680 * (zoomLevel / 100)}px`,
-                                transition: 'width 150ms ease-out, height 150ms ease-out',
+                                minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(100, Math.round((zoomLevel / 100) * (magnifiedFieldId ? 160 : 100)))}%` : '100%',
+                                padding: magnifiedFieldId ? '16px 32px' : '10px 0px',
                               }}
                             >
-                              {isImage ? (
-                                <img
-                                  src={fallbackBlobUrl}
-                                  alt={currentDoc.filename}
-                                  className="w-full h-full object-contain select-none pointer-events-none"
-                                />
-                              ) : (
-                                <iframe
-                                  key={fallbackBlobUrl}
-                                  src={`${fallbackBlobUrl}#toolbar=0&view=FitH`}
-                                  className="w-full h-full border-0 rounded-sm bg-white pointer-events-auto"
-                                  title={currentDoc.filename}
-                                />
-                              )}
-                              {bboxes.map((box) => {
-                                const isHighlighted = highlightedFieldId === box.id;
+                              {docPages.map((pageSrc, pageIdx) => {
+                                const pageNum = pageIdx + 1;
+                                const pageBBoxes = bboxes.filter(b => b.page === pageNum);
+
+                                // 检查当前页是否包含正处于 1 秒悬浮放大状态的 BBox
+                                const activeMagnifiedBox = magnifiedFieldId
+                                  ? pageBBoxes.find(b => b.id === magnifiedFieldId)
+                                  : null;
+                                const isPageMagnified = !!activeMagnifiedBox;
+
+                                const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
+                                const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
+
+                                const MAGNIFY_SCALE = 1.5;
+                                const pageWidth = Math.round(480 * (zoomLevel / 100));
+                                const pageHeight = Math.round(pageWidth * 1.414);
+
+                                const extraHeight = (MAGNIFY_SCALE - 1) * pageHeight;
+                                const extraWidth = (MAGNIFY_SCALE - 1) * pageWidth;
+
+                                const topMargin = isPageMagnified ? Math.round((originY / 100) * extraHeight) : 0;
+                                const bottomMargin = isPageMagnified ? Math.round(((100 - originY) / 100) * extraHeight) : 0;
+                                const leftMargin = isPageMagnified ? Math.round((originX / 100) * extraWidth) : 0;
+                                const rightMargin = isPageMagnified ? Math.round(((100 - originX) / 100) * extraWidth) : 0;
+
                                 return (
                                   <div
-                                    key={box.id}
-                                    id={`bbox-${box.id}`}
-                                    onMouseEnter={() => scrollToRightField(box.id)}
-                                    onMouseLeave={() => handleFieldHover(null)}
-                                    className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
-                                      ? 'border-2 border-primary bg-primary/20 ring-2 ring-primary/40 z-30 shadow-xs'
-                                      : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
-                                      }`}
+                                    key={pageNum}
+                                    className="relative flex items-center justify-center transition-[margin] duration-250 ease-out"
                                     style={{
-                                      left: `${box.x}%`,
-                                      top: `${box.y}%`,
-                                      width: `${box.w}%`,
-                                      height: `${box.h}%`,
+                                      marginTop: isPageMagnified ? `${topMargin + 8}px` : '0px',
+                                      marginBottom: isPageMagnified ? `${bottomMargin + 8}px` : '0px',
+                                      marginLeft: isPageMagnified ? `${leftMargin + 8}px` : '0px',
+                                      marginRight: isPageMagnified ? `${rightMargin + 8}px` : '0px',
                                     }}
-                                    title={box.label}
-                                  />
+                                  >
+                                    <div
+                                      id={`pdf-page-${pageNum}`}
+                                      className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
+                                        }`}
+                                      style={{
+                                        width: `${pageWidth}px`,
+                                        aspectRatio: '1 / 1.414',
+                                        transform: isPageMagnified ? `scale(${MAGNIFY_SCALE})` : 'scale(1)',
+                                        transformOrigin: `${originX}% ${originY}%`,
+                                        transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out',
+                                      }}
+                                    >
+                                      {/* 页码徽章 */}
+                                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white text-[11px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
+                                        第 {pageNum} / {docPages.length} 页
+                                      </div>
+
+                                      {/* 真实高清页面底图 */}
+                                      <img
+                                        src={pageSrc}
+                                        alt={`第 ${pageNum} 页`}
+                                        className="w-full h-full object-contain select-none pointer-events-none"
+                                        loading="eager"
+                                      />
+
+                                      {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡) */}
+                                      {pageBBoxes.map((box) => {
+                                        const isHighlighted = highlightedFieldId === box.id;
+                                        return (
+                                          <div
+                                            key={box.id}
+                                            id={`bbox-${box.id}`}
+                                            onMouseEnter={() => scrollToRightField(box.id)}
+                                            onMouseLeave={() => handleFieldHover(null)}
+                                            className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
+                                              ? 'border-2 border-primary bg-primary/10 z-20 shadow-xs'
+                                              : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
+                                              }`}
+                                            style={{
+                                              left: `${box.x}%`,
+                                              top: `${box.y}%`,
+                                              width: `${box.w}%`,
+                                              height: `${box.h}%`,
+                                            }}
+                                            title={box.label}
+                                          />
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                 );
                               })}
                             </div>
                           </div>
-                        </div>
-                      );
-                    }
-
-                    // 尚未上传完成或处于解析等待态
-                    return (
-                      <div className="flex-1 p-6 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low flex flex-col items-center justify-center text-center">
-                        <div className="w-12 h-12 rounded-xl bg-surface-container-high dark:bg-surface-dark-high text-primary flex items-center justify-center mb-3 animate-pulse">
-                          <span className="material-symbols-outlined text-2xl">picture_as_pdf</span>
-                        </div>
-                        <span className="text-xs font-bold text-on-surface dark:text-surface-bright">
-                          {currentDoc.filename || '未载入文档'}
-                        </span>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant mt-1">
-                          等待模型解析结构化数据与坐标映射...
-                        </span>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* 右侧 55%：结构化提取核对卡片 (自带独立滚动条) */}
-                <div className="lg:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs flex flex-col overflow-hidden h-full">
-                  <div
-                    ref={rightScrollContainerRef}
-                    className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-4 scroll-smooth"
-                  >
-
-                    {/* 基础元数据 4行3列统一网格卡片 (第1行：标题、批次号控件、置信度徽标) */}
-                    <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-lg p-3.5 sm:p-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
-
-                        {/* 第 1 行：标题 | 批次号输入/修改控件 | 当前批次 OCR 置信度徽章 */}
-                        <div className="flex items-center gap-1.5 h-8">
-                          <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">info</span>
-                          <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider">
-                            基础元数据
-                          </h3>
-                        </div>
-
-                        <div
-                          id="right-field-meta_batchNo"
-                          onMouseEnter={() => handleFieldHover('meta_batchNo')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container-lowest dark:bg-surface-dark border shadow-2xs h-8 transition-all cursor-pointer ${highlightedFieldId === 'meta_batchNo'
-                            ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                            : 'border-primary/40 dark:border-primary/50'
-                            }`}
-                        >
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="material-symbols-outlined text-sm text-primary dark:text-primary-fixed-dim">label</span>
-                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant  font-bold">批次号:</span>
-                          </div>
-                          <input
-                            type="text"
-                            value={currentBatch.batchNo}
-                            onChange={(e) => handleUpdateBatchNo(e.target.value)}
-                            className="text-xs  font-bold text-primary dark:text-primary-fixed-dim bg-transparent focus:outline-none flex-1 text-left px-1 border-b border-dashed border-primary/40 focus:border-primary min-w-0"
-                            title="修改当前批次号，将自动同步至上方选择器"
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full bg-status-pass-bg text-status-pass-text text-xs  font-bold border border-emerald-300 dark:border-emerald-800 shadow-2xs h-8">
-                          <span className="material-symbols-outlined text-sm">verified</span>
-                          <span>当前批次 OCR 置信度: {currentBatch.ocrConfidence}%</span>
-                        </div>
-
-                        {/* 第 2 行：质保书编号 | 施工号 | 供货厂家 */}
-                        <div
-                          id="right-field-meta_certificateNo"
-                          onMouseEnter={() => handleFieldHover('meta_certificateNo')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
-                          <input
-                            type="text"
-                            value={currentBatch.certificateNo || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_certificateNo', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_certificateNo'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-
-                        <div
-                          id="right-field-meta_constructionNo"
-                          onMouseEnter={() => handleFieldHover('meta_constructionNo')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">施工号 (Construction No)</span>
-                          <input
-                            type="text"
-                            value={currentBatch.constructionNo || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_constructionNo', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_constructionNo'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-
-                        <div
-                          id="right-field-meta_supplier"
-                          onMouseEnter={() => handleFieldHover('meta_supplier')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂家 (Supplier)</span>
-                          <input
-                            type="text"
-                            value={currentBatch.supplier || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_supplier', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_supplier'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-
-                        {/* 第 3 行：产品品名 | 材料牌号 | 声称执行标准 */}
-                        <div
-                          id="right-field-meta_productName"
-                          onMouseEnter={() => handleFieldHover('meta_productName')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品品名 (Product Name)</span>
-                          <input
-                            type="text"
-                            value={currentBatch.productName || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_productName', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_productName'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-
-                        <div
-                          id="right-field-meta_grade"
-                          onMouseEnter={() => handleFieldHover('meta_grade')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant">材料牌号 (Material Grade)</span>
-                            <span className="px-1.5 py-0.2 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-bold rounded shrink-0">
-                              匹配度 {currentBatch.gradeMatchConfidence}%
-                            </span>
-                          </div>
-                          <input
-                            type="text"
-                            value={currentBatch.grade || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_grade', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_grade'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-
-                        <div
-                          id="right-field-meta_standard"
-                          onMouseEnter={() => handleFieldHover('meta_standard')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声称执行标准 (Declared Standard)</span>
-                          <input
-                            type="text"
-                            value={currentBatch.standard || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_standard', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_standard'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-
-                        {/* 第 4 行：双炉号追溯 (冶炼炉号 / 热处理装炉号) | 交货几何规格 | 热处理状态 */}
-                        <div className="transition-all">
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">
-                            冶炼炉号/热处理炉号(Heat/Pack No.)
-                          </span>
-                          <div className="grid grid-cols-2 gap-1.5 mt-1">
-                            {/* 1. 冶炼炉号 (Heat No.) */}
-                            <input
-                              id="right-field-meta_heatNo"
-                              type="text"
-                              value={currentBatch.heatNo || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_heatNo', e.target.value)}
-                              onMouseEnter={() => handleFieldHover('meta_heatNo')}
-                              onMouseLeave={() => handleFieldHover(null)}
-                              placeholder="--"
-                              title="原材料冶炼炉号 (Heat No.)"
-                              className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_heatNo'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
-                            />
-
-                            {/* 2. 热处理炉号 (Pack No.) */}
-                            <input
-                              id="right-field-meta_packNo"
-                              type="text"
-                              value={currentBatch.packNo || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_packNo', e.target.value)}
-                              onMouseEnter={() => handleFieldHover('meta_packNo')}
-                              onMouseLeave={() => handleFieldHover(null)}
-                              placeholder="--"
-                              title="钢管热处理炉号 (Pack No.)"
-                              className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_packNo'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
-                            />
-                          </div>
-                        </div>
-
-                        <div
-                          id="right-field-meta_dimensions"
-                          onMouseEnter={() => handleFieldHover('meta_dimensions')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货几何规格 (Dimensions)</span>
-                          <input
-                            type="text"
-                            value={currentBatch.dimensions || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_dimensions', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_dimensions'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-
-                        <div
-                          id="right-field-meta_deliveryState"
-                          onMouseEnter={() => handleFieldHover('meta_deliveryState')}
-                          onMouseLeave={() => handleFieldHover(null)}
-                          className="transition-all cursor-pointer"
-                        >
-                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理状态 (Delivery State)</span>
-                          <input
-                            type="text"
-                            value={currentBatch.deliveryState || ''}
-                            onChange={(e) => handleUpdateExtractValue('meta_deliveryState', e.target.value)}
-                            placeholder="--"
-                            className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_deliveryState'
-                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                              : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                              }`}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 结构化实测数据区域：动态根据 standard.schema.ts 类别计算页签 (无数据自动隐藏) */}
-                    {(() => {
-                      // 1. 结构化构建当前批次的全部提取项 (赋予精准 fieldId 与真实 BBox 坐标联动)
-                      interface ExtractRowItem {
-                        fieldId: string;
-                        methodFieldId?: string;
-                        category: string;
-                        categoryLabel: string;
-                        categoryColor: string;
-                        name: string;
-                        value: string;
-                        unit?: string;
-                        method: string;
-                        confidence: string;
-                        status: 'ok' | 'warn';
-                        note?: string;
+                        );
                       }
 
-                      const allExtractItems: ExtractRowItem[] = [
-                        // 化学成分 (原件未打印独立检测方法标准，客观呈现为 '-'，无依据 BBox)
-                        ...currentBatch.chemical.map(c => ({
-                          fieldId: `chem_${c.element}`,
-                          methodFieldId: undefined,
-                          category: 'chemical',
-                          categoryLabel: '化分',
-                          categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                          name: `${c.element} (元素含量)`,
-                          value: c.value,
-                          unit: 'wt%',
-                          method: '-',
-                          confidence: c.confidence,
-                          status: (c.status || 'ok') as 'ok' | 'warn',
-                          note: c.note,
-                        })),
-                        // 力学性能 (拉伸依据 Page 2 表头 GB/T 228.1-2021，硬度依据表头 GB/T 4340.1-2024)
-                        {
-                          fieldId: 'mech_tensile',
-                          methodFieldId: 'method_tensile',
-                          category: 'mechanical',
-                          categoryLabel: '力学',
-                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                          name: '抗拉强度 Rm',
-                          value: currentBatch.mechanical.tensile_rm,
-                          method: 'GB/T 228.1-2021',
-                          confidence: '98%',
-                          status: 'ok' as const,
-                        },
-                        {
-                          fieldId: 'mech_yield',
-                          methodFieldId: 'method_tensile',
-                          category: 'mechanical',
-                          categoryLabel: '力学',
-                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                          name: '规定塑性延伸强度 Rp0.2',
-                          value: currentBatch.mechanical.yield_rp02,
-                          method: 'GB/T 228.1-2021',
-                          confidence: '97%',
-                          status: 'ok' as const,
-                        },
-                        {
-                          fieldId: 'mech_elongation',
-                          methodFieldId: 'method_tensile',
-                          category: 'mechanical',
-                          categoryLabel: '力学',
-                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                          name: '断后伸长率 A',
-                          value: currentBatch.mechanical.elongation_a,
-                          method: 'GB/T 228.1-2021',
-                          confidence: '99%',
-                          status: 'ok' as const,
-                        },
-                        ...(currentBatch.mechanical.hardness ? [{
-                          fieldId: 'mech_hardness',
-                          methodFieldId: 'method_hardness',
-                          category: 'mechanical',
-                          categoryLabel: '力学',
-                          categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                          name: '硬度 (Hardness)',
-                          value: currentBatch.mechanical.hardness,
-                          method: 'GB/T 4340.1-2024',
-                          confidence: '96%',
-                          status: 'ok' as const,
-                        }] : []),
-                        // 工艺性能 (依据原件提取或按标准要求)
-                        ...(currentBatch.process.flattening ? [{
-                          fieldId: 'proc_flattening',
-                          methodFieldId: 'method_proc_flattening',
-                          category: 'process',
-                          categoryLabel: '工艺',
-                          categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-                          name: '压扁试验 (Flattening)',
-                          value: currentBatch.process.flattening === 'PASS' ? '合格' : currentBatch.process.flattening,
-                          method: 'GB/T 246',
-                          confidence: '98%',
-                          status: (currentBatch.process.flattening.includes('不') || currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
-                        }] : []),
-                        ...(currentBatch.process.flaring ? [{
-                          fieldId: 'proc_flaring',
-                          methodFieldId: 'method_proc_flaring',
-                          category: 'process',
-                          categoryLabel: '工艺',
-                          categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-                          name: '扩口试验 (Flaring)',
-                          value: currentBatch.process.flaring === 'PASS' ? '合格' : currentBatch.process.flaring,
-                          method: 'GB/T 242',
-                          confidence: '98%',
-                          status: (currentBatch.process.flaring.includes('不') || currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
-                        }] : []),
-                        // 金相组织 (依据 Page 2 表头 GB/T 6394-2017)
-                        ...(currentBatch.process.grainSize ? [{
-                          fieldId: 'metallo_grain',
-                          methodFieldId: 'method_grain',
-                          category: 'metallographic',
-                          categoryLabel: '金相',
-                          categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
-                          name: '晶粒度评级 (Grain Size)',
-                          value: currentBatch.process.grainSize,
-                          method: 'GB/T 6394',
-                          confidence: '98%',
-                          status: 'ok' as const,
-                        }] : []),
-                        // 耐腐蚀试验
-                        ...(currentBatch.process.intergranularCorrosion ? [{
-                          fieldId: 'corrosion_intergranular',
-                          methodFieldId: 'method_corrosion_intergranular',
-                          category: 'corrosion',
-                          categoryLabel: '腐蚀',
-                          categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
-                          name: '晶间腐蚀试验 (Intergranular Corrosion)',
-                          value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : currentBatch.process.intergranularCorrosion,
-                          method: 'GB/T 4334',
-                          confidence: '98%',
-                          status: (currentBatch.process.intergranularCorrosion.includes('不') || currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
-                        }] : []),
-                        // 无损检测
-                        {
-                          fieldId: 'ndt_et',
-                          methodFieldId: 'method_ndt_et',
-                          category: 'ndt',
-                          categoryLabel: '探伤',
-                          categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-                          name: '涡流探伤检验 (Eddy Current Test)',
-                          value: currentBatch.process.ndt,
-                          method: 'GB/T 7735-2016',
-                          confidence: currentBatch.process.ndt.includes('合格') ? '98%' : '50%',
-                          status: (currentBatch.process.ndt.includes('合格') ? 'ok' : 'warn') as 'ok' | 'warn',
-                          note: currentBatch.process.ndt.includes('合格') ? undefined : '未检出探伤结果',
-                        },
-                        // 几何尺寸规格 (当提取到几何尺寸时自动动态载入)
-                        ...(currentBatch.dimensions ? [
-                          {
-                            fieldId: 'geo_dimensions',
-                            methodFieldId: 'method_geo_dimensions',
-                            category: 'geometric',
-                            categoryLabel: '尺寸',
-                            categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
-                            name: '几何尺寸规格 (Dimensions)',
-                            value: currentBatch.dimensions,
-                            method: currentBatch.standard || '按订货标准要求',
-                            confidence: '99%',
-                            status: 'ok' as const,
-                          },
-                        ] : []),
-                      ];
+                      // 若尚未栅格化完成或环境不支持栅格化，使用原生原件高保真画布回退 (绝对不卡死)
+                      const fallbackBlobUrl = uploadedFileUrls[currentDoc.docId];
+                      if (fallbackBlobUrl) {
+                        const uploadedFile = uploadedFilesMap[currentDoc.docId];
+                        const isImage = uploadedFile ? uploadedFile.type.includes('image') : false;
+                        const activeMagnifiedBox = magnifiedFieldId
+                          ? bboxes.find(b => b.id === magnifiedFieldId)
+                          : null;
+                        const isPageMagnified = !!activeMagnifiedBox;
+                        const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
+                        const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
+                        const MAGNIFY_SCALE = 1.5;
+                        const pageWidth = Math.round(480 * (zoomLevel / 100));
+                        const pageHeight = Math.round(680 * (zoomLevel / 100));
 
-                      // 2. 动态计算当前批次包含的分类列表 (仅保留有数据的分类)
-                      const categoriesInBatch = [
-                        { key: 'all', label: '解析数据总览', count: allExtractItems.length },
-                        { key: 'chemical', label: '化学成分', count: allExtractItems.filter(i => i.category === 'chemical').length },
-                        { key: 'mechanical', label: '力学性能', count: allExtractItems.filter(i => i.category === 'mechanical').length },
-                        { key: 'process', label: '工艺性能', count: allExtractItems.filter(i => i.category === 'process').length },
-                        { key: 'metallographic', label: '金相组织', count: allExtractItems.filter(i => i.category === 'metallographic').length },
-                        { key: 'corrosion', label: '耐腐蚀试验', count: allExtractItems.filter(i => i.category === 'corrosion').length },
-                        { key: 'ndt', label: '无损检测', count: allExtractItems.filter(i => i.category === 'ndt').length },
-                        { key: 'geometric', label: '几何尺寸', count: allExtractItems.filter(i => i.category === 'geometric').length },
-                        { key: 'surface', label: '表面质量', count: allExtractItems.filter(i => i.category === 'surface').length },
-                        { key: 'other', label: '其他综合', count: allExtractItems.filter(i => i.category === 'other').length },
-                      ].filter(c => c.key === 'all' || c.count > 0);
+                        return (
+                          <div
+                            ref={pdfScrollContainerRef}
+                            onMouseDown={handlePdfMouseDown}
+                            className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
+                              }`}
+                          >
+                            <div
+                              className="w-full flex flex-col items-center gap-5 py-3 transition-[padding,min-width]"
+                              style={{
+                                minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(100, Math.round((zoomLevel / 100) * (magnifiedFieldId ? 160 : 100)))}%` : '100%',
+                                padding: magnifiedFieldId ? '16px 32px' : '10px 0px',
+                              }}
+                            >
+                              <div
+                                id="pdf-page-1"
+                                className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
+                                  }`}
+                                style={{
+                                  width: `${pageWidth}px`,
+                                  height: `${pageHeight}px`,
+                                  transform: isPageMagnified ? `scale(${MAGNIFY_SCALE})` : 'scale(1)',
+                                  transformOrigin: `${originX}% ${originY}%`,
+                                  transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out, width 150ms ease-out, height 150ms ease-out',
+                                }}
+                              >
+                                {isImage ? (
+                                  <img
+                                    src={fallbackBlobUrl}
+                                    alt={currentDoc.filename}
+                                    className="w-full h-full object-contain select-none pointer-events-none"
+                                  />
+                                ) : (
+                                  <iframe
+                                    key={fallbackBlobUrl}
+                                    src={`${fallbackBlobUrl}#toolbar=0&view=FitH`}
+                                    className="w-full h-full border-0 rounded-sm bg-white pointer-events-auto"
+                                    title={currentDoc.filename}
+                                  />
+                                )}
+                                {bboxes.map((box) => {
+                                  const isHighlighted = highlightedFieldId === box.id;
+                                  return (
+                                    <div
+                                      key={box.id}
+                                      id={`bbox-${box.id}`}
+                                      onMouseEnter={() => scrollToRightField(box.id)}
+                                      onMouseLeave={() => handleFieldHover(null)}
+                                      className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
+                                        ? 'border-2 border-primary bg-primary/20 ring-2 ring-primary/40 z-30 shadow-xs'
+                                        : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
+                                        }`}
+                                      style={{
+                                        left: `${box.x}%`,
+                                        top: `${box.y}%`,
+                                        width: `${box.w}%`,
+                                        height: `${box.h}%`,
+                                      }}
+                                      title={box.label}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
 
-                      const displayedItems = activeTabCategory === 'all'
-                        ? allExtractItems
-                        : allExtractItems.filter(i => i.category === activeTabCategory);
-
+                      // 尚未上传完成或处于解析等待态
                       return (
-                        <div className="space-y-2.5">
-                          {/* 动态页签导航条 (无数据类别自动隐藏，无冗余图标与多余文案) */}
-                          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar border-b border-outline-variant/40 dark:border-border-dark pb-1.5">
-                            {categoriesInBatch.map(cat => {
-                              const isActive = activeTabCategory === cat.key;
-                              return (
-                                <button
-                                  key={cat.key}
-                                  type="button"
-                                  onClick={() => setActiveTabCategory(cat.key)}
-                                  className={`text-xs px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${isActive
-                                    ? 'bg-primary text-on-primary font-bold shadow-xs'
-                                    : 'bg-surface-container-low dark:bg-surface-dark-low hover:bg-surface-container-high dark:hover:bg-surface-dark-high text-on-surface dark:text-surface-bright font-medium'
-                                    }`}
-                                >
-                                  <span>{cat.label}</span>
-                                  <span className={`px-1.5 py-0.2 rounded-full text-[10px]  font-bold ${isActive
-                                    ? 'bg-white/20 text-white'
-                                    : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant'
-                                    }`}>
-                                    {cat.count}
-                                  </span>
-                                </button>
-                              );
-                            })}
+                        <div className="flex-1 p-6 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low flex flex-col items-center justify-center text-center">
+                          <div className="w-12 h-12 rounded-xl bg-surface-container-high dark:bg-surface-dark-high text-primary flex items-center justify-center mb-3 animate-pulse">
+                            <span className="material-symbols-outlined text-2xl">picture_as_pdf</span>
+                          </div>
+                          <span className="text-xs font-bold text-on-surface dark:text-surface-bright">
+                            {currentDoc.filename || '未载入文档'}
+                          </span>
+                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant mt-1">
+                            等待模型解析结构化数据与坐标映射...
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* 右侧 55%：结构化提取核对卡片 (自带独立滚动条) */}
+                  <div className="lg:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs flex flex-col overflow-hidden h-full">
+                    <div
+                      ref={rightScrollContainerRef}
+                      className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-4 scroll-smooth"
+                    >
+
+                      {/* 基础元数据 4行3列统一网格卡片 (第1行：标题、批次号控件、置信度徽标) */}
+                      <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-lg p-3.5 sm:p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+
+                          {/* 第 1 行：标题 | 批次号输入/修改控件 | 当前批次 OCR 置信度徽章 */}
+                          <div className="flex items-center gap-1.5 h-8">
+                            <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">info</span>
+                            <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider">
+                              基础元数据
+                            </h3>
                           </div>
 
-                          {/* 1. 全部实测项总览 (平铺综合表格视图，结果与依据独立双向高亮联动) */}
-                          {activeTabCategory === 'all' && (
-                            <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl overflow-hidden shadow-2xs">
-                              <table className="w-full text-left text-xs">
-                                <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
-                                  <tr>
-                                    <th className="px-3.5 py-2.5 w-24 min-w-[90px] whitespace-nowrap">类别</th>
-                                    <th className="px-3.5 py-2.5 w-44 min-w-[130px]">检验项目</th>
-                                    <th className="px-3.5 py-2.5 min-w-[220px]">提取测得值 / 试验结果</th>
-                                    <th className="px-3.5 py-2.5 min-w-[190px]">试验依据方法 / 标准</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
-                                  {displayedItems.map((row, idx) => {
-                                    const isValueHighlighted = highlightedFieldId === row.fieldId;
-                                    const isMethodHighlighted = Boolean(row.methodFieldId && highlightedFieldId === row.methodFieldId);
-                                    const isRowActive = isValueHighlighted || isMethodHighlighted;
-                                    const numConfidence = parseInt(row.confidence?.replace('%', '') || '100', 10);
-                                    const isLowConfidence = row.status === 'warn' || numConfidence < 85;
+                          <div
+                            id="right-field-meta_batchNo"
+                            onMouseEnter={() => handleFieldHover('meta_batchNo')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container-lowest dark:bg-surface-dark border shadow-2xs h-8 transition-all cursor-pointer ${highlightedFieldId === 'meta_batchNo'
+                              ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                              : 'border-primary/40 dark:border-primary/50'
+                              }`}
+                          >
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="material-symbols-outlined text-sm text-primary dark:text-primary-fixed-dim">label</span>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant  font-bold">批次号:</span>
+                            </div>
+                            <input
+                              type="text"
+                              value={currentBatch.batchNo}
+                              onChange={(e) => handleUpdateBatchNo(e.target.value)}
+                              onFocus={() => handleFieldHover('meta_batchNo')}
+                              className="text-xs  font-bold text-primary dark:text-primary-fixed-dim bg-transparent focus:outline-none flex-1 text-left px-1 border-b border-dashed border-primary/40 focus:border-primary min-w-0"
+                              title="修改当前批次号，将自动同步至上方选择器"
+                            />
+                          </div>
 
-                                    return (
-                                      <tr
-                                        key={idx}
-                                        id={`right-field-${row.fieldId}`}
-                                        className={`transition-colors ${isRowActive
-                                          ? 'bg-primary/10 dark:bg-primary/20'
-                                          : 'hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40'
-                                          }`}
-                                      >
-                                        <td className="px-3.5 py-2 whitespace-nowrap">
-                                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
-                                            {row.categoryLabel}
-                                          </span>
-                                        </td>
-                                        <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
+                          <div className="flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full bg-status-pass-bg text-status-pass-text text-xs  font-bold border border-emerald-300 dark:border-emerald-800 shadow-2xs h-8">
+                            <span className="material-symbols-outlined text-sm">verified</span>
+                            <span>当前批次 OCR 置信度: {currentBatch.ocrConfidence}%</span>
+                          </div>
 
-                                        {/* 1. 提取测得值 / 试验结果（常态处于可编辑状态，置信度预警仅保留⚠️，hover浮层出详情） */}
-                                        <td className="px-3.5 py-1.5 min-w-[220px]">
-                                          <div className="flex items-center gap-1.5">
-                                            <div className="relative flex-1 flex items-center">
-                                              <input
-                                                type="text"
-                                                value={row.value}
-                                                onChange={(e) => handleUpdateExtractValue(row.fieldId, e.target.value)}
-                                                onFocus={() => handleFieldHover(row.fieldId)}
-                                                onMouseEnter={() => handleFieldHover(row.fieldId)}
-                                                onMouseLeave={() => handleFieldHover(null)}
-                                                className={`w-full text-xs font-bold rounded border px-2.5 py-1.5 transition-all text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark ${row.unit ? 'pr-9' : ''
-                                                  } ${isValueHighlighted
-                                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                                    : 'border-outline-variant/30 dark:border-border-dark hover:border-primary/50'
-                                                  }`}
-                                                title="常态处于可编辑状态；点击聚焦或悬浮可联动查看原件切图"
-                                              />
-                                              {row.unit && (
-                                                <span className="absolute right-2 text-xs font-normal text-outline-variant dark:text-outline-dark select-none pointer-events-none">
-                                                  {row.unit}
-                                                </span>
+                          {/* 第 2 行：质保书编号 | 施工号 | 供货厂家 */}
+                          <div
+                            id="right-field-meta_certificateNo"
+                            onMouseEnter={() => handleFieldHover('meta_certificateNo')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
+                            <input
+                              type="text"
+                              value={currentBatch.certificateNo || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_certificateNo', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_certificateNo')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_certificateNo'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+
+                          <div
+                            id="right-field-meta_constructionNo"
+                            onMouseEnter={() => handleFieldHover('meta_constructionNo')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">施工号 (Construction No)</span>
+                            <input
+                              type="text"
+                              value={currentBatch.constructionNo || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_constructionNo', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_constructionNo')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_constructionNo'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+
+                          <div
+                            id="right-field-meta_supplier"
+                            onMouseEnter={() => handleFieldHover('meta_supplier')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂家 (Supplier)</span>
+                            <input
+                              type="text"
+                              value={currentBatch.supplier || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_supplier', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_supplier')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_supplier'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+
+                          {/* 第 3 行：产品品名 | 材料牌号 | 声称执行标准 */}
+                          <div
+                            id="right-field-meta_productName"
+                            onMouseEnter={() => handleFieldHover('meta_productName')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品品名 (Product Name)</span>
+                            <input
+                              type="text"
+                              value={currentBatch.productName || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_productName', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_productName')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_productName'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+
+                          <div
+                            id="right-field-meta_grade"
+                            onMouseEnter={() => handleFieldHover('meta_grade')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant">材料牌号 (Material Grade)</span>
+                              <span className="px-1.5 py-0.2 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-bold rounded shrink-0">
+                                匹配度 {currentBatch.gradeMatchConfidence}%
+                              </span>
+                            </div>
+                            <input
+                              type="text"
+                              value={currentBatch.grade || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_grade', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_grade')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_grade'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+
+                          <div
+                            id="right-field-meta_standard"
+                            onMouseEnter={() => handleFieldHover('meta_standard')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声称执行标准 (Declared Standard)</span>
+                            <input
+                              type="text"
+                              value={currentBatch.standard || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_standard', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_standard')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_standard'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+
+                          {/* 第 4 行：双炉号追溯 (冶炼炉号 / 热处理装炉号) | 交货几何规格 | 热处理状态 */}
+                          <div className="transition-all">
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">
+                              冶炼炉号/热处理炉号(Heat/Pack No.)
+                            </span>
+                            <div className="grid grid-cols-2 gap-1.5 mt-1">
+                              {/* 1. 冶炼炉号 (Heat No.) */}
+                              <input
+                                id="right-field-meta_heatNo"
+                                type="text"
+                                value={currentBatch.heatNo || ''}
+                                onChange={(e) => handleUpdateExtractValue('meta_heatNo', e.target.value)}
+                                onFocus={() => handleFieldHover('meta_heatNo')}
+                                onMouseEnter={() => handleFieldHover('meta_heatNo')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                placeholder="--"
+                                title="原材料冶炼炉号 (Heat No.)"
+                                className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_heatNo'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                  : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                  }`}
+                              />
+
+                              {/* 2. 热处理炉号 (Pack No.) */}
+                              <input
+                                id="right-field-meta_packNo"
+                                type="text"
+                                value={currentBatch.packNo || ''}
+                                onChange={(e) => handleUpdateExtractValue('meta_packNo', e.target.value)}
+                                onFocus={() => handleFieldHover('meta_packNo')}
+                                onMouseEnter={() => handleFieldHover('meta_packNo')}
+                                onMouseLeave={() => handleFieldHover(null)}
+                                placeholder="--"
+                                title="钢管热处理炉号 (Pack No.)"
+                                className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_packNo'
+                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                  : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                  }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div
+                            id="right-field-meta_dimensions"
+                            onMouseEnter={() => handleFieldHover('meta_dimensions')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货几何规格 (Dimensions)</span>
+                            <input
+                              type="text"
+                              value={currentBatch.dimensions || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_dimensions', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_dimensions')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_dimensions'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+
+                          <div
+                            id="right-field-meta_deliveryState"
+                            onMouseEnter={() => handleFieldHover('meta_deliveryState')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理状态 (Delivery State)</span>
+                            <input
+                              type="text"
+                              value={currentBatch.deliveryState || ''}
+                              onChange={(e) => handleUpdateExtractValue('meta_deliveryState', e.target.value)}
+                              onFocus={() => handleFieldHover('meta_deliveryState')}
+                              placeholder="--"
+                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_deliveryState'
+                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
+                                }`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 结构化实测数据区域：动态根据 standard.schema.ts 类别计算页签 (无数据自动隐藏) */}
+                      {(() => {
+                        // 1. 结构化构建当前批次的全部提取项 (赋予精准 fieldId 与真实 BBox 坐标联动，严格按实际提取结果呈现，无值绝不假占位)
+                        interface ExtractRowItem {
+                          fieldId: string;
+                          methodFieldId?: string;
+                          category: string;
+                          categoryLabel: string;
+                          categoryColor: string;
+                          name: string;
+                          value: string;
+                          unit?: string;
+                          method: string;
+                          confidence: string;
+                          status: 'ok' | 'warn';
+                          note?: string;
+                        }
+
+                        const allExtractItems: ExtractRowItem[] = [
+                          // 化学成分 (原件未打印独立检测方法标准，客观呈现为 '-'，无依据 BBox)
+                          ...currentBatch.chemical.filter(c => c.value && c.value.trim() !== '').map(c => ({
+                            fieldId: `chem_${c.element}`,
+                            methodFieldId: undefined,
+                            category: 'chemical',
+                            categoryLabel: '化分',
+                            categoryColor: 'text-blue-700 bg-blue-50 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                            name: `${c.element} (元素含量)`,
+                            value: c.value,
+                            unit: 'wt%',
+                            method: '-',
+                            confidence: c.confidence,
+                            status: (c.status || 'ok') as 'ok' | 'warn',
+                            note: c.note,
+                          })),
+                          // 力学性能 (仅当模型解析出非空实测值时才动态呈现，未解析出来前绝不预先占位)
+                          ...(currentBatch.mechanical?.tensile_rm && currentBatch.mechanical.tensile_rm.trim() !== '' ? [{
+                            fieldId: 'mech_tensile',
+                            methodFieldId: 'method_tensile',
+                            category: 'mechanical',
+                            categoryLabel: '力学',
+                            categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                            name: '抗拉强度 Rm',
+                            value: currentBatch.mechanical.tensile_rm,
+                            method: 'GB/T 228.1-2021',
+                            confidence: '98%',
+                            status: 'ok' as const,
+                          }] : []),
+                          ...(currentBatch.mechanical?.yield_rp02 && currentBatch.mechanical.yield_rp02.trim() !== '' ? [{
+                            fieldId: 'mech_yield',
+                            methodFieldId: 'method_tensile',
+                            category: 'mechanical',
+                            categoryLabel: '力学',
+                            categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                            name: '规定塑性延伸强度 Rp0.2',
+                            value: currentBatch.mechanical.yield_rp02,
+                            method: 'GB/T 228.1-2021',
+                            confidence: '97%',
+                            status: 'ok' as const,
+                          }] : []),
+                          ...(currentBatch.mechanical?.elongation_a && currentBatch.mechanical.elongation_a.trim() !== '' ? [{
+                            fieldId: 'mech_elongation',
+                            methodFieldId: 'method_tensile',
+                            category: 'mechanical',
+                            categoryLabel: '力学',
+                            categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                            name: '断后伸长率 A',
+                            value: currentBatch.mechanical.elongation_a,
+                            method: 'GB/T 228.1-2021',
+                            confidence: '99%',
+                            status: 'ok' as const,
+                          }] : []),
+                          ...(currentBatch.mechanical?.hardness && currentBatch.mechanical.hardness.trim() !== '' ? [{
+                            fieldId: 'mech_hardness',
+                            methodFieldId: 'method_hardness',
+                            category: 'mechanical',
+                            categoryLabel: '力学',
+                            categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                            name: '硬度 (Hardness)',
+                            value: currentBatch.mechanical.hardness,
+                            method: 'GB/T 4340.1-2024',
+                            confidence: '96%',
+                            status: 'ok' as const,
+                          }] : []),
+                          // 工艺性能 (依据原件提取或按标准要求)
+                          ...(currentBatch.process?.flattening && currentBatch.process.flattening.trim() !== '' ? [{
+                            fieldId: 'proc_flattening',
+                            methodFieldId: 'method_proc_flattening',
+                            category: 'process',
+                            categoryLabel: '工艺',
+                            categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                            name: '压扁试验 (Flattening)',
+                            value: currentBatch.process.flattening === 'PASS' ? '合格' : currentBatch.process.flattening,
+                            method: 'GB/T 246',
+                            confidence: '98%',
+                            status: (currentBatch.process.flattening.includes('不') || currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
+                          }] : []),
+                          ...(currentBatch.process?.flaring && currentBatch.process.flaring.trim() !== '' ? [{
+                            fieldId: 'proc_flaring',
+                            methodFieldId: 'method_proc_flaring',
+                            category: 'process',
+                            categoryLabel: '工艺',
+                            categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                            name: '扩口试验 (Flaring)',
+                            value: currentBatch.process.flaring === 'PASS' ? '合格' : currentBatch.process.flaring,
+                            method: 'GB/T 242',
+                            confidence: '98%',
+                            status: (currentBatch.process.flaring.includes('不') || currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
+                          }] : []),
+                          // 金相组织 (依据 Page 2 表头 GB/T 6394-2017)
+                          ...(currentBatch.process?.grainSize && currentBatch.process.grainSize.trim() !== '' ? [{
+                            fieldId: 'metallo_grain',
+                            methodFieldId: 'method_grain',
+                            category: 'metallographic',
+                            categoryLabel: '金相',
+                            categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
+                            name: '晶粒度评级 (Grain Size)',
+                            value: currentBatch.process.grainSize,
+                            method: 'GB/T 6394',
+                            confidence: '98%',
+                            status: 'ok' as const,
+                          }] : []),
+                          // 耐腐蚀试验
+                          ...(currentBatch.process?.intergranularCorrosion && currentBatch.process.intergranularCorrosion.trim() !== '' ? [{
+                            fieldId: 'corrosion_intergranular',
+                            methodFieldId: 'method_corrosion_intergranular',
+                            category: 'corrosion',
+                            categoryLabel: '腐蚀',
+                            categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
+                            name: '晶间腐蚀试验 (Intergranular Corrosion)',
+                            value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : currentBatch.process.intergranularCorrosion,
+                            method: 'GB/T 4334',
+                            confidence: '98%',
+                            status: (currentBatch.process.intergranularCorrosion.includes('不') || currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
+                          }] : []),
+                          // 无损检测 (仅在提取到数据时呈现)
+                          ...(currentBatch.process?.ndt && currentBatch.process.ndt.trim() !== '' ? [{
+                            fieldId: 'ndt_et',
+                            methodFieldId: 'method_ndt_et',
+                            category: 'ndt',
+                            categoryLabel: '探伤',
+                            categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                            name: '涡流探伤检验 (Eddy Current Test)',
+                            value: currentBatch.process.ndt,
+                            method: 'GB/T 7735-2016',
+                            confidence: currentBatch.process.ndt.includes('合格') ? '98%' : '50%',
+                            status: (currentBatch.process.ndt.includes('合格') ? 'ok' : 'warn') as 'ok' | 'warn',
+                            note: currentBatch.process.ndt.includes('合格') ? undefined : '未检出探伤结果',
+                          }] : []),
+                          // 几何尺寸规格 (当提取到几何尺寸时自动动态载入)
+                          ...(currentBatch.dimensions && currentBatch.dimensions.trim() !== '' ? [
+                            {
+                              fieldId: 'geo_dimensions',
+                              methodFieldId: 'method_geo_dimensions',
+                              category: 'geometric',
+                              categoryLabel: '尺寸',
+                              categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+                              name: '几何尺寸规格 (Dimensions)',
+                              value: currentBatch.dimensions,
+                              method: currentBatch.standard || '按订货标准要求',
+                              confidence: '99%',
+                              status: 'ok' as const,
+                            },
+                          ] : []),
+                        ];
+
+                        // 2. 动态计算当前批次包含的分类列表 (仅保留有数据的分类)
+                        const categoriesInBatch = [
+                          { key: 'all', label: '解析数据总览', count: allExtractItems.length },
+                          { key: 'chemical', label: '化学成分', count: allExtractItems.filter(i => i.category === 'chemical').length },
+                          { key: 'mechanical', label: '力学性能', count: allExtractItems.filter(i => i.category === 'mechanical').length },
+                          { key: 'process', label: '工艺性能', count: allExtractItems.filter(i => i.category === 'process').length },
+                          { key: 'metallographic', label: '金相组织', count: allExtractItems.filter(i => i.category === 'metallographic').length },
+                          { key: 'corrosion', label: '耐腐蚀试验', count: allExtractItems.filter(i => i.category === 'corrosion').length },
+                          { key: 'ndt', label: '无损检测', count: allExtractItems.filter(i => i.category === 'ndt').length },
+                          { key: 'geometric', label: '几何尺寸', count: allExtractItems.filter(i => i.category === 'geometric').length },
+                          { key: 'surface', label: '表面质量', count: allExtractItems.filter(i => i.category === 'surface').length },
+                          { key: 'other', label: '其他综合', count: allExtractItems.filter(i => i.category === 'other').length },
+                        ].filter(c => (c.key === 'all' && allExtractItems.length > 0) || c.count > 0);
+
+                        const displayedItems = activeTabCategory === 'all'
+                          ? allExtractItems
+                          : allExtractItems.filter(i => i.category === activeTabCategory);
+
+                        if (allExtractItems.length === 0) {
+                          return (
+                            <div className="p-8 border border-dashed border-outline-variant/50 dark:border-border-dark rounded-xl bg-surface-container-low/30 dark:bg-surface-dark-low/30 flex flex-col items-center justify-center text-center">
+                              <div className="w-10 h-10 rounded-full bg-surface-container-high dark:bg-surface-dark-high text-primary flex items-center justify-center mb-2.5 animate-pulse">
+                                <span className="material-symbols-outlined text-xl">auto_awesome</span>
+                              </div>
+                              <span className="text-xs font-bold text-on-surface dark:text-surface-bright">
+                                {isDocParsing ? '正在流式提取结构化检验项数据...' : '当前批次暂无实测检验项目数据'}
+                              </span>
+                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant mt-1">
+                                {isDocParsing ? '模型正在从源文档中解析化学成分、力学性能与工艺试验指标' : '可等待模型解析完成或在上方基础元数据中录入'}
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-2.5">
+                            {/* 动态页签导航条 (无数据类别自动隐藏，无冗余图标与多余文案) */}
+                            <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar border-b border-outline-variant/40 dark:border-border-dark pb-1.5">
+                              {categoriesInBatch.map(cat => {
+                                const isActive = activeTabCategory === cat.key;
+                                return (
+                                  <button
+                                    key={cat.key}
+                                    type="button"
+                                    onClick={() => setActiveTabCategory(cat.key)}
+                                    className={`text-xs px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${isActive
+                                      ? 'bg-primary text-on-primary font-bold shadow-xs'
+                                      : 'bg-surface-container-low dark:bg-surface-dark-low hover:bg-surface-container-high dark:hover:bg-surface-dark-high text-on-surface dark:text-surface-bright font-medium'
+                                      }`}
+                                  >
+                                    <span>{cat.label}</span>
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px]  font-bold ${isActive
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant'
+                                      }`}>
+                                      {cat.count}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* 1. 全部实测项总览 (平铺综合表格视图，结果与依据独立双向高亮联动) */}
+                            {activeTabCategory === 'all' && (
+                              <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl overflow-hidden shadow-2xs">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
+                                    <tr>
+                                      <th className="px-3.5 py-2.5 w-24 min-w-[90px] whitespace-nowrap">类别</th>
+                                      <th className="px-3.5 py-2.5 w-44 min-w-[130px]">检验项目</th>
+                                      <th className="px-3.5 py-2.5 min-w-[220px]">提取测得值 / 试验结果</th>
+                                      <th className="px-3.5 py-2.5 min-w-[190px]">试验依据方法 / 标准</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
+                                    {displayedItems.map((row, idx) => {
+                                      const isValueHighlighted = highlightedFieldId === row.fieldId;
+                                      const isMethodHighlighted = Boolean(row.methodFieldId && highlightedFieldId === row.methodFieldId);
+                                      const isRowActive = isValueHighlighted || isMethodHighlighted;
+                                      const numConfidence = parseInt(row.confidence?.replace('%', '') || '100', 10);
+                                      const isLowConfidence = row.status === 'warn' || numConfidence < 85;
+
+                                      return (
+                                        <tr
+                                          key={idx}
+                                          id={`right-field-${row.fieldId}`}
+                                          className={`transition-colors ${isRowActive
+                                            ? 'bg-primary/10 dark:bg-primary/20'
+                                            : 'hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40'
+                                            }`}
+                                        >
+                                          <td className="px-3.5 py-2 whitespace-nowrap">
+                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
+                                              {row.categoryLabel}
+                                            </span>
+                                          </td>
+                                          <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
+
+                                          {/* 1. 提取测得值 / 试验结果（常态处于可编辑状态，置信度预警仅保留⚠️，hover浮层出详情） */}
+                                          <td className="px-3.5 py-1.5">
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="relative flex-1 flex items-center max-w-[240px]">
+                                                <input
+                                                  type="text"
+                                                  value={row.value}
+                                                  onChange={(e) => handleUpdateExtractValue(row.fieldId, e.target.value)}
+                                                  onFocus={() => handleFieldHover(row.fieldId)}
+                                                  onMouseEnter={() => handleFieldHover(row.fieldId)}
+                                                  onMouseLeave={() => handleFieldHover(null)}
+                                                  title="常态处于可编辑状态；点击聚焦或悬浮可联动查看原件切图"
+                                                  className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer ${isValueHighlighted
+                                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
+                                                    : 'border-outline-variant/30 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim hover:border-primary/50'
+                                                    } ${row.unit ? 'pr-9' : ''}`}
+                                                />
+                                                {row.unit && (
+                                                  <span className="absolute right-2 text-xs font-normal text-outline-variant dark:text-outline-dark select-none pointer-events-none">
+                                                    {row.unit}
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {/* 置信度⚠️气泡：仅对 warn / <85% 置信度展示，悬浮展开完整工业说明 */}
+                                              {isLowConfidence && (
+                                                <div className="relative group flex items-center shrink-0">
+                                                  <span className="cursor-help text-xs text-amber-600 dark:text-amber-400 select-none px-1 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40">⚠️</span>
+                                                  <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20">
+                                                    <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                                                      <span className="material-symbols-outlined text-sm">warning</span>
+                                                      <span>OCR 置信度预警 ({row.confidence})</span>
+                                                    </div>
+                                                    <p className="mt-1 text-[11px] text-inverse-on-surface/90 leading-snug">
+                                                      {row.note || '抽取置信度低于 85% 工业安全阈值，请比对左侧原件切图核验'}
+                                                    </p>
+                                                    <div className="absolute bottom-full right-2 border-4 border-transparent border-b-inverse-surface" />
+                                                  </div>
+                                                </div>
                                               )}
                                             </div>
+                                          </td>
 
-                                            {/* 置信度警示：仅保留一个“⚠️”，鼠标 hover 时出现详情 */}
-                                            {isLowConfidence && (
-                                              <div className="relative group flex items-center shrink-0">
-                                                <span
-                                                  className="cursor-help text-xs text-amber-600 dark:text-amber-400 select-none px-1 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-                                                  aria-label="置信度警示"
-                                                >
-                                                  ⚠️
-                                                </span>
-                                                <div className={`absolute right-0 ${idx === 0 ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
-                                                  } hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20`}>
-                                                  <div className="font-bold flex items-center gap-1.5 text-amber-300">
-                                                    <span className="material-symbols-outlined text-sm">warning</span>
-                                                    <span>OCR 置信度预警 ({row.confidence})</span>
-                                                  </div>
-                                                  <p className="mt-1 text-[11px] text-inverse-on-surface/90 leading-snug">
-                                                    {row.note || '抽取置信度低于 85% 工业安全阈值，请比对左侧原件切图核验'}
-                                                  </p>
-                                                  <div className={`absolute ${idx === 0 ? 'bottom-full border-b-inverse-surface' : 'top-full border-t-inverse-surface'
-                                                    } right-2 border-4 border-transparent`} />
-                                                </div>
-                                              </div>
+                                          {/* 2. 试验依据方法 / 标准（独立 BBox 联动，无图标与边框） */}
+                                          <td className="px-3.5 py-2.5 text-[11px]">
+                                            {row.method && row.method !== '-' && row.methodFieldId ? (
+                                              <span
+                                                id={`right-field-${row.methodFieldId}`}
+                                                onMouseEnter={() => handleFieldHover(row.methodFieldId!)}
+                                                onMouseLeave={() => handleFieldHover(null)}
+                                                className={`inline-block transition-colors cursor-pointer ${isMethodHighlighted
+                                                  ? 'text-primary dark:text-primary-fixed-dim font-bold underline underline-offset-2 decoration-2'
+                                                  : 'text-on-surface-variant dark:text-outline-variant hover:text-primary hover:underline hover:underline-offset-2'
+                                                  }`}
+                                                title="悬浮查看源文档中该项依据的标准/方法条款位置"
+                                              >
+                                                {row.method}
+                                              </span>
+                                            ) : (
+                                              <span className="text-outline-variant dark:text-outline-dark">
+                                                {row.method || '-'}
+                                              </span>
                                             )}
-                                          </div>
-                                        </td>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
 
-                                        {/* 2. 试验依据方法 / 标准（独立 BBox 联动，无图标与边框） */}
-                                        <td className="px-3.5 py-2.5 text-[11px]">
-                                          {row.method && row.method !== '-' && row.methodFieldId ? (
-                                            <span
-                                              id={`right-field-${row.methodFieldId}`}
-                                              onMouseEnter={() => handleFieldHover(row.methodFieldId!)}
-                                              onMouseLeave={() => handleFieldHover(null)}
-                                              className={`inline-block transition-colors cursor-pointer ${isMethodHighlighted
-                                                ? 'text-primary dark:text-primary-fixed-dim font-bold underline underline-offset-2 decoration-2'
-                                                : 'text-on-surface-variant dark:text-outline-variant hover:text-primary hover:underline hover:underline-offset-2'
-                                                }`}
-                                              title="悬浮查看源文档中该项依据的标准/方法条款位置"
-                                            >
-                                              {row.method}
-                                            </span>
-                                          ) : (
-                                            <span className="text-outline-variant dark:text-outline-dark">
-                                              {row.method || '-'}
-                                            </span>
-                                          )}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
+                            {/* 2. 化学成分独立专业视图 */}
+                            {activeTabCategory === 'chemical' && (
+                              <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl overflow-hidden shadow-2xs">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
+                                    <tr>
+                                      <th className="px-3.5 py-2.5">化学元素 (Element)</th>
+                                      <th className="px-3.5 py-2.5">提取测得值 (wt%)</th>
+                                      <th className="px-3.5 py-2.5">检验依据方法</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
+                                    {currentBatch.chemical.filter(c => c.value && c.value.trim() !== '').map((row, idx) => {
+                                      const fieldId = `chem_${row.element}`;
+                                      const isHighlighted = highlightedFieldId === fieldId;
+                                      const numConfidence = parseInt(row.confidence?.replace('%', '') || '100', 10);
+                                      const isLowConfidence = row.status === 'warn' || numConfidence < 85;
 
-                          {/* 2. 化学成分独立专业视图 */}
-                          {activeTabCategory === 'chemical' && (
-                            <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl overflow-hidden shadow-2xs">
-                              <table className="w-full text-left text-xs">
-                                <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
-                                  <tr>
-                                    <th className="px-3.5 py-2.5">化学元素 (Element)</th>
-                                    <th className="px-3.5 py-2.5">提取测得值 (wt%)</th>
-                                    <th className="px-3.5 py-2.5">检验依据方法</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
-                                  {currentBatch.chemical.map((row, idx) => {
-                                    const fieldId = `chem_${row.element}`;
-                                    const isHighlighted = highlightedFieldId === fieldId;
-                                    const numConfidence = parseInt(row.confidence?.replace('%', '') || '100', 10);
-                                    const isLowConfidence = row.status === 'warn' || numConfidence < 85;
+                                      return (
+                                        <tr
+                                          key={idx}
+                                          id={`right-field-${fieldId}`}
+                                          onMouseEnter={() => handleFieldHover(fieldId)}
+                                          onMouseLeave={() => handleFieldHover(null)}
+                                          className={`transition-colors cursor-pointer ${isHighlighted
+                                            ? 'bg-primary/15 dark:bg-primary/25 ring-1 ring-primary/50'
+                                            : 'hover:bg-surface-container-low/50 dark:hover:bg-surface-dark-low/50'
+                                            }`}
+                                        >
+                                          <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.element}</td>
+                                          <td className="px-3.5 py-1.5">
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="relative flex-1 flex items-center max-w-[150px]">
+                                                <input
+                                                  type="text"
+                                                  value={row.value}
+                                                  onChange={(e) => handleUpdateExtractValue(fieldId, e.target.value)}
+                                                  onFocus={() => handleFieldHover(fieldId)}
+                                                  className="w-full text-xs font-bold rounded border pr-9 px-2.5 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark border-outline-variant/30 dark:border-border-dark hover:border-primary/50 transition-all"
+                                                />
+                                                <span className="absolute right-2 text-xs font-normal text-outline-variant dark:text-outline-dark select-none pointer-events-none">
+                                                  wt%
+                                                </span>
+                                              </div>
+                                              {isLowConfidence && (
+                                                <div className="relative group flex items-center shrink-0">
+                                                  <span className="cursor-help text-xs text-amber-600 dark:text-amber-400 select-none px-1 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40">⚠️</span>
+                                                  <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20">
+                                                    <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                                                      <span className="material-symbols-outlined text-sm">warning</span>
+                                                      <span>OCR 置信度预警 ({row.confidence})</span>
+                                                    </div>
+                                                    <p className="mt-1 text-[11px] text-inverse-on-surface/90 leading-snug">
+                                                      {row.note || '抽取置信度低于 85% 工业安全阈值，请比对左侧原件切图核验'}
+                                                    </p>
+                                                    <div className="absolute bottom-full right-2 border-4 border-transparent border-b-inverse-surface" />
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="px-3.5 py-2 text-outline-variant dark:text-outline-dark text-[11px]">- (未声明独立方法)</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
 
-                                    return (
-                                      <tr
-                                        key={idx}
-                                        id={`right-field-${fieldId}`}
-                                        onMouseEnter={() => handleFieldHover(fieldId)}
+                            {/* 3. 力学性能独立专业视图 */}
+                            {activeTabCategory === 'mechanical' && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-3 text-xs">
+                                <div className="space-y-1.5">
+                                  <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                    拉伸与硬度力学性能实测 (Mechanical Tensile & Hardness)
+                                  </span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                    {currentBatch.mechanical?.tensile_rm && (
+                                      <div
+                                        id="right-field-mech_tensile"
+                                        onMouseEnter={() => handleFieldHover('mech_tensile')}
                                         onMouseLeave={() => handleFieldHover(null)}
-                                        className={`transition-colors cursor-pointer ${isHighlighted
-                                          ? 'bg-primary/15 dark:bg-primary/25 ring-1 ring-primary/50'
-                                          : 'hover:bg-surface-container-low/50 dark:hover:bg-surface-dark-low/50'
+                                        className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_tensile'
+                                          ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                          : 'border-outline-variant/30 hover:border-primary/50'
                                           }`}
                                       >
-                                        <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.element}</td>
-                                        <td className="px-3.5 py-1.5">
-                                          <div className="flex items-center gap-1.5">
-                                            <div className="relative flex-1 flex items-center max-w-[150px]">
-                                              <input
-                                                type="text"
-                                                value={row.value}
-                                                onChange={(e) => handleUpdateExtractValue(fieldId, e.target.value)}
-                                                onFocus={() => handleFieldHover(fieldId)}
-                                                className="w-full text-xs font-bold rounded border pr-9 px-2.5 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark border-outline-variant/30 dark:border-border-dark hover:border-primary/50 transition-all"
-                                              />
-                                              <span className="absolute right-2 text-xs font-normal text-outline-variant dark:text-outline-dark select-none pointer-events-none">
-                                                wt%
-                                              </span>
-                                            </div>
-                                            {isLowConfidence && (
-                                              <div className="relative group flex items-center shrink-0">
-                                                <span className="cursor-help text-xs text-amber-600 dark:text-amber-400 select-none px-1 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40">⚠️</span>
-                                                <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20">
-                                                  <div className="font-bold flex items-center gap-1.5 text-amber-300">
-                                                    <span className="material-symbols-outlined text-sm">warning</span>
-                                                    <span>OCR 置信度预警 ({row.confidence})</span>
-                                                  </div>
-                                                  <p className="mt-1 text-[11px] text-inverse-on-surface/90 leading-snug">
-                                                    {row.note || '抽取置信度低于 85% 工业安全阈值，请比对左侧原件切图核验'}
-                                                  </p>
-                                                  <div className="absolute bottom-full right-2 border-4 border-transparent border-b-inverse-surface" />
-                                                </div>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </td>
-                                        <td className="px-3.5 py-2 text-outline-variant dark:text-outline-dark text-[11px]">- (未声明独立方法)</td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
+                                        <span className="text-on-surface-variant dark:text-outline-variant">抗拉强度 Rm:</span>
+                                        <input
+                                          type="text"
+                                          value={currentBatch.mechanical.tensile_rm}
+                                          onChange={(e) => handleUpdateExtractValue('mech_tensile', e.target.value)}
+                                          onFocus={() => handleFieldHover('mech_tensile')}
+                                          className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
+                                        />
+                                      </div>
+                                    )}
+                                    {currentBatch.mechanical?.yield_rp02 && (
+                                      <div
+                                        id="right-field-mech_yield"
+                                        onMouseEnter={() => handleFieldHover('mech_yield')}
+                                        onMouseLeave={() => handleFieldHover(null)}
+                                        className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_yield'
+                                          ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                          : 'border-outline-variant/30 hover:border-primary/50'
+                                          }`}
+                                      >
+                                        <span className="text-on-surface-variant dark:text-outline-variant">规定塑性延伸强度 Rp0.2:</span>
+                                        <input
+                                          type="text"
+                                          value={currentBatch.mechanical.yield_rp02}
+                                          onChange={(e) => handleUpdateExtractValue('mech_yield', e.target.value)}
+                                          onFocus={() => handleFieldHover('mech_yield')}
+                                          className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
+                                        />
+                                      </div>
+                                    )}
+                                    {currentBatch.mechanical?.elongation_a && (
+                                      <div
+                                        id="right-field-mech_elongation"
+                                        onMouseEnter={() => handleFieldHover('mech_elongation')}
+                                        onMouseLeave={() => handleFieldHover(null)}
+                                        className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_elongation'
+                                          ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                          : 'border-outline-variant/30 hover:border-primary/50'
+                                          }`}
+                                      >
+                                        <span className="text-on-surface-variant dark:text-outline-variant">断后伸长率 A (%):</span>
+                                        <input
+                                          type="text"
+                                          value={currentBatch.mechanical.elongation_a}
+                                          onChange={(e) => handleUpdateExtractValue('mech_elongation', e.target.value)}
+                                          onFocus={() => handleFieldHover('mech_elongation')}
+                                          className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
+                                        />
+                                      </div>
+                                    )}
+                                    {currentBatch.mechanical?.hardness && (
+                                      <div
+                                        id="right-field-mech_hardness"
+                                        onMouseEnter={() => handleFieldHover('mech_hardness')}
+                                        onMouseLeave={() => handleFieldHover(null)}
+                                        className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_hardness'
+                                          ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                          : 'border-outline-variant/30 hover:border-primary/50'
+                                          }`}
+                                      >
+                                        <span className="text-on-surface-variant dark:text-outline-variant">硬度 (Hardness):</span>
+                                        <input
+                                          type="text"
+                                          value={currentBatch.mechanical.hardness || ''}
+                                          placeholder="免检 (壁厚<1.7mm)"
+                                          onChange={(e) => handleUpdateExtractValue('mech_hardness', e.target.value)}
+                                          onFocus={() => handleFieldHover('mech_hardness')}
+                                          className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
 
-                          {/* 3. 力学性能独立专业视图 */}
-                          {activeTabCategory === 'mechanical' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-3 text-xs">
-                              <div className="space-y-1.5">
+                                {currentBatch.mechanical.astFormulaNote && (
+                                  <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-[12px] flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-base text-amber-600 dark:text-amber-400">auto_awesome</span>
+                                    <span>{currentBatch.mechanical.astFormulaNote}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* 4. 工艺性能独立专业视图 */}
+                            {activeTabCategory === 'process' && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs">
                                 <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
-                                  拉伸与硬度力学性能实测 (Mechanical Tensile & Hardness)
+                                  工艺成型试验条款实测 (Process Flattening & Bending)
                                 </span>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                {currentBatch.process?.flattening && (
                                   <div
-                                    id="right-field-mech_tensile"
-                                    onMouseEnter={() => handleFieldHover('mech_tensile')}
+                                    id="right-field-proc_flattening"
+                                    onMouseEnter={() => handleFieldHover('proc_flattening')}
                                     onMouseLeave={() => handleFieldHover(null)}
-                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_tensile'
+                                    className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flattening'
                                       ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
                                       : 'border-outline-variant/30 hover:border-primary/50'
                                       }`}
                                   >
-                                    <span className="text-on-surface-variant dark:text-outline-variant">抗拉强度 Rm:</span>
-                                    <input
-                                      type="text"
-                                      value={currentBatch.mechanical.tensile_rm}
-                                      onChange={(e) => handleUpdateExtractValue('mech_tensile', e.target.value)}
-                                      onFocus={() => handleFieldHover('mech_tensile')}
-                                      className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
-                                    />
+                                    <div>
+                                      <strong className="text-on-surface dark:text-surface-bright block">压扁试验 (Flattening Test)</strong>
+                                      <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 246 金属管压扁试验方法</span>
+                                    </div>
+                                    <strong className={(!currentBatch.process.flattening.includes('不') && !currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
+                                      {currentBatch.process.flattening === 'PASS' ? '合格' : currentBatch.process.flattening}
+                                    </strong>
                                   </div>
+                                )}
+                                {currentBatch.process?.flaring && (
                                   <div
-                                    id="right-field-mech_yield"
-                                    onMouseEnter={() => handleFieldHover('mech_yield')}
+                                    id="right-field-proc_flaring"
+                                    onMouseEnter={() => handleFieldHover('proc_flaring')}
                                     onMouseLeave={() => handleFieldHover(null)}
-                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_yield'
+                                    className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flaring'
                                       ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
                                       : 'border-outline-variant/30 hover:border-primary/50'
                                       }`}
                                   >
-                                    <span className="text-on-surface-variant dark:text-outline-variant">规定塑性延伸强度 Rp0.2:</span>
-                                    <input
-                                      type="text"
-                                      value={currentBatch.mechanical.yield_rp02}
-                                      onChange={(e) => handleUpdateExtractValue('mech_yield', e.target.value)}
-                                      onFocus={() => handleFieldHover('mech_yield')}
-                                      className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
-                                    />
+                                    <div>
+                                      <strong className="text-on-surface dark:text-surface-bright block">扩口试验 (Flaring Test)</strong>
+                                      <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 242 金属管扩口试验方法</span>
+                                    </div>
+                                    <strong className={(!currentBatch.process.flaring.includes('不') && !currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
+                                      {currentBatch.process.flaring === 'PASS' ? '合格' : currentBatch.process.flaring}
+                                    </strong>
                                   </div>
-                                  <div
-                                    id="right-field-mech_elongation"
-                                    onMouseEnter={() => handleFieldHover('mech_elongation')}
-                                    onMouseLeave={() => handleFieldHover(null)}
-                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_elongation'
-                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                      : 'border-outline-variant/30 hover:border-primary/50'
-                                      }`}
-                                  >
-                                    <span className="text-on-surface-variant dark:text-outline-variant">断后伸长率 A (%):</span>
-                                    <input
-                                      type="text"
-                                      value={currentBatch.mechanical.elongation_a}
-                                      onChange={(e) => handleUpdateExtractValue('mech_elongation', e.target.value)}
-                                      onFocus={() => handleFieldHover('mech_elongation')}
-                                      className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
-                                    />
-                                  </div>
-                                  <div
-                                    id="right-field-mech_hardness"
-                                    onMouseEnter={() => handleFieldHover('mech_hardness')}
-                                    onMouseLeave={() => handleFieldHover(null)}
-                                    className={`p-2.5 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'mech_hardness'
-                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                      : 'border-outline-variant/30 hover:border-primary/50'
-                                      }`}
-                                  >
-                                    <span className="text-on-surface-variant dark:text-outline-variant">硬度 (Hardness):</span>
-                                    <input
-                                      type="text"
-                                      value={currentBatch.mechanical.hardness || ''}
-                                      placeholder="免检 (壁厚<1.7mm)"
-                                      onChange={(e) => handleUpdateExtractValue('mech_hardness', e.target.value)}
-                                      onFocus={() => handleFieldHover('mech_hardness')}
-                                      className="text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 max-w-[200px]"
-                                    />
-                                  </div>
-                                </div>
+                                )}
                               </div>
+                            )}
 
-                              {currentBatch.mechanical.astFormulaNote && (
-                                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-[12px] flex items-center gap-2">
-                                  <span className="material-symbols-outlined text-base text-amber-600 dark:text-amber-400">auto_awesome</span>
-                                  <span>{currentBatch.mechanical.astFormulaNote}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* 4. 工艺性能独立专业视图 */}
-                          {activeTabCategory === 'process' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs">
-                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
-                                工艺成型试验条款实测 (Process Flattening & Bending)
-                              </span>
-                              {currentBatch.process.flattening ? (
+                            {/* 5. 金相组织独立专业视图 */}
+                            {activeTabCategory === 'metallographic' && currentBatch.process?.grainSize && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
+                                <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                  金相组织与晶粒度实测 (Metallographic & Grain Size)
+                                </span>
                                 <div
-                                  id="right-field-proc_flattening"
-                                  onMouseEnter={() => handleFieldHover('proc_flattening')}
+                                  id="right-field-metallo_grain"
+                                  onMouseEnter={() => handleFieldHover('metallo_grain')}
                                   onMouseLeave={() => handleFieldHover(null)}
-                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flattening'
+                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'metallo_grain'
                                     ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
                                     : 'border-outline-variant/30 hover:border-primary/50'
                                     }`}
                                 >
                                   <div>
-                                    <strong className="text-on-surface dark:text-surface-bright block">压扁试验 (Flattening Test)</strong>
-                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 246 金属管压扁试验方法</span>
+                                    <strong className="text-on-surface dark:text-surface-bright block">晶粒度评级 (Grain Size)</strong>
+                                    <span className="text-[11px] text-on-surface-variant">依据标准：GB/T 6394 金属平均晶粒度测定方法 (比较法)</span>
                                   </div>
-                                  <strong className={(!currentBatch.process.flattening.includes('不') && !currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
-                                    {currentBatch.process.flattening === 'PASS' ? '合格' : currentBatch.process.flattening}
+                                  <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
+                                    {currentBatch.process.grainSize || '7.0 级'}
                                   </strong>
                                 </div>
-                              ) : null}
-                              {currentBatch.process.flaring ? (
-                                <div
-                                  id="right-field-proc_flaring"
-                                  onMouseEnter={() => handleFieldHover('proc_flaring')}
-                                  onMouseLeave={() => handleFieldHover(null)}
-                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'proc_flaring'
-                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                    : 'border-outline-variant/30 hover:border-primary/50'
-                                    }`}
-                                >
-                                  <div>
-                                    <strong className="text-on-surface dark:text-surface-bright block">扩口试验 (Flaring Test)</strong>
-                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 242 金属管扩口试验方法</span>
-                                  </div>
-                                  <strong className={(!currentBatch.process.flaring.includes('不') && !currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? 'text-status-pass-text font-bold text-sm' : 'text-status-fail-text font-bold text-sm'}>
-                                    {currentBatch.process.flaring === 'PASS' ? '合格' : currentBatch.process.flaring}
-                                  </strong>
-                                </div>
-                              ) : null}
-                            </div>
-                          )}
-
-                          {/* 5. 金相组织独立专业视图 */}
-                          {activeTabCategory === 'metallographic' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
-                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
-                                金相组织与晶粒度实测 (Metallographic & Grain Size)
-                              </span>
-                              <div
-                                id="right-field-metallo_grain"
-                                onMouseEnter={() => handleFieldHover('metallo_grain')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'metallo_grain'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                  : 'border-outline-variant/30 hover:border-primary/50'
-                                  }`}
-                              >
-                                <div>
-                                  <strong className="text-on-surface dark:text-surface-bright block">晶粒度评级 (Grain Size)</strong>
-                                  <span className="text-[11px] text-on-surface-variant">依据标准：GB/T 6394 金属平均晶粒度测定方法 (比较法)</span>
-                                </div>
-                                <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
-                                  {currentBatch.process.grainSize || '7.0 级'}
-                                </strong>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          {/* 6. 耐腐蚀试验独立专业视图 */}
-                          {activeTabCategory === 'corrosion' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
-                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
-                                不锈钢耐腐蚀试验实测 (Corrosion Resistance)
-                              </span>
-                              {currentBatch.process.intergranularCorrosion ? (
+                            {/* 6. 耐腐蚀试验独立专业视图 */}
+                            {activeTabCategory === 'corrosion' && currentBatch.process?.intergranularCorrosion && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
+                                <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                  不锈钢耐腐蚀试验实测 (Corrosion Resistance)
+                                </span>
                                 <div
                                   id="right-field-corrosion_intergranular"
                                   onMouseEnter={() => handleFieldHover('corrosion_intergranular')}
@@ -2675,89 +2951,88 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     {currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : currentBatch.process.intergranularCorrosion}
                                   </strong>
                                 </div>
-                              ) : null}
-                            </div>
-                          )}
-
-                          {/* 7. 无损检测独立专业视图 */}
-                          {activeTabCategory === 'ndt' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
-                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
-                                承压管道无损探伤检验 (Non-Destructive Testing)
-                              </span>
-                              <div
-                                id="right-field-ndt_et"
-                                onMouseEnter={() => handleFieldHover('ndt_et')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'ndt_et'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                  : 'border-outline-variant/30 hover:border-primary/50'
-                                  }`}
-                              >
-                                <div>
-                                  <strong className="text-on-surface dark:text-surface-bright block">无损探伤 / 水压替代 (NDT / Hydrostatic Alternative)</strong>
-                                  <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 7735 (涡流 E3H) / GB/T 5777 (超声 U2)</span>
-                                </div>
-                                <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
-                                  {currentBatch.process.ndt}
-                                </strong>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          {/* 8. 几何尺寸独立专业视图 */}
-                          {activeTabCategory === 'geometric' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
-                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
-                                几何公差与尺寸检验 (Geometric Tolerances)
-                              </span>
-                              <div
-                                id="right-field-geo_dimensions"
-                                onMouseEnter={() => handleFieldHover('geo_dimensions')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'geo_dimensions'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                  : 'border-outline-variant/30 hover:border-primary/50'
-                                  }`}
-                              >
-                                <div>
-                                  <strong className="text-on-surface dark:text-surface-bright block">外径与壁厚公差实测 (OD & WT)</strong>
-                                  <span className="text-[11px] text-on-surface-variant">依据标准：GB/T 13296-2023 第 5.2 条款 (精密级)</span>
+                            {/* 7. 无损检测独立专业视图 */}
+                            {activeTabCategory === 'ndt' && currentBatch.process?.ndt && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
+                                <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                  承压管道无损探伤检验 (Non-Destructive Testing)
+                                </span>
+                                <div
+                                  id="right-field-ndt_et"
+                                  onMouseEnter={() => handleFieldHover('ndt_et')}
+                                  onMouseLeave={() => handleFieldHover(null)}
+                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'ndt_et'
+                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                    : 'border-outline-variant/30 hover:border-primary/50'
+                                    }`}
+                                >
+                                  <div>
+                                    <strong className="text-on-surface dark:text-surface-bright block">无损探伤 / 水压替代 (NDT / Hydrostatic Alternative)</strong>
+                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 7735 (涡流 E3H) / GB/T 5777 (超声 U2)</span>
+                                  </div>
+                                  <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
+                                    {currentBatch.process.ndt}
+                                  </strong>
                                 </div>
-                                <strong className="text-status-pass-text font-bold text-sm">合格 OK</strong>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          {/* 9. 表面质量独立专业视图 */}
-                          {activeTabCategory === 'surface' && (
-                            <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
-                              <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
-                                表面宏观与微观质量检验 (Surface Quality)
-                              </span>
-                              <div
-                                id="right-field-surface_quality"
-                                onMouseEnter={() => handleFieldHover('surface_quality')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'surface_quality'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                  : 'border-outline-variant/30 hover:border-primary/50'
-                                  }`}
-                              >
-                                <div>
-                                  <strong className="text-on-surface dark:text-surface-bright block">内外部表面缺陷目视与内窥镜检验</strong>
-                                  <span className="text-[11px] text-on-surface-variant">无裂纹、折叠、轧折、离层和结疤</span>
+                            {/* 8. 几何尺寸独立专业视图 */}
+                            {activeTabCategory === 'geometric' && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
+                                <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                  几何公差与尺寸检验 (Geometric Tolerances)
+                                </span>
+                                <div
+                                  id="right-field-geo_dimensions"
+                                  onMouseEnter={() => handleFieldHover('geo_dimensions')}
+                                  onMouseLeave={() => handleFieldHover(null)}
+                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'geo_dimensions'
+                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                    : 'border-outline-variant/30 hover:border-primary/50'
+                                    }`}
+                                >
+                                  <div>
+                                    <strong className="text-on-surface dark:text-surface-bright block">外径与壁厚公差实测 (OD & WT)</strong>
+                                    <span className="text-[11px] text-on-surface-variant">依据标准：GB/T 13296-2023 第 5.2 条款 (精密级)</span>
+                                  </div>
+                                  <strong className="text-status-pass-text font-bold text-sm">合格 OK</strong>
                                 </div>
-                                <strong className="text-status-pass-text font-bold text-sm">{currentBatch.surfaceQuality || '合格'}</strong>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                            )}
+
+                            {/* 9. 表面质量独立专业视图 */}
+                            {activeTabCategory === 'surface' && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
+                                <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
+                                  表面宏观与微观质量检验 (Surface Quality)
+                                </span>
+                                <div
+                                  id="right-field-surface_quality"
+                                  onMouseEnter={() => handleFieldHover('surface_quality')}
+                                  onMouseLeave={() => handleFieldHover(null)}
+                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'surface_quality'
+                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                    : 'border-outline-variant/30 hover:border-primary/50'
+                                    }`}
+                                >
+                                  <div>
+                                    <strong className="text-on-surface dark:text-surface-bright block">内外部表面缺陷目视与内窥镜检验</strong>
+                                    <span className="text-[11px] text-on-surface-variant">无裂纹、折叠、轧折、离层和结疤</span>
+                                  </div>
+                                  <strong className="text-status-pass-text font-bold text-sm">{currentBatch.surfaceQuality || '合格'}</strong>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
-              </div>
               )}
             </div>
           </section>
@@ -3657,193 +3932,193 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
-                {/* 左侧 40%：A4 拟真打印预览纸张 (带 PASS / REJECT 对角线水印章) */}
-                <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-sheet flex flex-col items-center">
-                  <div className="flex justify-between items-center w-full mb-3 pb-2 border-b border-outline-variant/40 dark:border-border-dark">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-xl">description</span>
-                      <h3 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
-                        {isPass ? '智能报告预览' : '不合格拒收说明报告预览'}
-                      </h3>
-                    </div>
-                    <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_in</span>
-                  </div>
-
-                  {/* A4 尺寸拟真白底纸张 */}
-                  <div className="paper-texture border border-outline-variant/40 rounded p-6 relative w-full max-w-[380px] min-h-[480px] shadow-sm flex flex-col justify-between overflow-hidden">
-
-                    {/* 斜向水印大章 */}
-                    <div
-                      className={`absolute inset-0 flex items-center justify-center pointer-events-none select-none -rotate-25 font-bold text-7xl uppercase opacity-15 ${isPass ? 'text-status-pass-text' : 'text-status-fail-text'
-                        }`}
-                    >
-                      {isPass ? 'PASS' : 'REJECT'}
+                  {/* 左侧 40%：A4 拟真打印预览纸张 (带 PASS / REJECT 对角线水印章) */}
+                  <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-sheet flex flex-col items-center">
+                    <div className="flex justify-between items-center w-full mb-3 pb-2 border-b border-outline-variant/40 dark:border-border-dark">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-xl">description</span>
+                        <h3 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
+                          {isPass ? '智能报告预览' : '不合格拒收说明报告预览'}
+                        </h3>
+                      </div>
+                      <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_in</span>
                     </div>
 
-                    <div className="space-y-4 relative z-10">
-                      <div className="text-center border-b pb-3 border-outline-variant/30">
-                        <h4 className="text-base font-bold font-headline text-on-surface">
-                          {isPass ? '材料合规性核验报告' : '物资不合格拒收处置报告'}
-                        </h4>
-                        <span className=" text-[10px] text-on-surface-variant tracking-wider">
-                          REPORT NO: {currentBatch?.reportNo || '--'}
-                        </span>
+                    {/* A4 尺寸拟真白底纸张 */}
+                    <div className="paper-texture border border-outline-variant/40 rounded p-6 relative w-full max-w-[380px] min-h-[480px] shadow-sm flex flex-col justify-between overflow-hidden">
+
+                      {/* 斜向水印大章 */}
+                      <div
+                        className={`absolute inset-0 flex items-center justify-center pointer-events-none select-none -rotate-25 font-bold text-7xl uppercase opacity-15 ${isPass ? 'text-status-pass-text' : 'text-status-fail-text'
+                          }`}
+                      >
+                        {isPass ? 'PASS' : 'REJECT'}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-[11px]  border-b pb-3 border-outline-variant/30 text-on-surface">
-                        <div>
-                          <span className="text-on-surface-variant block">生成时间:</span>
-                          <strong>{new Date().toISOString().slice(0, 16).replace('T', ' ')}</strong>
+                      <div className="space-y-4 relative z-10">
+                        <div className="text-center border-b pb-3 border-outline-variant/30">
+                          <h4 className="text-base font-bold font-headline text-on-surface">
+                            {isPass ? '材料合规性核验报告' : '物资不合格拒收处置报告'}
+                          </h4>
+                          <span className=" text-[10px] text-on-surface-variant tracking-wider">
+                            REPORT NO: {currentBatch?.reportNo || '--'}
+                          </span>
                         </div>
-                        <div>
-                          <span className="text-on-surface-variant block">检验员:</span>
-                          <strong>{currentBatch.inspector || 'QC-Engineer'}</strong>
-                        </div>
-                        <div>
-                          <span className="text-on-surface-variant block">标准依据:</span>
-                          <strong>{currentBatch.standard || activeStandard || '--'}</strong>
-                        </div>
-                        <div>
-                          <span className="text-on-surface-variant block">结论:</span>
-                          <strong className={isPass ? 'text-status-pass-text' : 'text-status-fail-text'}>
-                            {isPass ? '合格 PASS' : '拒收 REJECT'}
-                          </strong>
-                        </div>
-                      </div>
 
-                      <div className="bg-surface-container-low/60 dark:bg-surface-dark-low/60 rounded p-3 text-[11px]  space-y-1">
-                        <span className="font-bold block text-on-surface">关键数据汇总:</span>
-                        <div className="flex justify-between text-on-surface">
-                          <span className="text-on-surface-variant">炉号:</span>
-                          <span>{currentBatch.heatNo || '--'}</span>
-                        </div>
-                        <div className="flex justify-between text-on-surface">
-                          <span className="text-on-surface-variant">批次:</span>
-                          <span>{currentBatch.batchNo || '--'}</span>
-                        </div>
-                        <div className="flex justify-between text-on-surface">
-                          <span className="text-on-surface-variant">牌号:</span>
-                          <span className="text-primary font-bold">{currentBatch.grade || activeGrade || '--'}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-outline-variant/30 flex justify-between items-end text-[10px]  text-on-surface-variant relative z-10">
-                      <span className="truncate max-w-[180px]">指纹: {currentBatch.sha256Hash ? `${currentBatch.sha256Hash.slice(0, 16)}...` : session.sessionId.replace(/-/g, '').slice(0, 16)}</span>
-                      <div className="text-right shrink-0">
-                        <span>电子签名: </span>
-                        <strong className="italic text-primary font-serif">{currentBatch.inspector || 'QA-Signature'}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 右侧 60%：导出格式选择、存证摘要与归档网络路径 */}
-                <div className="lg:col-span-7 space-y-4">
-
-                  {/* 导出格式 2x2 大卡片网格 */}
-                  <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-xs space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-xl">file_download</span>
-                      <h3 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
-                        导出格式选择
-                      </h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                      {[
-                        { id: 'PDF', title: 'PDF (盖章版)', desc: '包含电子签名与红色质量专用章，适合最终交付与存档。', icon: 'picture_as_pdf', color: 'text-red-500' },
-                        { id: 'EXCEL', title: 'Excel (明细版)', desc: '包含所有化学成分与力学实测原始数据对照表。', icon: 'table_view', color: 'text-emerald-600' },
-                        { id: 'JSON', title: 'JSON (系统级接口)', desc: '结构化数据，供下游 ERP/MES 系统自动化集成调用。', icon: 'data_object', color: 'text-amber-500' },
-                        { id: 'CA', title: 'CA (区块链存证)', desc: '生成带唯一指纹 hash 的数字存证包，防篡改。', icon: 'verified_user', color: 'text-purple-600' },
-                      ].map(fmt => {
-                        const isSelected = selectedExportFormat === fmt.id;
-                        return (
-                          <div
-                            key={fmt.id}
-                            onClick={() => setSelectedExportFormat(fmt.id)}
-                            className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${isSelected
-                              ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs'
-                              : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
-                              }`}
-                          >
-                            <div className="flex justify-between items-start mb-2">
-                              <span className={`material-symbols-outlined text-2xl ${fmt.color}`}>
-                                {fmt.icon}
-                              </span>
-                              {isSelected && (
-                                <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-lg fill-1" style={{ fontVariationSettings: "'FILL' 1" }}>
-                                  check_circle
-                                </span>
-                              )}
-                            </div>
-                            <div>
-                              <strong className="text-xs font-bold block text-on-surface dark:text-surface-bright">{fmt.title}</strong>
-                              <p className="text-[11px] text-on-surface-variant dark:text-outline-variant mt-1 leading-snug">{fmt.desc}</p>
-                            </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]  border-b pb-3 border-outline-variant/30 text-on-surface">
+                          <div>
+                            <span className="text-on-surface-variant block">生成时间:</span>
+                            <strong>{new Date().toISOString().slice(0, 16).replace('T', ' ')}</strong>
                           </div>
-                        );
-                      })}
+                          <div>
+                            <span className="text-on-surface-variant block">检验员:</span>
+                            <strong>{currentBatch.inspector || 'QC-Engineer'}</strong>
+                          </div>
+                          <div>
+                            <span className="text-on-surface-variant block">标准依据:</span>
+                            <strong>{currentBatch.standard || activeStandard || '--'}</strong>
+                          </div>
+                          <div>
+                            <span className="text-on-surface-variant block">结论:</span>
+                            <strong className={isPass ? 'text-status-pass-text' : 'text-status-fail-text'}>
+                              {isPass ? '合格 PASS' : '拒收 REJECT'}
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="bg-surface-container-low/60 dark:bg-surface-dark-low/60 rounded p-3 text-[11px]  space-y-1">
+                          <span className="font-bold block text-on-surface">关键数据汇总:</span>
+                          <div className="flex justify-between text-on-surface">
+                            <span className="text-on-surface-variant">炉号:</span>
+                            <span>{currentBatch.heatNo || '--'}</span>
+                          </div>
+                          <div className="flex justify-between text-on-surface">
+                            <span className="text-on-surface-variant">批次:</span>
+                            <span>{currentBatch.batchNo || '--'}</span>
+                          </div>
+                          <div className="flex justify-between text-on-surface">
+                            <span className="text-on-surface-variant">牌号:</span>
+                            <span className="text-primary font-bold">{currentBatch.grade || activeGrade || '--'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-outline-variant/30 flex justify-between items-end text-[10px]  text-on-surface-variant relative z-10">
+                        <span className="truncate max-w-[180px]">指纹: {currentBatch.sha256Hash ? `${currentBatch.sha256Hash.slice(0, 16)}...` : session.sessionId.replace(/-/g, '').slice(0, 16)}</span>
+                        <div className="text-right shrink-0">
+                          <span>电子签名: </span>
+                          <strong className="italic text-primary font-serif">{currentBatch.inspector || 'QA-Signature'}</strong>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* 存证与审计摘要 */}
-                  <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-xs space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-xl">shield</span>
-                      <h3 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
-                        存证与审计摘要
-                      </h3>
+                  {/* 右侧 60%：导出格式选择、存证摘要与归档网络路径 */}
+                  <div className="lg:col-span-7 space-y-4">
+
+                    {/* 导出格式 2x2 大卡片网格 */}
+                    <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-xs space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-xl">file_download</span>
+                        <h3 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
+                          导出格式选择
+                        </h3>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {[
+                          { id: 'PDF', title: 'PDF (盖章版)', desc: '包含电子签名与红色质量专用章，适合最终交付与存档。', icon: 'picture_as_pdf', color: 'text-red-500' },
+                          { id: 'EXCEL', title: 'Excel (明细版)', desc: '包含所有化学成分与力学实测原始数据对照表。', icon: 'table_view', color: 'text-emerald-600' },
+                          { id: 'JSON', title: 'JSON (系统级接口)', desc: '结构化数据，供下游 ERP/MES 系统自动化集成调用。', icon: 'data_object', color: 'text-amber-500' },
+                          { id: 'CA', title: 'CA (区块链存证)', desc: '生成带唯一指纹 hash 的数字存证包，防篡改。', icon: 'verified_user', color: 'text-purple-600' },
+                        ].map(fmt => {
+                          const isSelected = selectedExportFormat === fmt.id;
+                          return (
+                            <div
+                              key={fmt.id}
+                              onClick={() => setSelectedExportFormat(fmt.id)}
+                              className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${isSelected
+                                ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs'
+                                : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
+                                }`}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <span className={`material-symbols-outlined text-2xl ${fmt.color}`}>
+                                  {fmt.icon}
+                                </span>
+                                {isSelected && (
+                                  <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-lg fill-1" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                    check_circle
+                                  </span>
+                                )}
+                              </div>
+                              <div>
+                                <strong className="text-xs font-bold block text-on-surface dark:text-surface-bright">{fmt.title}</strong>
+                                <p className="text-[11px] text-on-surface-variant dark:text-outline-variant mt-1 leading-snug">{fmt.desc}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs ">
-                      <div>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">存证哈希值 (SHA-256)</span>
-                        <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright truncate">
-                          {currentBatch?.sha256Hash || session.sessionId.replace(/-/g, '').slice(0, 32)}
-                        </div>
+                    {/* 存证与审计摘要 */}
+                    <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-5 shadow-xs space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-xl">shield</span>
+                        <h3 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright">
+                          存证与审计摘要
+                        </h3>
                       </div>
 
-                      <div>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">操作员 ID</span>
-                        <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                          {currentBatch?.inspector || 'QC-Engineer (智能核验员)'}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs ">
+                        <div>
+                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">存证哈希值 (SHA-256)</span>
+                          <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright truncate">
+                            {currentBatch?.sha256Hash || session.sessionId.replace(/-/g, '').slice(0, 32)}
+                          </div>
                         </div>
-                      </div>
 
-                      <div>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">核验总耗时</span>
-                        <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                          {sessionMetrics.totalDurationSeconds > 0 ? `${sessionMetrics.totalDurationSeconds.toFixed(1)}s` : '1.2s'} (模型提取 + 规则引擎)
+                        <div>
+                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">操作员 ID</span>
+                          <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
+                            {currentBatch?.inspector || 'QC-Engineer (智能核验员)'}
+                          </div>
                         </div>
-                      </div>
 
-                      <div>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">规则引擎版本</span>
-                        <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                          NormScale-Core v2.4.0 (GB/T 13296)
+                        <div>
+                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">核验总耗时</span>
+                          <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
+                            {sessionMetrics.totalDurationSeconds > 0 ? `${sessionMetrics.totalDurationSeconds.toFixed(1)}s` : '1.2s'} (模型提取 + 规则引擎)
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">规则引擎版本</span>
+                          <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
+                            NormScale-Core v2.4.0 (GB/T 13296)
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* 归档位置 */}
-                  <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-4 shadow-xs flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-2xl">cloud_done</span>
-                      <div>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">主服务器归档路径</span>
-                        <span className=" text-xs text-on-surface dark:text-surface-bright font-bold">
+                    {/* 归档位置 */}
+                    <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-4 shadow-xs flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-2xl">cloud_done</span>
+                        <div>
+                          <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">主服务器归档路径</span>
+                          <span className=" text-xs text-on-surface dark:text-surface-bright font-bold">
                           //archive-storage/records/{new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/{session.sessionId}/{currentBatch?.batchNo || 'BATCH-01'}/
-                        </span>
+                          </span>
+                        </div>
                       </div>
+                      <button type="button" className="text-primary dark:text-primary-fixed-dim text-xs font-bold hover:underline">
+                        修改路径
+                      </button>
                     </div>
-                    <button type="button" className="text-primary dark:text-primary-fixed-dim text-xs font-bold hover:underline">
-                      修改路径
-                    </button>
                   </div>
                 </div>
-              </div>
               )}
             </div>
           </section>
@@ -3914,7 +4189,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   : 'bg-primary hover:bg-primary-container text-on-primary cursor-pointer'
                   }`}
               >
-                <span>下一步：解析文档并核对数据</span>
+                <span>解析文档，核对数据</span>
                 <span className="material-symbols-outlined text-base">arrow_forward</span>
               </button>
             )}
@@ -3925,7 +4200,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 onClick={() => goToStep(2)}
                 className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
               >
-                <span>核对完成，开始比对</span>
+                <span>核对完成，比对标准</span>
                 <span className="material-symbols-outlined text-base">arrow_forward</span>
               </button>
             )}

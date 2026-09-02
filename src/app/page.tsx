@@ -28,7 +28,7 @@ export default function DashboardPage() {
     standards: StandardOverviewDto[];
   }>();
   const [samples, setSamples] = useState<PresetSampleDto[]>([]);
-  const [selectedSampleId, setSelectedSampleId] = useState<string>('316l_kgf_sample');
+  const [selectedSampleId, setSelectedSampleId] = useState<string>('');
   const [options] = useState<WorkflowOptions>({
     minConfidenceThreshold: 0.8,
     skipSemanticReview: false,

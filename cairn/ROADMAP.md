@@ -23,7 +23,7 @@
 - [x] **Phase 6: API 服务层与物资验收决策看板原型**
 - [x] **Phase 7: NormScale 业务工作流与全套前端页面深度纵向贯通**
 - [x] **Phase 8: NormScale 专用的 MTC 质保书内建解析层、多文档异步并发调度与流式终端 (Native Parser & Async Worker Pool)**
-- [x] **Phase 9: 真实文档解析、OpenAI 兼容模型直连、MD5 抽取结果持久化缓存与严格错误门禁引擎 (Real Document Parsing & MD5 Cache Engine)**
+- [x] **Phase 9: 步骤 1 真实文档预处理、文本层分离、两级缓存索引与配置项版本失效门禁引擎 (Document Preprocessing, Two-Tier Cache & Version Invalidation Engine)**
 - [ ] **Phase 10: 多标准引用规则叠加与双标尺透明追溯引擎 (上线前必达 / Pre-launch Mandatory)**
   - 核心定位：处理工业质保书同时引用多份标准（如通用产品标准 GB/T 13296 与特种设备订货技术条件 NB/T 47019.5）的复杂技术契约
   - 算法实现：`composeMultiStandardSlices()` 纯函数切片合成器，实现“检验项目取并集、共有指标取严苛交集（包络线原则 / Strict Superiority）”
@@ -33,11 +33,12 @@
 - [ ] **Phase 11: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 10)**
   - 扩充管材、板材、锻件等多品类标准规则库
   - 升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），对接生产级分布式向量库
+  - 接入后端 PaddleOCR (ONNX Runtime) 服务，用于纯图片与扫描件（`isTextBased === false`）的物理字符 Token 坐标抽取与 `tokens.json` 统一格式产出
   - 全链路结构化日志、可观测性追踪与 Docker 容器化打包
 
 ## 开放问题 (Open Questions)
 
-1. **[已解决] PDF 真实原件预览、视窗缩放、抓手平移与 BBox 坐标对齐方案**：已在 Step 2 全面落地。前端采用客户端 PDF.js 高保真栅格化为多页页面图列表（`currentDoc.pages`），解除原生 iframe 沙箱限制，100% 复用 `<img>` + 自适应百分比 BBox 标注层；鼠标 hover 右侧解析字段平滑滚动并 200% 聚光灯聚焦放大，左侧抓手拖拽与 50%~300% 缩放绝对物理对齐，并提供原件直显保底与缓存同名去重机制。
+1. **[已解决] 工业 PDF 与扫描件物理 BBox 定位与视觉放大方案**：已全面落地。矢量 PDF 通过客户端 PDF.js 提取 Token 百分比坐标并由 `BBoxAnchorMatcher` 自动回溯匹配，无矢量文本的扫描件规划由后端 PaddleOCR 生成统一 `tokens.json`；前端 100% 消费标准 `bboxes` 并在步骤 2 支持鼠标 Hover 150% 聚光灯聚焦放大与视窗平滑滚动。
 2. **[待实现·上线前必达] 质保书双标准/多标准引用的叠加裁决**：当前两套标准规则切片已解耦入库，设计规范已在 `cairn/multi-standard-engine.md` 定稿。遵循“前端构建优先”原则暂缓后端大改，但上线前必须在引擎层闭环 `composeMultiStandardSlices` 与双标尺透出。
 3. **标准知识库浏览器入口形态**：标准知识库采用“顶部导航 Tab 切换独立页面”，还是“主看板内唤出右侧全屏 Drawer/Modal”？
 4. **DocEx 联调协议字段对齐**：DocEx 抽取端点输出结构是否严格以 NormScale 的 `RawCertificatePayload` 契约为准？

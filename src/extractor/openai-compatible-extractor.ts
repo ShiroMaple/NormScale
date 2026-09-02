@@ -21,6 +21,10 @@ export interface LlmConfigItem {
 }
 
 export interface AppConfig {
+  parser?: {
+    version: string;
+    description?: string;
+  };
   llm: {
     timeoutMs: number;
     maxRetries: number;
@@ -50,6 +54,7 @@ export class ModelApiExecutionError extends Error {
  * 
  * 遵循标准 OpenAI /v1/chat/completions REST 规范，支持 Moonshot / OpenAI / DeepSeek /
  * Qwen / Ollama 等任意兼容端点。
+ * 支持文本层（extractedText）与高保真分页切图（pageImages）双模态融合输入。
  * 严格门禁：未配置有效 API Key 或调用异常时绝对不静默拟真，直接抛出具名异常。
  * ============================================================================
  */
@@ -59,13 +64,14 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
   private activeConfig: LlmConfigItem;
   private timeoutMs: number;
   private maxRetries: number;
+  private appConfig: AppConfig;
 
   constructor(customConfig?: Partial<LlmConfigItem>, timeoutMs?: number) {
-    const configData = this.loadAppConfig();
-    const defaultConfig = configData.llm.configs.find(c => c.isDefault) || configData.llm.configs[0]!;
+    this.appConfig = this.loadAppConfig();
+    const defaultConfig = this.appConfig.llm.configs.find(c => c.isDefault) || this.appConfig.llm.configs[0]!;
     this.activeConfig = { ...defaultConfig, ...customConfig };
-    this.timeoutMs = timeoutMs || configData.llm.timeoutMs || 60000;
-    this.maxRetries = configData.llm.maxRetries || 2;
+    this.timeoutMs = timeoutMs || this.appConfig.llm.timeoutMs || 60000;
+    this.maxRetries = this.appConfig.llm.maxRetries || 2;
   }
 
   private loadAppConfig(): AppConfig {
@@ -80,6 +86,10 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
     }
 
     return {
+      parser: {
+        version: '1.0.0',
+        description: '工业 MTC 质保书通用提取 Schema 与双模态 Prompt V1',
+      },
       llm: {
         timeoutMs: 60000,
         maxRetries: 2,
@@ -96,6 +106,10 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
         ],
       },
     };
+  }
+
+  public getParserConfigVersion(): string {
+    return this.appConfig.parser?.version || '1.0.0';
   }
 
   public getResolvedApiKey(): string {
@@ -116,14 +130,14 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
    */
   public static readonly SYSTEM_EXTRACTION_PROMPT = `
 你是一个专业的工业金属材料质量证明书 (MTC / Mill Test Certificate) 结构化抽取专家。
-请仔细分析用户传入的质保书内容，准确提取全部字段信息，严格输出符合以下规范的纯 JSON 数据格式（不要包裹除 JSON 以外的任何说明文本）：
+请仔细分析用户传入的质保书图文内容（结合提取的文本层与页面切图），准确提取全部字段信息，严格输出符合以下规范的纯 JSON 数据格式（不要包裹除 JSON 以外的任何说明文本）：
 
 {
   "header": {
     "certificateNo": "质保书编号 / 材质单号",
     "productName": "产品品名 (如 锅炉、热交换器用不锈钢无缝钢管)",
     "declaredStandard": "执行标准 (如 GB/T 13296-2023, NB/T 47019.5-2021)",
-    "declaredGrade": "材料牌号 (如 S32168, 06Cr18Ni11Ti)",
+    "declaredGrade": "材料牌号 (如 S32168, 06Cr18Ni11Ti, 022Cr17Ni12Mo2)",
     "supplierName": "供货/制造厂家名称",
     "constructionNo": "施工号/项目号",
     "heatNo": "冶炼炉号",
@@ -146,87 +160,39 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       ],
       "mechanical": {
         "tensile_rm": "抗拉强度实测值 (如 621 MPa)",
-        "yield_rp02": "屈服强度实测值 (如 268 MPa)",
-        "elongation_a": "断后伸长率 (如 57.5 %)",
+        "yield_rp02": "规定塑性延伸强度 Rp0.2 实测值 (如 268 MPa)",
+        "elongation_a": "断后伸长率实测值 (如 57.5 %)",
         "hardness": "硬度实测值 (如 139.3 HV1)"
       },
       "process": {
         "flattening": "PASS",
         "flaring": "PASS",
         "intergranularCorrosion": "PASS",
+        "grainSize": "7.0 级",
         "ndt": "涡流与超声探伤合格"
-      }
+      },
+      "dimensions": "规格尺寸 (如 OD 15.0mm × WT 0.8mm × L 6000mm)"
+    }
+  ],
+  "bboxes": [
+    {
+      "id": "字段标识 (如 meta_certificateNo, meta_declaredStandard, meta_declaredGrade, meta_heatNo, meta_packNo, chem_C, mech_tensile, mech_yield, mech_elongation, mech_hardness)",
+      "page": 1,
+      "x": 74.0,
+      "y": 13.5,
+      "w": 16.0,
+      "h": 2.2,
+      "label": "质保书编号"
     }
   ]
 }
+注意：
+1. bboxes 中的 x, y, w, h 均采用百分比数值 (0.0 ~ 100.0)，page 从 1 开始编号；若模型无法精确定位坐标，可返回空数组 []；
+2. 保持数据绝对真实客观，若单据中未提及某字段则对应置为空字符串 "" 或 null，严禁伪造不存在的数据。
 `.trim();
 
-  private async resolveInputText(
-    input: Buffer | Uint8Array | string,
-    filename: string,
-    apiKey: string
-  ): Promise<string> {
-    if (typeof input === 'string') {
-      return input;
-    }
-
-    const buffer = Buffer.from(input);
-
-    // 若配置为 Moonshot (Kimi) 官方服务，优先调用 Moonshot /v1/files 文件抽取端点
-    if (this.activeConfig.baseUrl.includes('moonshot.cn')) {
-      try {
-        const fileExtractUrl = `${this.activeConfig.baseUrl.replace(/\/+$/, '')}/files`;
-        const formData = new FormData();
-        const blob = new Blob([buffer], { type: filename.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream' });
-        formData.append('file', blob, filename || '质保书.pdf');
-        formData.append('purpose', 'file-extract');
-
-        const uploadRes = await fetch(fileExtractUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: formData,
-        });
-
-        if (uploadRes.ok) {
-          const uploadData = await uploadRes.json();
-          const fileId = uploadData.id;
-          if (fileId) {
-            const contentRes = await fetch(`${this.activeConfig.baseUrl.replace(/\/+$/, '')}/files/${fileId}/content`, {
-              headers: { Authorization: `Bearer ${apiKey}` },
-            });
-            if (contentRes.ok) {
-              const contentData = await contentRes.json();
-              const extractedText = contentData.content || (typeof contentData === 'string' ? contentData : '');
-              // 异步清理服务端临时文件
-              fetch(`${this.activeConfig.baseUrl.replace(/\/+$/, '')}/files/${fileId}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${apiKey}` },
-              }).catch(() => {});
-
-              if (extractedText && extractedText.trim().length > 0) {
-                logger.info('EXTRACTOR', `[Moonshot-File-Extract] 成功从文件提取文本 (${extractedText.length} 字符)`);
-                return extractedText;
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        logger.warn('EXTRACTOR', `[Moonshot-File-Extract] 尝试文件解析端点失败: ${err.message}`);
-      }
-    }
-
-    const rawText = buffer.toString('utf-8');
-    if (!rawText.startsWith('%PDF-')) {
-      return rawText;
-    }
-
-    return `文件名: ${filename}\n(PDF 物理文件已提交，请提取质保书标准、牌号、批次与化学/力学性能实测指标)`;
-  }
-
   /**
-   * 执行大模型抽取调用 (OpenAI Compatible)
+   * 执行大模型抽取调用 (OpenAI Compatible 双模态输入)
    */
   public async extract(
     input: Buffer | Uint8Array | string,
@@ -246,11 +212,28 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       'EXTRACTOR',
       `OpenAI兼容抽取 [${this.activeConfig.model} @ ${endpoint}]`,
       async () => {
-        const textContent = await this.resolveInputText(
-          input,
-          options?.filename || '质保书.pdf',
-          apiKey
-        );
+        // 构建双模态 User Prompt
+        let textPrompt = `请对以下工业质保书 (${options?.filename || '质保书.pdf'}) 进行多炉批与全项理化检验数据结构化提取。`;
+        if (options?.extractedText && options.extractedText.trim().length > 0) {
+          textPrompt += `\n\n【PDF 矢量文本层分离内容（供高精度文本核验）】：\n${options.extractedText.slice(0, 30000)}`;
+        } else if (typeof input === 'string' && input.length > 0) {
+          textPrompt += `\n\n【文本内容】：\n${input.slice(0, 30000)}`;
+        }
+
+        let userContent: any = textPrompt;
+
+        // 若传入了各页 PNG 高清切图，组装为标准 OpenAI Vision 多模态消息
+        if (options?.pageImages && options.pageImages.length > 0) {
+          const parts: any[] = [{ type: 'text', text: textPrompt }];
+          options.pageImages.forEach((img) => {
+            const imgUrl = img.startsWith('data:') ? img : `data:image/png;base64,${img}`;
+            parts.push({
+              type: 'image_url',
+              image_url: { url: imgUrl, detail: 'high' },
+            });
+          });
+          userContent = parts;
+        }
 
         const requestBody = {
           model: this.activeConfig.model,
@@ -258,7 +241,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
             { role: 'system', content: OpenAiCompatibleExtractor.SYSTEM_EXTRACTION_PROMPT },
             {
               role: 'user',
-              content: `请对以下工业质保书内容进行结构化提取：\n\n${textContent.slice(0, 30000)}`,
+              content: userContent,
             },
           ],
           temperature: 1, // Kimi 及主流推理模型严格要求 temperature: 1
@@ -328,6 +311,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
                 dimensions: parsed.header?.dimensions || '',
               },
               batches: Array.isArray(parsed.batches) ? parsed.batches : [],
+              bboxes: Array.isArray(parsed.bboxes) ? parsed.bboxes : [],
               test_records: [],
               rawText: contentStr,
               tokens: {
@@ -398,7 +382,8 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       gradeMatchConfidence: 95,
       chemical: Array.isArray(b.chemical) ? b.chemical : [],
       mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
-      process: b.process || { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '' },
+      process: b.process || { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '', grainSize: b.grainSize },
+      surfaceQuality: b.surfaceQuality || b.process?.surfaceQuality || '',
       reportNo: `QA-${Date.now().toString().slice(-8)}`,
       sha256Hash: `SHA256-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
       inspector: 'Auto-AI-Inspector',

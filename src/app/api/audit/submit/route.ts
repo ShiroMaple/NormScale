@@ -47,8 +47,10 @@ export async function POST(request: Request) {
     } else if (rawPayload) {
       inputData = JSON.stringify(rawPayload);
     } else {
-      // 默认使用典型工业样本
-      inputData = 's30408_messy_sample';
+      return NextResponse.json(
+        { success: false, error: '请求必须提供 rawPayload 结构化数据或 sampleId' },
+        { status: 400 }
+      );
     }
 
     const result = await serverWorkflowEngine.submitAudit(inputData, options);

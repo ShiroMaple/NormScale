@@ -317,6 +317,59 @@ export const AdminConsole: React.FC = () => {
           <div className="lg:col-span-5 space-y-4">
             
             {/* 全局参数 */}
+            {/* 抽取配置项与 Prompt 版本管理卡片 */}
+            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-primary text-base">rule_settings</span>
+                  <span>抽取 Schema 与 Prompt 配置项版本</span>
+                </h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono font-bold">
+                  v{appConfig.parser?.version || '1.0.0'}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div>
+                  <label className="block text-on-surface-variant text-[11px] mb-1">
+                    当前配置项版本号 (修改并保存后，旧版本解析缓存将自动安全失效)
+                  </label>
+                  <input
+                    type="text"
+                    value={appConfig.parser?.version || '1.0.0'}
+                    onChange={e => setAppConfig({
+                      ...appConfig,
+                      parser: {
+                        version: e.target.value,
+                        description: appConfig.parser?.description || '工业 MTC 质保书通用提取 Schema 与双模态 Prompt V1',
+                      },
+                    })}
+                    className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary font-mono text-xs"
+                    placeholder="如 1.0.0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-on-surface-variant text-[11px] mb-1">
+                    配置项描述 / 变更说明 (与 certificate.schema.ts 结构与 Prompt 绑定)
+                  </label>
+                  <input
+                    type="text"
+                    value={appConfig.parser?.description || ''}
+                    onChange={e => setAppConfig({
+                      ...appConfig,
+                      parser: {
+                        version: appConfig.parser?.version || '1.0.0',
+                        description: e.target.value,
+                      },
+                    })}
+                    className="w-full border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1.5 px-2.5 text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary text-xs"
+                    placeholder="如：工业 MTC 质保书通用提取 Schema 与双模态 Prompt V1"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 全局参数 */}
             <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs space-y-3">
               <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-primary text-base">timer</span>

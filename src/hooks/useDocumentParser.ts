@@ -91,9 +91,17 @@ export function useDocumentParser(
         const formData = new FormData();
         if (file) {
           formData.append('file', file);
-        } else {
-          formData.append('sampleId', docId);
-          formData.append('filename', doc.filename);
+        }
+        if (doc.md5) {
+          formData.append('md5', doc.md5);
+        }
+        formData.append('sampleId', docId);
+        formData.append('filename', doc.filename);
+        if (doc.pages && doc.pages.length > 0) {
+          formData.append('pageImages', JSON.stringify(doc.pages));
+        }
+        if (doc.extractedText) {
+          formData.append('extractedText', doc.extractedText);
         }
         if (forceReparse) {
           formData.append('forceReparse', 'true');

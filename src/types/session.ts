@@ -72,7 +72,8 @@ export interface BatchSpecimen {
 }
 
 export interface SessionDocument {
-  docId: string;               // 文档 ID，如 "doc_01"
+  docId: string;               // 文档 ID，如 "doc_8d566b29"
+  md5?: string;                // 文件真实二进制内容 MD5 哈希指纹
   filename: string;            // 物理文件名，如 "Baosteel_S30408_Tube_MTC.pdf"
   fileSize: string;            // 文件大小，如 "1.2 MB"
   uploadTime: string;          // 上传时间
@@ -80,6 +81,8 @@ export interface SessionDocument {
   pageCount: number;           // 页数
   pages?: string[];            // 真实高清切图 / 页面 URL 列表 (如 [dataUrl1, dataUrl2, ...] 或 ["/samples/zpje/page-1.png", ...])
   samplePages?: string[];      // 兼容旧字段别名
+  extractedText?: string;      // 客户端从 PDF 文本层分离抽取的纯文本内容
+  isTextBased?: boolean;       // 是否包含可提取文本层
   batches: BatchSpecimen[];    // 文档内包含的各炉批号/试样
 }
 

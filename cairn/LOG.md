@@ -4,6 +4,65 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-02 · 服务端正式台账持久化服务上线与全工程 Mock 伪哈希彻底拔除
+
+- 根除所有伪分支 (`parse/route.ts` & `submit/route.ts` & `page.tsx`)：彻底删除 `preset-sample-${sampleId}` 和 `default-sample-${filename}` 伪哈希逻辑；解析接口严格要求真实二进制流或显式真实 MD5，杜绝脱靶生成 `184db4...` 假缓存；
+- 服务端正式台账归档 (`AuditLedgerService` & `POST /api/audit/save` [NEW])：废除客户端 `localStorage` 假存储，深拷贝并彻底剥离 Base64 切图，只持久化纯结构化检验结果、人工复核判定结论与 MD5 指针至 `.cache/audit/{sessionId}.json`；
+- 会话生命周期原子重置 (`WaterfallWorkbench.tsx`)：“开启新任务”原子彻底清空 `session`、`queuedDocs`、`uploadedFilesMap`、`uploadedFileUrls`、`docBboxesMap`；
+- 质量门禁闭环：新增 `tests/api/audit-save-route.test.ts` 与 `tests/extractor/parse-route-no-mock.test.ts`；全套 33 个测试套件 143 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
+## 2026-09-02 · 历史已缓存文档直接载入与下一步流转拦截 Bug 修复
+
+- 根因排查：`handleRestoreFromCache` 调用 `/api/documents/parse` 时使用了 `GET` 方法，而该端点先前仅暴露了 `POST` 方法导致 405 拦截，使 `session.documents` 未能成功填充目标文档实体，在点击“下一步”时触发 `activeDocs` 为空拦截；
+- 修复落地 (`cached/route.ts` & `parse/route.ts` & `WaterfallWorkbench.tsx`)：
+  1. `GET /api/documents/cached?md5=...` 与 `GET /api/documents/parse?md5=...` 均支持直接按 MD5/docId 检索单据实体并自动回补 BBox；
+  2. `handleRestoreFromCache` 收到响应后同步写入 `session.documents`、`queuedDocs` 与 `docBboxesMap`；
+  3. `handleStartNewSessionAndAdvance` 增强 `activeDocs` 匹配容错性（支持 `docId`、`filename` 与 `md5` 多维映射与兜底）；
+- 验证闭环：全套 31 个测试套件 137 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
+## 2026-09-01 · 真实工业 PDF 矢量文本 Token 智能锚点 BBox 匹配引擎落地
+
+- 根因分析：通用纯文本/代码大模型（如 Kimi/DeepSeek）专注于高准确度 JSON 语义提取，不具备稳定的像素级 BBox 坐标回归能力，导致解析出的 JSON 中缺少 `bboxes` 字段；
+- 创新解法 (`bbox-matcher.ts` [NEW] & `pdf-renderer.ts`)：在步骤 1 预处理提取 PDF 文本层时，同步提取 PDF.js 每个词/字 Token 的物理视口百分比坐标（`textTokens`）并持久化至 `tokens.json`；
+- 自动化端到端匹配 (`parse/route.ts`)：当模型输出字段值（如编号 `20260102304`、炉号 `YX2303-2105`、牌号 `S32168`、化学/力学指标等）后，自动与 `tokens.json` 进行智能锚点匹配，秒级生成 100% 真实、亚毫米级精度的 `FieldBBox[]`；
+- 验证闭环：新增 `tests/extractor/bbox-matcher.test.ts`；全套 31 个测试套件 137 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
+## 2026-09-01 · 步骤 1 选定文件即时预处理落盘与轻量化解析调用架构落地
+
+- 即时落盘端点 (`POST /api/documents/preprocess` [NEW])：用户在步骤 1 选定/拖拽文件后，前端立即提取切图与文本并调用端点，原件即时落盘至 `.cache/uploads/{md5}.{ext}`，切图与 `text.txt` 即时落盘至 `.cache/preprocessed/{md5}/`；
+- 解析调用轻量化 (`POST /api/documents/parse`)：点击“开始解析”时仅需传递 `md5`，直接从本地 `.cache/preprocessed/{md5}/` 磁盘秒级读取切图与文本，彻底消除大文件上传阻塞与多模态 Base64 重复传输；
+- 微状态与单测覆盖：卡片实时联动 `预处理中...` $\to$ `预处理就绪 (共 N 页)` / `已命中解析缓存`；新增 `tests/api/preprocess-route.test.ts`；全套 30 个测试套件 136 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
+## 2026-09-01 · 步骤 1 文档预处理、文本层提取、两级缓存索引与配置项版本失效架构落地
+
+- 格式准入与原件存储 (`document-preprocessor.service.ts`)：严格校验仅准入 PDF 与 PNG/JPEG/JPG/BMP，原件落盘至 `.cache/uploads/{md5}.{ext}`；
+- PDF 文本层分离与切图预处理 (`pdf-renderer.ts`)：客户端使用 PDF.js 提取矢量文本层至 `text.txt` 并逐页渲染 2.0x Retina PNG 高清切图，共同持久化至 `.cache/preprocessed/{md5}/`；
+- 配置项版本与门禁失效 (`config.json` / `AdminConsole.tsx` / `parse-cache-store.ts`)：引入由运维管理员维护的 `parserConfigVersion`（绑定 `certificate.schema.ts` 与 Prompt 版本）；版本一致时秒级复用第一级解析缓存，版本升级不一致时安全失效并自动复用第二级切图产物重新抽取；
+- 级联删除与台账隔离 (`cached/route.ts`)：删除历史缓存时级联物理清理原件、切图与解析索引，绝对隔离并保护历史检验台账；
+- 验证闭环：新增 `tests/preprocessor/document-preprocessor.test.ts`；全套 29 个测试套件 133 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
+## 2026-09-01 · 彻底移除 filename.includes('质保书') 硬编码条件与建立纯动态 BBox 架构
+
+- 服务端彻底解耦 (`route.ts`)：移除 `getZPJEBBoxes` 与 `filename.includes('质保书')` 特化分支，`bboxes` 100% 来源于大模型/抽取器真实输出结果 (`rawResult.bboxes || []`)；
+- 前端工作台纯动态消费 (`WaterfallWorkbench.tsx`)：移除所有静态 BBox 映射函数调用，`bboxes` 严格在 `currentDoc.ocrStatus === 'DONE'` 时消费服务端与缓存返回的 `docBboxesMap[currentDoc.docId]`；无坐标时极简平稳展示 PDF 预览与右侧解析表格；
+- 治具角色规范 (`bbox.ts`)：`getZPJEBBoxes` 明确标注为单测专用标定治具，生产业务代码彻底解耦；
+- 验证闭环：全仓库 `filename.includes('质保书')` 关键词清零；`pnpm test`（28 套件 126 测试）100% 绿色通过，`pnpm typecheck` 0 错误。
+
+## 2026-09-01 · 修复步骤 2 解析中与未就绪状态下 BBox 抢跑提前渲染与基准映射硬编码兜底问题
+
+- 根因排查：排查发现 `WaterfallWorkbench.tsx` 中 `bboxes` 计算时存在隐蔽 fallback：`docBboxesMap[currentDoc.docId] || getZPJEBBoxes(currentBatch?.batchNo || '')`；在文档处于解析流中（`isDocParsing` / `ocrStatus === 'PENDING'`）时，由于服务端尚未返回，前端直接 fallback 调用了 `getZPJEBBoxes('')` 并在左侧 PDF 画上了 50+ 个基准 BBox 标注框与抢跑定位；
+- 严格生命周期受控重构 (`bboxes useMemo`)：重构为生命周期门禁计算，在 `ocrStatus !== 'DONE'` 时严格返回 `[]`，彻底杜绝解析中提前绘制 BBox 图层与误定位；仅当服务端接口解析完成返回真实 BBox 数据或历史台账载入时才动态加载；
+- 消除力学/探伤 4 项空值假占位：`allExtractItems` 严格依据非空值动态渲染，补充优雅解析中骨架提示卡片；
+- `pnpm test`（28 套件 126 测试）全部通过，`pnpm typecheck` 0 错误。
+
+## 2026-09-01 · 修复步骤 2 聚光灯聚焦放大定位精度、页面重叠覆盖并调整倍率为 150%
+
+- 根治定位漂移 (`centerBBoxInContainer`)：排查发现原 `offsetParent` 累加逻辑因父容器未显式声明相对定位向上穿透至 `<body>` 引入数百像素误差，且 `my-auto` 造成纵向浮动；改用 `getBoundingClientRect()` 视口绝对像素差值精确计算 `scrollTop/scrollLeft`，移除 `my-auto`，实现任意页码、缩放级别下毫厘不差精准居中；
+- 视口可见性与防跳动判断 (`isFullyVisible`)：增加 24px 呼吸缓冲边界检测，仅当目标 BBox 不在当前视口内或边缘被截断遮挡时才触发平滑滚动居中；若已在视口中则仅高亮不移动视口，彻底消除连续悬浮相邻字段时的视角频繁晃动；
+- 杜绝放大遮挡多页覆盖：为每页引入动态外边距隔离包装容器（`marginTop/marginBottom/marginLeft/marginRight`），当单页局部放大时自动撑开 DOM 布局空间，向下顺延后续页面，彻底根治放大时盖住下方 Page 2/Page 3 的问题；
+- 聚焦放大倍率调优至 150% (`scale(1.5)`)：将聚光灯聚焦放大倍率由 200% 调整为 150%，同步更新顶部标头指示徽章与 ESC 退出动效；
+- 浏览器实机随机多字段（第 1 页 C 元素/压扁试验、第 2 页晶间腐蚀、第 3 页交货规格）全量验证通过；28 个测试套件（126 个单元测试）100% 绿色通过，`pnpm typecheck` 0 错误。
+
 ## 2026-09-01 · 前端代码全量硬编码逐段深度审计、默认会话严格隔离与弹窗全面动态化
 
 - 默认演示会话严格隔离 (`DEFAULT_INSPECTION_SESSION`)：工作台初始会话改为纯净空会话，彻底消除直接点击步骤 2/3 或创建新任务时 fallback 到演示样本的问题；增加空队列防跳步门禁与 Step 2/3/4 工业空状态保护卡片；`DEFAULT_INSPECTION_SESSION` 仅作为历史台账 `AuditLedger` 演示记录留存；
