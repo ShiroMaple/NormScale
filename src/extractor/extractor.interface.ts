@@ -27,6 +27,8 @@ export interface ExtractOptions {
   enableOcrConfidence?: boolean;
   /** 自定义特定提取提示词（用于针对特殊排版质保书的增强提取） */
   customPrompt?: string;
+  /** 是否要求大模型在输出中包含视觉坐标 bboxes (false 默认表示由预处理 tokens.json 物理锚定) */
+  includeBbox?: boolean;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
 import { logger } from '../logger/index.ts';
 import { PerformanceProfiler } from '../logger/profiler.ts';
 import { SessionDocument, BatchSpecimen } from '../types/session.ts';
+import { buildDynamicExtractionPrompt } from './prompt-builder.ts';
 
 export interface LlmConfigItem {
   id: string;
@@ -60,6 +61,7 @@ export class ModelApiExecutionError extends Error {
  */
 export class OpenAiCompatibleExtractor implements ICertificateExtractor {
   public readonly providerName = 'openai-compatible-extractor';
+  public static readonly SYSTEM_EXTRACTION_PROMPT = buildDynamicExtractionPrompt({ includeBbox: true });
 
   private activeConfig: LlmConfigItem;
   private timeoutMs: number;
@@ -126,72 +128,6 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
   }
 
   /**
-   * 结构化质保书解析 Prompt
-   */
-  public static readonly SYSTEM_EXTRACTION_PROMPT = `
-你是一个专业的工业金属材料质量证明书 (MTC / Mill Test Certificate) 结构化抽取专家。
-请仔细分析用户传入的质保书图文内容（结合提取的文本层与页面切图），准确提取全部字段信息，严格输出符合以下规范的纯 JSON 数据格式（不要包裹除 JSON 以外的任何说明文本）：
-
-{
-  "header": {
-    "certificateNo": "质保书编号 / 材质单号",
-    "productName": "产品品名 (如 锅炉、热交换器用不锈钢无缝钢管)",
-    "declaredStandard": "执行标准 (如 GB/T 13296-2023, NB/T 47019.5-2021)",
-    "declaredGrade": "材料牌号 (如 S32168, 06Cr18Ni11Ti, 022Cr17Ni12Mo2)",
-    "supplierName": "供货/制造厂家名称",
-    "constructionNo": "施工号/项目号",
-    "heatNo": "冶炼炉号",
-    "packNo": "热处理装炉号",
-    "deliveryState": "交货状态 (如 固溶退火)",
-    "dimensions": "规格尺寸 (如 OD 15.0mm × WT 0.8mm × L 6000mm)"
-  },
-  "batches": [
-    {
-      "batchNo": "试样批号/炉批号 (如 Z26022C-DB7)",
-      "chemical": [
-        { "element": "C", "value": "0.018", "confidence": "99%" },
-        { "element": "Si", "value": "0.44", "confidence": "98%" },
-        { "element": "Mn", "value": "1.16", "confidence": "99%" },
-        { "element": "P", "value": "0.035", "confidence": "97%" },
-        { "element": "S", "value": "0.005", "confidence": "98%" },
-        { "element": "Cr", "value": "17.41", "confidence": "99%" },
-        { "element": "Ni", "value": "9.08", "confidence": "98%" },
-        { "element": "Ti", "value": "0.14", "confidence": "95%" }
-      ],
-      "mechanical": {
-        "tensile_rm": "抗拉强度实测值 (如 621 MPa)",
-        "yield_rp02": "规定塑性延伸强度 Rp0.2 实测值 (如 268 MPa)",
-        "elongation_a": "断后伸长率实测值 (如 57.5 %)",
-        "hardness": "硬度实测值 (如 139.3 HV1)"
-      },
-      "process": {
-        "flattening": "PASS",
-        "flaring": "PASS",
-        "intergranularCorrosion": "PASS",
-        "grainSize": "7.0 级",
-        "ndt": "涡流与超声探伤合格"
-      },
-      "dimensions": "规格尺寸 (如 OD 15.0mm × WT 0.8mm × L 6000mm)"
-    }
-  ],
-  "bboxes": [
-    {
-      "id": "字段标识 (如 meta_certificateNo, meta_declaredStandard, meta_declaredGrade, meta_heatNo, meta_packNo, chem_C, mech_tensile, mech_yield, mech_elongation, mech_hardness)",
-      "page": 1,
-      "x": 74.0,
-      "y": 13.5,
-      "w": 16.0,
-      "h": 2.2,
-      "label": "质保书编号"
-    }
-  ]
-}
-注意：
-1. bboxes 中的 x, y, w, h 均采用百分比数值 (0.0 ~ 100.0)，page 从 1 开始编号；若模型无法精确定位坐标，可返回空数组 []；
-2. 保持数据绝对真实客观，若单据中未提及某字段则对应置为空字符串 "" 或 null，严禁伪造不存在的数据。
-`.trim();
-
-  /**
    * 执行大模型抽取调用 (OpenAI Compatible 双模态输入)
    */
   public async extract(
@@ -235,10 +171,15 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
           userContent = parts;
         }
 
+        // 动态派生 System Prompt（根据 includeBbox 状态自动注入/跳过 BBox 与白名单）
+        const systemPrompt = options?.customPrompt || buildDynamicExtractionPrompt({
+          includeBbox: options?.includeBbox,
+        });
+
         const requestBody = {
           model: this.activeConfig.model,
           messages: [
-            { role: 'system', content: OpenAiCompatibleExtractor.SYSTEM_EXTRACTION_PROMPT },
+            { role: 'system', content: systemPrompt },
             {
               role: 'user',
               content: userContent,
@@ -254,7 +195,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
           const timer = setTimeout(() => controller.abort(), timeoutMs);
 
           try {
-            logger.info('EXTRACTOR', `[OpenAI-Extractor] 发起推理请求 (尝试 ${attempt + 1}/${this.maxRetries + 1}): ${endpoint}`);
+            logger.info('EXTRACTOR', `[OpenAI-Extractor] 发起解析请求 (尝试 ${attempt + 1}/${this.maxRetries + 1}): ${endpoint}`);
             const response = await fetch(endpoint, {
               method: 'POST',
               headers: {
@@ -291,7 +232,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
 
             logger.info(
               'EXTRACTOR',
-              `[OpenAI-Extractor] 推理成功，Token 开销: 输入 ${promptTokens} / 输出 ${completionTokens}`
+              `[OpenAI-Extractor] 解析成功，Token 开销: 输入 ${promptTokens} / 输出 ${completionTokens}`
             );
 
             return {
@@ -355,13 +296,13 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
     const batchesData = parsedBatches.length > 0
       ? parsedBatches
       : [
-          {
-            batchNo: header.batch_lot_number || 'BATCH-01',
-            chemical: [],
-            mechanical: { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
-            process: { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '' },
-          },
-        ];
+        {
+          batchNo: header.batch_lot_number || 'BATCH-01',
+          chemical: [],
+          mechanical: { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
+          process: { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '' },
+        },
+      ];
 
     const batches: BatchSpecimen[] = batchesData.map((b: any, idx: number) => ({
       batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),

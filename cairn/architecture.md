@@ -105,6 +105,25 @@ authoring_mode: ai_generated
 - **2. 扫描件/纯图片 OCR 演进决策（后端集成 PaddleOCR）**：
   - 决策：针对无矢量文本层的扫描件与拍照图片（`isTextBased === false`），后续通过在后端引入轻量级 **PaddleOCR (ONNX Runtime Node.js)** 进行字符级物理坐标检测；
   - 输出规范：PaddleOCR 运行后输出与 PDF.js 格式完全统一的 `tokens.json`，使下游 `BBoxAnchorMatcher` 与前端 150% 聚光灯聚焦放大 UI 100% 复用，代码零侵入。
+- **3. 统一由模型解析 BBox 坐标与物理锚点兜底演进策略（2026-09-02 调整）**：
+  - 决策：由于不同钢厂 PDF 文本层（PDF.js 抽取的 `tokens.json`）字块碎片化严重，导致单纯基于文本比对的锚点匹配在复杂表格时容易脱靶。当前阶段统一在 Prompt 中注入 BBox 白名单闭集约束，由多模态大模型直接解析与输出视觉 `bboxes`，`tokens.json` 保留作为缺省兜底；
+  - 后续计划：待后端接入具备完整版面分析与 Text Block 聚合能力的 PaddleOCR 后，再行评估恢复物理级 Token 锚定。
+
+---
+
+### 7. Schema 驱动的 Prompt 动态生成与 BBox 白名单闭集约束架构（2026-09-02 决策）
+
+针对大模型抽取提示词容易与业务数据契约发生“定义漂移（Definition Drift）”以及 BBox ID 命名无序幻觉的问题，确立了三层解耦的 Schema-Driven 提示词架构：
+
+- **1. Single Source of Truth（唯一真理源）**：
+  - `src/schemas/certificate.schema.ts` 作为系统全局唯一的数据契约真理源。
+  - 通过 Zod 原生运行时反射提取字段 `.shape` 与业务注释 `.describe()`，全自动派生清晰紧凑且带注释的 JSON 抽取模板结构，杜绝人工双重维护。
+- **2. 三层正交解耦 Prompt 组装管线 (`PromptBuilder`)**：
+  - **第一层（系统通用指令层 `SYSTEM_INSTRUCTIONS`）**：工业 MTC 质保书提取专家角色定位、真实客观原则、空值规范、单位规范等认知约束；
+  - **第二层（结构契约驱动层 `SCHEMA_STRUCTURE_PROMPT`）**：由 `certificate.schema.ts` 运行时自动反射生成的紧凑目标 JSON 结构；
+  - **第三层（BBox 插件层 `BBOX_EXTENSION_PROMPT`）**：依据步骤 1 产物动态判定。若本地存在 `tokens.json`（文本型 PDF 或已过 PaddleOCR），则跳过该层（减少 40% Token 消耗并提升提取速度与精度）；若不存在 `tokens.json`（纯扫描件/图片），则动态注入该插件块。
+- **3. 封闭式 BBox ID 白名单强约束**：
+  - 通过 Zod 遍历自动聚合合法字段 ID 集合（如 `meta_certificateNo`, `meta_standard`, `chem_C`, `mech_tensile` 等），在 Prompt 中以 `"id": "必须严格从以下有效 ID 中精确选择：[...枚举白名单...]"` 进行强闭集约束，彻底终结大模型自由发挥带来的 ID 命名幻觉。
 
 ---
 

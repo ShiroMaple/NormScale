@@ -220,10 +220,13 @@ export async function POST(request: Request) {
     );
 
     const inputContent = fileBuffer || filename;
+
+    // 统一由大模型在抽取结构化数据的同时输出 BBox 视觉坐标（结合 Schema 反射的严格白名单闭集约束）
     const rawResult = await extractor.extract(inputContent, {
       filename,
       extractedText: extractedTextToUse,
       pageImages: pageImagesToUse,
+      includeBbox: true,
     });
     const durationSeconds = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
 
@@ -238,12 +241,17 @@ export async function POST(request: Request) {
     );
 
     let bboxes = (rawResult as any).bboxes || [];
-    // 若模型未返回 bboxes 或返回为空，且本地存在矢量文本层 Token 坐标，自动执行智能文本锚点匹配
+    // 兜底策略：若大模型因网络截断未输出 bboxes，且本地存在矢量文本层 Token 坐标，自动执行文本锚点匹配补全
     if (bboxes.length === 0 && preprocessedAssets?.tokens && preprocessedAssets.tokens.length > 0) {
       bboxes = matchFieldBBoxesFromTokens(sessionDoc, preprocessedAssets.tokens);
       logger.info(
         'EXTRACTOR',
-        `[API /api/documents/parse] 基于 PDF 矢量文本层 Token 自动生成了 ${bboxes.length} 个精确 BBox 标注框`
+        `[API /api/documents/parse] 大模型未返回 BBox，触发本地 PDF 矢量文本层 Token 兜底生成了 ${bboxes.length} 个 BBox`
+      );
+    } else {
+      logger.info(
+        'EXTRACTOR',
+        `[API /api/documents/parse] 成功采纳大模型直接解析生成的 ${bboxes.length} 个视觉 BBox 标注框`
       );
     }
 

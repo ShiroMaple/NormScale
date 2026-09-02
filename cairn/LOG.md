@@ -4,6 +4,13 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-02 · Schema 驱动 Prompt 动态组装与统一由模型输出视觉 BBox 架构落地
+
+- 决策确立与落地：以 `src/schemas/certificate.schema.ts` 作为唯一真理源，利用 Zod 运行时原生反射全自动派生目标提取结构与 BBox ID 强约束白名单；
+- 统一模型输出 BBox 策略：鉴于 PDF.js 导出的矢量文本 Token 碎片化严重导致反向匹配脱靶，现统一在 Prompt 中注入带闭集白名单约束的 BBox 要求，由多模态大模型直接解析与输出视觉坐标，`tokens.json` 仅作为缺省兜底；
+- 架构设计详情指针：详见 [cairn/architecture.md:L108-L130](file:///c:/Users/gaoft/Documents/CodeSpace/NormScale/cairn/architecture.md#L108-L130)；
+- 质量门禁验证：新增 `tests/extractor/prompt-builder.test.ts`；全套 34 个测试套件 148 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
 ## 2026-09-02 · 服务端正式台账持久化服务上线与全工程 Mock 伪哈希彻底拔除
 
 - 根除所有伪分支 (`parse/route.ts` & `submit/route.ts` & `page.tsx`)：彻底删除 `preset-sample-${sampleId}` 和 `default-sample-${filename}` 伪哈希逻辑；解析接口严格要求真实二进制流或显式真实 MD5，杜绝脱靶生成 `184db4...` 假缓存；
