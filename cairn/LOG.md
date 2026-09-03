@@ -4,6 +4,23 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-03 · 探伤显式解耦 (ET/UT)、长尾弹性数组与带缓存 Schema 全景反射落地
+
+- 探伤解耦与弹性扩展 (`certificate.schema.ts`)：将单一 `ndt` 解耦为独立 `ndt_et`（涡流）与 `ndt_ut`（超声），新增 `AdditionalTestItemSchema` 与 `BatchInspectionSchema`，支持水压、渗透等长尾弹性数组；
+- 规范化长尾命名引导 (`RECOMMENDED_ADDITIONAL_TEST_CONVENTIONS`)：在 Prompt 中内置 `proc_hydraulic`, `ndt_pt` 等推荐 key 规范，彻底杜绝大模型 key 命名碎片化；
+- 运行时反射与内存缓存优化：`getValidBBoxIdWhitelist` 与模板构建引入 Memoization 惰性缓存，全闭集白名单涵盖 `ndt_et/ut` 及依据方法 ID；
+- 前端防御性渲染与全景矩阵闭环 (`WaterfallWorkbench.tsx`)：长尾项自动降级纯文本展示，两级缓存版本递增至 `1.1.0`；全套 34 个测试套件 149 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
+
+
+## 2026-09-03 · 会话类型层 Mock 解耦与纯净类型契约架构回归
+
+- 职责纯净化 (`src/types/session.ts`)：将 160+ 行硬编码的 `DEFAULT_INSPECTION_SESSION` 从类型定义文件中彻底剔除，纯化类型契约与 ID 生成职责；
+- 测试治具解耦迁移 (`tests/fixtures/demo-session.ts` [NEW])：将标定的 ZPJE 真实单据测试样本迁移至测试专用治具目录，仅供单元测试导入校验；
+- 台账组件空状态对齐 (`AuditLedger.tsx`)：移除对预设 Mock 会话的兜底注入，未持久化记录时原生展示工业空台账状态；
+- 质量门禁闭环：更新 `zpje-bbox.test.ts` 与 `session-isolation.test.ts`；全套 34 个测试套件 148 个测试 100% 全部通过，`pnpm typecheck` 0 错误。
+
+
 ## 2026-09-02 · Schema 驱动 Prompt 动态组装与统一由模型输出视觉 BBox 架构落地
 
 - 决策确立与落地：以 `src/schemas/certificate.schema.ts` 作为唯一真理源，利用 Zod 运行时原生反射全自动派生目标提取结构与 BBox ID 强约束白名单；

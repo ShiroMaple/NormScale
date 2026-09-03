@@ -323,7 +323,27 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       gradeMatchConfidence: 95,
       chemical: Array.isArray(b.chemical) ? b.chemical : [],
       mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
-      process: b.process || { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '', grainSize: b.grainSize },
+      process: {
+        flattening: b.process?.flattening || '',
+        flaring: b.process?.flaring || '',
+        intergranularCorrosion: b.process?.intergranularCorrosion || b.process?.intergranular_corrosion || '',
+        grainSize: b.process?.grainSize || b.process?.grain_size || '',
+        ndt_et: b.process?.ndt_et || (b.process?.ndt && b.process.ndt.includes('涡流') ? b.process.ndt : (b.process?.ndt || '')),
+        ndt_ut: b.process?.ndt_ut || (b.process?.ndt && b.process.ndt.includes('超声') ? b.process.ndt : ''),
+        ndt: b.process?.ndt || (b.process?.ndt_et && b.process?.ndt_ut ? `${b.process.ndt_et} / ${b.process.ndt_ut}` : (b.process?.ndt_et || b.process?.ndt_ut || '')),
+      },
+      additionalTests: Array.isArray(b.additional_tests)
+        ? b.additional_tests.map((item: any) => ({
+          key: String(item.key || `test_${Math.random().toString(36).slice(2, 7)}`),
+          name: String(item.name || item.key || '附加检验项目'),
+          category: item.category || 'process',
+          standard: item.standard || '',
+          result: String(item.result || item.value || ''),
+          value_num: typeof item.value_num === 'number' ? item.value_num : null,
+          unit: item.unit || '',
+          conclusion: item.conclusion || 'PASS',
+        }))
+        : (Array.isArray(b.additionalTests) ? b.additionalTests : []),
       surfaceQuality: b.surfaceQuality || b.process?.surfaceQuality || '',
       reportNo: `QA-${Date.now().toString().slice(-8)}`,
       sha256Hash: `SHA256-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,

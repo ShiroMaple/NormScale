@@ -59,4 +59,63 @@ describe('OpenAiCompatibleExtractor', () => {
     expect(doc.batches[0]?.grade).toBe('S32168');
     expect(doc.batches[0]?.heatNo).toBe('HEAT-999');
   });
+
+  it('应该正确将解耦的 ndt_et、ndt_ut 与 additional_tests 弹性数组装配至 BatchSpecimen', () => {
+    const extractor = new OpenAiCompatibleExtractor();
+    const rawExtract = {
+      header: {
+        certificateNo: 'MTC-2026-NDT',
+        declaredStandard: 'GB/T 13296-2023',
+        declaredGrade: 'S32168',
+      },
+      batches: [
+        {
+          batchNo: 'BATCH-NDT-01',
+          chemical: [],
+          mechanical: { tensile_rm: '620 MPa' },
+          process: {
+            flattening: '合格',
+            flaring: '合格',
+            intergranularCorrosion: '合格',
+            ndt_et: '合格 (GB/T 7735)',
+            ndt_ut: '合格 (GB/T 5777)',
+          },
+          additional_tests: [
+            {
+              key: 'proc_hydraulic',
+              name: '水压试验',
+              category: 'process',
+              standard: 'GB/T 241',
+              result: '20MPa 稳压 10s 合格',
+              value_num: 20,
+              unit: 'MPa',
+              conclusion: 'PASS',
+            },
+            {
+              key: 'ndt_pt',
+              name: '渗透检测',
+              category: 'ndt',
+              result: '无表面裂纹及缺陷',
+            },
+          ],
+        },
+      ],
+    };
+
+    const doc = extractor.formatToSessionDocument('doc_ndt', 'ndt_test.pdf', '0.8 MB', rawExtract);
+    const batch = doc.batches[0];
+    expect(batch).toBeDefined();
+    expect(batch?.process.ndt_et).toBe('合格 (GB/T 7735)');
+    expect(batch?.process.ndt_ut).toBe('合格 (GB/T 5777)');
+    expect(batch?.process.ndt).toContain('合格');
+
+    // 验证 additionalTests 弹性数组
+    expect(batch?.additionalTests).toHaveLength(2);
+    expect(batch?.additionalTests?.[0]?.key).toBe('proc_hydraulic');
+    expect(batch?.additionalTests?.[0]?.name).toBe('水压试验');
+    expect(batch?.additionalTests?.[0]?.value_num).toBe(20);
+    expect(batch?.additionalTests?.[1]?.key).toBe('ndt_pt');
+    expect(batch?.additionalTests?.[1]?.result).toBe('无表面裂纹及缺陷');
+  });
 });
+

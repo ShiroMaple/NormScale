@@ -922,9 +922,23 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               return { ...b, process: { ...b.process, intergranularCorrosion: newValue } };
             }
 
-            // 6. 无损探伤
-            if (fieldId === 'ndt_et' || fieldId === 'ndt_pressure') {
+            // 6. 无损探伤 (支持独立 ET 与 UT 及长尾检验项)
+            if (fieldId === 'ndt_et') {
+              return { ...b, process: { ...b.process, ndt_et: newValue, ndt: newValue } };
+            }
+            if (fieldId === 'ndt_ut') {
+              return { ...b, process: { ...b.process, ndt_ut: newValue } };
+            }
+            if (fieldId === 'ndt_pressure' || fieldId === 'ndt') {
               return { ...b, process: { ...b.process, ndt: newValue } };
+            }
+
+            // 弹性长尾扩展检验项
+            if (b.additionalTests && b.additionalTests.some(t => t.key === fieldId)) {
+              return {
+                ...b,
+                additionalTests: b.additionalTests.map(t => t.key === fieldId ? { ...t, result: newValue } : t)
+              };
             }
 
             // 7. 基础元数据
@@ -2483,20 +2497,59 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             confidence: '98%',
                             status: (currentBatch.process.intergranularCorrosion.includes('不') || currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
                           }] : []),
-                          // 无损检测 (仅在提取到数据时呈现)
-                          ...(currentBatch.process?.ndt && currentBatch.process.ndt.trim() !== '' ? [{
+                          // 1. 无损检测 - 涡流探伤检验 (ET)
+                          ...((currentBatch.process?.ndt_et || currentBatch.process?.ndt) && (currentBatch.process.ndt_et || currentBatch.process.ndt)!.trim() !== '' ? [{
                             fieldId: 'ndt_et',
                             methodFieldId: 'method_ndt_et',
                             category: 'ndt',
                             categoryLabel: '探伤',
                             categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
                             name: '涡流探伤检验 (Eddy Current Test)',
-                            value: currentBatch.process.ndt,
+                            value: currentBatch.process.ndt_et || currentBatch.process.ndt || '',
                             method: 'GB/T 7735-2016',
-                            confidence: currentBatch.process.ndt.includes('合格') ? '98%' : '50%',
-                            status: (currentBatch.process.ndt.includes('合格') ? 'ok' : 'warn') as 'ok' | 'warn',
-                            note: currentBatch.process.ndt.includes('合格') ? undefined : '未检出探伤结果',
+                            confidence: '98%',
+                            status: ((currentBatch.process.ndt_et || currentBatch.process.ndt)!.includes('不') || (currentBatch.process.ndt_et || currentBatch.process.ndt)!.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
+                            note: ((currentBatch.process.ndt_et || currentBatch.process.ndt)!.includes('不') || (currentBatch.process.ndt_et || currentBatch.process.ndt)!.toUpperCase().includes('FAIL')) ? '探伤不合格' : undefined,
                           }] : []),
+                          // 2. 无损检测 - 超声波探伤检验 (UT)
+                          ...(currentBatch.process?.ndt_ut && currentBatch.process.ndt_ut.trim() !== '' ? [{
+                            fieldId: 'ndt_ut',
+                            methodFieldId: 'method_ndt_ut',
+                            category: 'ndt',
+                            categoryLabel: '探伤',
+                            categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                            name: '超声波探伤检验 (Ultrasonic Test)',
+                            value: currentBatch.process.ndt_ut,
+                            method: 'GB/T 5777-2019',
+                            confidence: '98%',
+                            status: (currentBatch.process.ndt_ut.includes('不') || currentBatch.process.ndt_ut.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
+                            note: (currentBatch.process.ndt_ut.includes('不') || currentBatch.process.ndt_ut.toUpperCase().includes('FAIL')) ? '探伤不合格' : undefined,
+                          }] : []),
+                          // 3. 弹性长尾扩展检验项数组 (防御性容错纯文本回退)
+                          ...(Array.isArray(currentBatch.additionalTests) ? currentBatch.additionalTests.map((t, idx) => {
+                            const safeValue = t.result
+                              ? String(t.result)
+                              : (t.value_num !== null && t.value_num !== undefined ? `${t.value_num}${t.unit ? ` ${t.unit}` : ''}` : '--');
+                            const isFail = t.conclusion === 'FAIL' || safeValue.includes('不') || safeValue.toUpperCase().includes('FAIL');
+                            const catKey = t.category || 'process';
+                            return {
+                              fieldId: t.key || `add_test_${idx}`,
+                              methodFieldId: `method_${t.key || idx}`,
+                              category: catKey,
+                              categoryLabel: catKey === 'ndt' ? '探伤' : (catKey === 'mechanical' ? '力学' : (catKey === 'metallographic' ? '金相' : (catKey === 'corrosion' ? '腐蚀' : '工艺'))),
+                              categoryColor: catKey === 'ndt'
+                                ? 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                                : (catKey === 'mechanical'
+                                  ? 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                  : 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800'),
+                              name: t.name ? `${t.name} (${t.key || '附加项'})` : (t.key || '附加检验项'),
+                              value: safeValue,
+                              method: t.standard || '依据设计技术要求',
+                              confidence: '96%',
+                              status: isFail ? ('warn' as const) : ('ok' as const),
+                              note: isFail ? '检验不合格' : undefined,
+                            };
+                          }) : []),
                           // 几何尺寸规格 (当提取到几何尺寸时自动动态载入)
                           ...(currentBatch.dimensions && currentBatch.dimensions.trim() !== '' ? [
                             {
@@ -2954,29 +3007,70 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               </div>
                             )}
 
-                            {/* 7. 无损检测独立专业视图 */}
-                            {activeTabCategory === 'ndt' && currentBatch.process?.ndt && (
-                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-2 text-xs ">
+                            {/* 7. 无损检测独立专业视图 (解耦涡流与超声探伤) */}
+                            {activeTabCategory === 'ndt' && (
+                              <div className="p-3.5 bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl space-y-3 text-xs ">
                                 <span className="text-[11px] font-bold text-on-surface dark:text-surface-bright block uppercase tracking-wider">
                                   承压管道无损探伤检验 (Non-Destructive Testing)
                                 </span>
-                                <div
-                                  id="right-field-ndt_et"
-                                  onMouseEnter={() => handleFieldHover('ndt_et')}
-                                  onMouseLeave={() => handleFieldHover(null)}
-                                  className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'ndt_et'
-                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                                    : 'border-outline-variant/30 hover:border-primary/50'
-                                    }`}
-                                >
-                                  <div>
-                                    <strong className="text-on-surface dark:text-surface-bright block">无损探伤 / 水压替代 (NDT / Hydrostatic Alternative)</strong>
-                                    <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 7735 (涡流 E3H) / GB/T 5777 (超声 U2)</span>
+                                {(currentBatch.process?.ndt_et || currentBatch.process?.ndt) && (
+                                  <div
+                                    id="right-field-ndt_et"
+                                    onMouseEnter={() => handleFieldHover('ndt_et')}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'ndt_et'
+                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                      : 'border-outline-variant/30 hover:border-primary/50'
+                                      }`}
+                                  >
+                                    <div>
+                                      <strong className="text-on-surface dark:text-surface-bright block">涡流探伤检验 (Eddy Current Testing)</strong>
+                                      <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 7735-2016 (验收等级 E3H / E2H)</span>
+                                    </div>
+                                    <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
+                                      {currentBatch.process.ndt_et || currentBatch.process.ndt}
+                                    </strong>
                                   </div>
-                                  <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
-                                    {currentBatch.process.ndt}
-                                  </strong>
-                                </div>
+                                )}
+                                {currentBatch.process?.ndt_ut && (
+                                  <div
+                                    id="right-field-ndt_ut"
+                                    onMouseEnter={() => handleFieldHover('ndt_ut')}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === 'ndt_ut'
+                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                      : 'border-outline-variant/30 hover:border-primary/50'
+                                      }`}
+                                  >
+                                    <div>
+                                      <strong className="text-on-surface dark:text-surface-bright block">超声波探伤检验 (Ultrasonic Testing)</strong>
+                                      <span className="text-[11px] text-on-surface-variant">依据方法：GB/T 5777-2019 (验收等级 U2 级)</span>
+                                    </div>
+                                    <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
+                                      {currentBatch.process.ndt_ut}
+                                    </strong>
+                                  </div>
+                                )}
+                                {Array.isArray(currentBatch.additionalTests) && currentBatch.additionalTests.filter(t => t.category === 'ndt').map((t, idx) => (
+                                  <div
+                                    key={t.key || idx}
+                                    id={`right-field-${t.key || idx}`}
+                                    onMouseEnter={() => handleFieldHover(t.key || '')}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`p-3 bg-surface-container-lowest dark:bg-surface-dark border rounded-lg flex justify-between items-center cursor-pointer transition-all ${highlightedFieldId === t.key
+                                      ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                                      : 'border-outline-variant/30 hover:border-primary/50'
+                                      }`}
+                                  >
+                                    <div>
+                                      <strong className="text-on-surface dark:text-surface-bright block">{t.name || t.key}</strong>
+                                      <span className="text-[11px] text-on-surface-variant">依据标准：{t.standard || '技术协议规定'}</span>
+                                    </div>
+                                    <strong className="text-primary dark:text-primary-fixed-dim font-bold text-sm">
+                                      {t.result || (t.value_num !== null && t.value_num !== undefined ? `${t.value_num}${t.unit || ''}` : '--')}
+                                    </strong>
+                                  </div>
+                                ))}
                               </div>
                             )}
 
@@ -3233,20 +3327,55 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     ruleBasis: '耐腐蚀性能评定',
                   }] : []),
 
-                  // 6. 无损检测
-                  ...(currentBatch.process.ndt ? [{
-                    id: 'ndt_test',
+                  // 6. 无损检测 (解耦涡流与超声波及长尾项)
+                  ...((currentBatch.process.ndt_et || currentBatch.process.ndt) ? [{
+                    id: 'ndt_et',
                     category: 'ndt' as const,
                     categoryLabel: '探伤',
                     categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-                    name: '无损检测 (NDT)',
-                    measuredValue: currentBatch.process.ndt,
-                    standardRequirement: '探伤检验合格',
+                    name: '涡流探伤检验 (Eddy Current)',
+                    measuredValue: currentBatch.process.ndt_et || currentBatch.process.ndt || '',
+                    standardRequirement: 'GB/T 7735 验收等级 E3H / E2H 探伤合格',
                     deviation: '符合要求',
-                    status: 'PASS' as const,
-                    statusLabel: '✓ PASS',
-                    ruleBasis: '无损探伤规程',
+                    status: ((currentBatch.process.ndt_et || currentBatch.process.ndt)!.includes('不') || (currentBatch.process.ndt_et || currentBatch.process.ndt)!.toUpperCase().includes('FAIL')) ? ('FAIL' as const) : ('PASS' as const),
+                    statusLabel: ((currentBatch.process.ndt_et || currentBatch.process.ndt)!.includes('不') || (currentBatch.process.ndt_et || currentBatch.process.ndt)!.toUpperCase().includes('FAIL')) ? '✗ FAIL' : '✓ PASS',
+                    ruleBasis: '电磁超声/涡流规程',
                   }] : []),
+                  ...(currentBatch.process.ndt_ut ? [{
+                    id: 'ndt_ut',
+                    category: 'ndt' as const,
+                    categoryLabel: '探伤',
+                    categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                    name: '超声波探伤检验 (Ultrasonic)',
+                    measuredValue: currentBatch.process.ndt_ut,
+                    standardRequirement: 'GB/T 5777 验收等级 U2 级探伤合格',
+                    deviation: '符合要求',
+                    status: (currentBatch.process.ndt_ut.includes('不') || currentBatch.process.ndt_ut.toUpperCase().includes('FAIL')) ? ('FAIL' as const) : ('PASS' as const),
+                    statusLabel: (currentBatch.process.ndt_ut.includes('不') || currentBatch.process.ndt_ut.toUpperCase().includes('FAIL')) ? '✗ FAIL' : '✓ PASS',
+                    ruleBasis: '超声无损检测规程',
+                  }] : []),
+                  ...(Array.isArray(currentBatch.additionalTests) ? currentBatch.additionalTests.map((t, idx) => {
+                    const safeValue = t.result
+                      ? String(t.result)
+                      : (t.value_num !== null && t.value_num !== undefined ? `${t.value_num}${t.unit ? ` ${t.unit}` : ''}` : '--');
+                    const isFail = t.conclusion === 'FAIL' || safeValue.includes('不') || safeValue.toUpperCase().includes('FAIL');
+                    const catKey = t.category || 'process';
+                    return {
+                      id: t.key || `add_test_${idx}`,
+                      category: catKey as any,
+                      categoryLabel: catKey === 'ndt' ? '探伤' : (catKey === 'mechanical' ? '力学' : (catKey === 'metallographic' ? '金相' : (catKey === 'corrosion' ? '腐蚀' : '工艺'))),
+                      categoryColor: catKey === 'ndt'
+                        ? 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                        : 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                      name: t.name || t.key || '附加检验项',
+                      measuredValue: safeValue,
+                      standardRequirement: t.standard ? `按 ${t.standard} 执行` : '技术规范要求合格',
+                      deviation: isFail ? '超出标准允差' : '实测有效',
+                      status: isFail ? ('FAIL' as const) : ('PASS' as const),
+                      statusLabel: isFail ? '✗ FAIL' : '✓ PASS',
+                      ruleBasis: t.standard || '合同附加技术条款',
+                    };
+                  }) : []),
 
                   // 7. 几何尺寸与表面质量
                   ...(currentBatch.dimensions && currentBatch.dimensions !== '待提取' && currentBatch.dimensions !== '' ? [{

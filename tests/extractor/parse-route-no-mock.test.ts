@@ -13,7 +13,7 @@ describe('API: /api/documents/parse (反伪哈希与零 Mock 门禁)', () => {
       model: 'kimi-k2.7-code',
       provider: 'Moonshot',
       parsedAt: new Date().toISOString(),
-      parserConfigVersion: '1.0.0',
+      parserConfigVersion: '1.1.0',
       tokenStats: {
         inputTokens: 1000,
         outputTokens: 200,

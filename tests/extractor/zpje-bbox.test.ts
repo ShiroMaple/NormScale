@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getZPJEBBoxes } from '@/types/bbox';
-import { DEFAULT_INSPECTION_SESSION } from '@/types/session';
+import { DEFAULT_INSPECTION_SESSION } from '../fixtures/demo-session';
 import fs from 'node:fs';
 import path from 'node:path';
 

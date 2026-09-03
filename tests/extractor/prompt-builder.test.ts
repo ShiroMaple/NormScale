@@ -31,7 +31,7 @@ describe('PromptBuilder (Schema-Driven Prompt & Whitelist Reflection)', () => {
     expect(whitelist).toContain('chem_Ni');
     expect(whitelist).toContain('chem_Ti');
 
-    // 验证核心力学与工艺无损 ID
+    // 验证核心力学与工艺无损 ID (包含解耦的 ET 与 UT 及方法 ID)
     expect(whitelist).toContain('mech_tensile');
     expect(whitelist).toContain('mech_yield');
     expect(whitelist).toContain('mech_elongation');
@@ -41,9 +41,16 @@ describe('PromptBuilder (Schema-Driven Prompt & Whitelist Reflection)', () => {
     expect(whitelist).toContain('metallo_grain');
     expect(whitelist).toContain('corrosion_intergranular');
     expect(whitelist).toContain('ndt_et');
+    expect(whitelist).toContain('ndt_ut');
+    expect(whitelist).toContain('method_ndt_et');
+    expect(whitelist).toContain('method_ndt_ut');
+
+    // 验证内存缓存 Memoization: 多次调用返回严格同一引用
+    const whitelistSecond = getValidBBoxIdWhitelist();
+    expect(whitelistSecond).toBe(whitelist);
   });
 
-  it('buildSchemaStructureTemplate 应输出结构完整的业务抽取 JSON 模板', () => {
+  it('buildSchemaStructureTemplate 应输出包含解耦 NDT 与弹性 additional_tests 的完整模板', () => {
     const template = buildSchemaStructureTemplate();
     expect(template).toContain('"header": {');
     expect(template).toContain('"certificateNo":');
@@ -53,6 +60,10 @@ describe('PromptBuilder (Schema-Driven Prompt & Whitelist Reflection)', () => {
     expect(template).toContain('"chemical": [');
     expect(template).toContain('"mechanical": {');
     expect(template).toContain('"process": {');
+    expect(template).toContain('"ndt_et":');
+    expect(template).toContain('"ndt_ut":');
+    expect(template).toContain('"additional_tests": [');
+    expect(template).toContain('proc_hydraulic');
   });
 
   it('当 includeBbox 为 false 时（文本型 PDF/已过 OCR），Prompt 不应包含 bboxes 块以节省 Token', () => {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { InspectionSession, DEFAULT_INSPECTION_SESSION } from '@/types/session.ts';
+import { InspectionSession } from '@/types/session.ts';
 
 interface AuditLedgerProps {
   onLoadSessionToWorkbench?: (session: InspectionSession) => void;
@@ -30,11 +30,9 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
           return;
         }
       }
-      // 默认提供演示历史核验台账留存记录
-      setLocalSessions([DEFAULT_INSPECTION_SESSION]);
-      setExpandedSessionIds(new Set([DEFAULT_INSPECTION_SESSION.sessionId]));
+      setLocalSessions([]);
     } catch {
-      setLocalSessions([DEFAULT_INSPECTION_SESSION]);
+      setLocalSessions([]);
     }
   }, []);
 
