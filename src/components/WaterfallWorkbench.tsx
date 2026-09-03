@@ -149,6 +149,21 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   // 停顿满 1 秒后激活 200% 原位放大的字段 ID 与防晕倒计时器
   const [magnifiedFieldId, setMagnifiedFieldId] = useState<string | null>(null);
   const magnifyTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // 是否启用定位聚焦（实验功能），默认关闭 (false)
+  const [isBboxFocusEnabled, setIsBboxFocusEnabled] = useState<boolean>(false);
+
+  const handleToggleBboxFocus = useCallback((enabled: boolean) => {
+    setIsBboxFocusEnabled(enabled);
+    if (!enabled) {
+      if (magnifyTimerRef.current) {
+        clearTimeout(magnifyTimerRef.current);
+        magnifyTimerRef.current = null;
+      }
+      setHighlightedFieldId(null);
+      setMagnifiedFieldId(null);
+    }
+  }, []);
+
   const [currentDocPage, setCurrentDocPage] = useState<number>(1);
   const pdfScrollContainerRef = useRef<HTMLDivElement>(null);
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1182,6 +1197,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   // 1. 悬浮/聚焦右侧字段：仅滚动左侧 PDF 视窗，当已在视口中则仅高亮不移动视口
   const scrollToLeftBBox = useCallback((fieldId: string | null) => {
+    // 若未启用定位聚焦实验功能，完全不触发高亮、移动与放大
+    if (!isBboxFocusEnabled) return;
+
     // 立即清空上一个防晕倒计时
     if (magnifyTimerRef.current) {
       clearTimeout(magnifyTimerRef.current);
@@ -1205,13 +1223,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     magnifyTimerRef.current = setTimeout(() => {
       setMagnifiedFieldId(fieldId);
     }, 1000);
-  }, [bboxes, centerBBoxInContainer]);
+  }, [bboxes, centerBBoxInContainer, isBboxFocusEnabled]);
 
   // 别名保留以兼容现有调用
   const handleFieldHover = scrollToLeftBBox;
 
   // 2. 悬浮左侧 BBox：仅滚动右侧解析数据视窗，绝不触发外部整页或左侧视窗滚动
   const scrollToRightField = useCallback((fieldId: string) => {
+    // 若未启用定位聚焦实验功能，完全不触发高亮、移动与放大
+    if (!isBboxFocusEnabled) return;
+
     // 立即清空上一个防晕倒计时
     if (magnifyTimerRef.current) {
       clearTimeout(magnifyTimerRef.current);
@@ -1731,8 +1752,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           <section className="w-full h-full shrink-0 overflow-hidden p-6 flex flex-col">
             <div className="max-w-[1440px] mx-auto w-full h-full flex flex-col space-y-4 min-h-0">
 
-              {/* 顶部统一标题与两层树状批次选择条 (固定在顶部，不随内容滚动) */}
-              <div className="shrink-0 relative z-30">
+              {/* 顶部统一标题与两层树状批次选择条 (固定在顶部，设置 z-40 确保下拉菜单永远浮于下方工作区之上) */}
+              <div className="shrink-0 relative z-40">
                 <BatchContextBar
                   stepTitle="步骤 2: 核对解析数据"
                   session={session}
@@ -1775,7 +1796,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 </div>
               )}
 
-              {/* 45% / 55% 左右分栏：充满剩余高度，左右各自独立纵向滚动 */}
+              {/* 45% / 55% 左右分栏：充满剩余高度，设置 relative z-10 严格约束在下方层叠上下文中，杜绝遮挡上方下拉菜单 */}
               {(!currentDoc || !currentBatch) ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-12 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs">
                   <div className="w-16 h-16 rounded-2xl bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant flex items-center justify-center mb-4">
@@ -1797,49 +1818,74 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0 relative z-10">
 
                   {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 (自带独立滚动条) */}
                   <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
-                    {/* PDF 阅读器顶部工具栏 */}
-                    <div className="px-3.5 py-2 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0">
-                      <div className="flex items-center gap-1.5 truncate max-w-[150px] sm:max-w-[180px] shrink-0">
-                        <span className="material-symbols-outlined text-base text-red-500">picture_as_pdf</span>
+                    {/* PDF 阅读器顶部工具栏 (固定 44px 高度单行清爽模式，气泡触发时原位平滑覆盖开关，退出时恢复开关) */}
+                    <div className="h-11 min-h-[44px] max-h-[44px] px-3.5 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0 box-border">
+                      <div className="flex items-center gap-1.5 truncate max-w-[140px] sm:max-w-[170px] shrink-0">
+                        <span className="material-symbols-outlined text-base text-red-500 shrink-0">picture_as_pdf</span>
                         <span className="font-bold truncate text-on-surface dark:text-surface-bright">{currentDoc.filename}</span>
                       </div>
 
-                      {/* 居中常驻放大与定位提示徽章（外形和颜色与原蓝色胶囊完全一致，独立于页面缩放，永不遮挡且在最顶端永远可点击） */}
-                      {(() => {
-                        const isPageMagnified = !!magnifiedFieldId;
-                        const activeFieldBox = (magnifiedFieldId || highlightedFieldId)
-                          ? bboxes.find(b => b.id === (magnifiedFieldId || highlightedFieldId))
-                          : null;
-                        if (!isPageMagnified && !activeFieldBox) return <div className="flex-1" />;
+                      {/* 居中单行容器：平时展示“启用定位聚焦（实验功能）”开关；功能启用且气泡出现时，直接在原位展示蓝色气泡覆盖开关 */}
+                      <div className="flex-1 flex items-center justify-center min-w-0 h-full">
+                        {(() => {
+                          const isPageMagnified = isBboxFocusEnabled && !!magnifiedFieldId;
+                          const activeFieldBox = (isBboxFocusEnabled && (magnifiedFieldId || highlightedFieldId))
+                            ? bboxes.find(b => b.id === (magnifiedFieldId || highlightedFieldId))
+                            : null;
 
-                        return (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[280px]">
-                            <span className="material-symbols-outlined text-xs shrink-0">
-                              {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
-                            </span>
-                            <span className="truncate">
-                              {isPageMagnified ? '聚焦放大 150%' : '已定位'}: {activeFieldBox?.label || '当前项'}
-                            </span>
-                            {isPageMagnified && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleResetMagnify();
-                                }}
-                                className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
-                                title="按 ESC 键亦可快速退出放大"
+                          // 1. 功能启用且气泡处于激活状态时：在原位渲染蓝色气泡徽章覆盖开关
+                          if (isBboxFocusEnabled && (isPageMagnified || activeFieldBox)) {
+                            return (
+                              <div className="h-7 box-border flex items-center gap-1.5 px-2.5 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[280px] shrink-0">
+                                <span className="material-symbols-outlined text-xs shrink-0">
+                                  {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
+                                </span>
+                                <span className="truncate">
+                                  {isPageMagnified ? '聚焦放大 150%' : '已定位'}: {activeFieldBox?.label || '当前项'}
+                                </span>
+                                {isPageMagnified && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleResetMagnify();
+                                    }}
+                                    className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
+                                    title="按 ESC 键亦可快速退出放大"
+                                  >
+                                    退出 (ESC)
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          // 2. 平时或未激活气泡时：居中展示“启用定位聚焦 (实验功能)”开关
+                          return (
+                            <label
+                              onClick={() => handleToggleBboxFocus(!isBboxFocusEnabled)}
+                              className="h-7 box-border flex items-center gap-1.5 px-2.5 rounded-lg hover:bg-surface-container-high/60 dark:hover:bg-surface-dark-high transition-colors cursor-pointer select-none group shrink-0"
+                            >
+                              <span className={`text-[11px] transition-colors ${isBboxFocusEnabled ? 'text-primary dark:text-primary-fixed-dim font-bold' : 'text-on-surface-variant/80 group-hover:text-on-surface dark:group-hover:text-surface-bright font-medium'}`}>
+                                启用定位聚焦 (实验功能)
+                              </span>
+                              <div
+                                role="switch"
+                                aria-checked={isBboxFocusEnabled}
+                                className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${isBboxFocusEnabled ? 'bg-primary' : 'bg-outline-variant/60 dark:bg-zinc-700'}`}
                               >
-                                退出 (ESC)
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
+                                <span
+                                  className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${isBboxFocusEnabled ? 'translate-x-3' : 'translate-x-0'}`}
+                                />
+                              </div>
+                            </label>
+                          );
+                        })()}
+                      </div>
 
                       <div className="flex items-center gap-3 shrink-0">
                         <div className="flex items-center gap-1">
@@ -1916,11 +1962,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 const pageNum = pageIdx + 1;
                                 const pageBBoxes = bboxes.filter(b => b.page === pageNum);
 
-                                // 检查当前页是否包含正处于 1 秒悬浮放大状态的 BBox
-                                const activeMagnifiedBox = magnifiedFieldId
+                                // 检查当前页是否包含正处于 1 秒悬浮放大状态的 BBox (仅在启用定位聚焦时生效)
+                                const activeMagnifiedBox = (isBboxFocusEnabled && magnifiedFieldId)
                                   ? pageBBoxes.find(b => b.id === magnifiedFieldId)
                                   : null;
-                                const isPageMagnified = !!activeMagnifiedBox;
+                                const isPageMagnified = isBboxFocusEnabled && !!activeMagnifiedBox;
 
                                 const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
                                 const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
@@ -1973,8 +2019,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                         loading="eager"
                                       />
 
-                                      {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡) */}
-                                      {pageBBoxes.map((box) => {
+                                      {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡，仅在启用定位聚焦时生效) */}
+                                      {isBboxFocusEnabled && pageBBoxes.map((box) => {
                                         const isHighlighted = highlightedFieldId === box.id;
                                         return (
                                           <div
@@ -3138,8 +3184,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar p-6 space-y-4">
             <div id="step-3-workbench-panel" className="max-w-[1440px] mx-auto w-full space-y-4">
 
-              {/* 顶部统一标题与两层树状批次选择条 */}
-              <div className="relative z-30">
+              {/* 顶部统一标题与两层树状批次选择条 (固定在顶部，设置 z-40 确保下拉菜单浮于上方) */}
+              <div className="relative z-40">
                 <BatchContextBar
                   stepTitle="步骤 3: 比对执行标准"
                   session={session}
@@ -4022,8 +4068,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar p-6 space-y-4">
             <div className="max-w-[1440px] mx-auto w-full space-y-4">
 
-              {/* 顶部统一标题与两层树状批次选择条 */}
-              <div className="relative z-30">
+              {/* 顶部统一标题与两层树状批次选择条 (固定在顶部，设置 z-40 确保下拉菜单浮于上方) */}
+              <div className="relative z-40">
                 <BatchContextBar
                   stepTitle="步骤 4: 报告归档与导出"
                   session={session}

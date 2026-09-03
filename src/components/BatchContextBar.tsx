@@ -152,21 +152,21 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
         </div>
 
         {/* 右侧：Session 累计 Token 开销、总耗时统计与大模型流水折叠开关 */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap shrink-0">
           {sessionMetrics && (
-            <div className="flex items-center gap-2 text-xs font-medium text-on-surface-variant">
+            <div className="flex items-center gap-2 text-xs font-medium text-on-surface-variant shrink-0">
               <span
                 title="当前 Session 所有文档累计消耗 Token 统计"
-                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
+                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark tabular-nums shrink-0 whitespace-nowrap"
               >
-                <span className="material-symbols-outlined text-[14px] text-primary dark:text-primary-fixed-dim">memory</span>
+                <span className="material-symbols-outlined text-[14px] text-primary dark:text-primary-fixed-dim shrink-0">memory</span>
                 <span>累计开销: 输入 {sessionMetrics.totalInputTokens.toLocaleString()} / 输出 {sessionMetrics.totalOutputTokens.toLocaleString()} Tokens</span>
               </span>
               <span
                 title="当前 Session 累计解析总耗时"
-                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2.5 py-1 rounded-lg text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark"
+                className="w-[104px] shrink-0 flex items-center justify-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2 py-1 rounded-lg text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark tabular-nums whitespace-nowrap"
               >
-                <span className="material-symbols-outlined text-[14px] text-emerald-600 dark:text-emerald-400">timer</span>
+                <span className="material-symbols-outlined text-[14px] text-emerald-600 dark:text-emerald-400 shrink-0">timer</span>
                 <span>总耗时 {sessionMetrics.totalDurationSeconds.toFixed(1)}s</span>
               </span>
             </div>
@@ -176,11 +176,11 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
             <button
               type="button"
               onClick={onToggleStreamingTerminal}
-              className="flex items-center gap-1 text-xs text-primary dark:text-primary-fixed-dim font-bold hover:underline bg-primary/5 hover:bg-primary/10 dark:bg-primary-fixed-dim/10 px-2.5 py-1 rounded-lg transition-colors border border-primary/20"
+              className="flex items-center gap-1 text-xs text-primary dark:text-primary-fixed-dim font-bold hover:underline bg-primary/5 hover:bg-primary/10 dark:bg-primary-fixed-dim/10 px-2.5 py-1 rounded-lg transition-colors border border-primary/20 shrink-0 whitespace-nowrap"
             >
-              <span className="material-symbols-outlined text-sm">terminal</span>
+              <span className="material-symbols-outlined text-sm shrink-0">terminal</span>
               <span>{isStreamingTerminalExpanded ? '收起模型流式输出' : '查看模型流式输出'}</span>
-              <span className="material-symbols-outlined text-sm">
+              <span className="material-symbols-outlined text-sm shrink-0">
                 {isStreamingTerminalExpanded ? 'expand_less' : 'expand_more'}
               </span>
             </button>
@@ -190,16 +190,16 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
             <button
               type="button"
               onClick={onReparseDocument}
-              className="flex items-center gap-1 text-xs text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim bg-surface-container-low dark:bg-surface-dark-low hover:bg-surface-container-high px-2.5 py-1 rounded-lg transition-colors border border-outline-variant/40 dark:border-border-dark cursor-pointer font-medium"
+              className="flex items-center gap-1 text-xs text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim bg-surface-container-low dark:bg-surface-dark-low hover:bg-surface-container-high px-2.5 py-1 rounded-lg transition-colors border border-outline-variant/40 dark:border-border-dark cursor-pointer font-medium shrink-0 whitespace-nowrap"
               title="强制绕过本地 MD5 缓存，重新调用大模型解析当前文档"
             >
-              <span className="material-symbols-outlined text-sm">refresh</span>
+              <span className="material-symbols-outlined text-sm shrink-0">refresh</span>
               <span>重新解析</span>
             </button>
           )}
 
           {rightExtraAction && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {rightExtraAction}
             </div>
           )}
@@ -207,7 +207,7 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
       </div>
 
       {/* 2. 下部独立圆角选择器卡片 (单行不折叠设计，允许下拉菜单溢出浮层，杜绝遮挡与滚动条) */}
-      <div className="w-full bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-2xl p-3 sm:p-3.5 shadow-xs flex items-center justify-between gap-3 text-xs relative overflow-visible">
+      <div className={`w-full bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-2xl p-3 sm:p-3.5 shadow-xs flex items-center justify-between gap-3 text-xs relative overflow-visible ${docDropdownOpen || batchDropdownOpen ? 'z-50' : 'z-30'}`}>
 
         {/* 左侧：Session 简写胶囊 + 第 1 层文档 + 第 2 层批次号 */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
