@@ -520,6 +520,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
           conclusion: item.conclusion || 'PASS',
         }))
         : (Array.isArray(b.additionalTests) ? b.additionalTests : []),
+      testMethods: (b.test_methods && typeof b.test_methods === 'object') ? b.test_methods : ((b.testMethods && typeof b.testMethods === 'object') ? b.testMethods : undefined),
       surfaceQuality: b.surfaceQuality || b.process?.surfaceQuality || '',
       reportNo: `QA-${Date.now().toString().slice(-8)}`,
       sha256Hash: `SHA256-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,

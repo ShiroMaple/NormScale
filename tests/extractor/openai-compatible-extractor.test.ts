@@ -80,6 +80,11 @@ describe('OpenAiCompatibleExtractor', () => {
             ndt_et: '合格 (GB/T 7735)',
             ndt_ut: '合格 (GB/T 5777)',
           },
+          test_methods: {
+            flaring: 'GB/T242-2007',
+            flattening: 'GB/T246-2017',
+            intergranularCorrosion: 'GB/T4334-2020 方法 E',
+          },
           additional_tests: [
             {
               key: 'proc_hydraulic',
@@ -108,6 +113,9 @@ describe('OpenAiCompatibleExtractor', () => {
     expect(batch?.process.ndt_et).toBe('合格 (GB/T 7735)');
     expect(batch?.process.ndt_ut).toBe('合格 (GB/T 5777)');
     expect(batch?.process.ndt).toContain('合格');
+    expect(batch?.testMethods?.flaring).toBe('GB/T242-2007');
+    expect(batch?.testMethods?.flattening).toBe('GB/T246-2017');
+    expect(batch?.testMethods?.intergranularCorrosion).toBe('GB/T4334-2020 方法 E');
 
     // 验证 additionalTests 弹性数组
     expect(batch?.additionalTests).toHaveLength(2);

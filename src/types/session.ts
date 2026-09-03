@@ -70,6 +70,7 @@ export interface BatchSpecimen {
     surfaceQuality?: string;
   };
   additionalTests?: AdditionalTestItem[]; // 弹性长尾扩展检验项
+  testMethods?: Record<string, string>;  // 各检验项目在质保书上明确声明的执行标准字典 (如 { flaring: "GB/T242-2007", flattening: "GB/T246-2017" })
   surfaceQuality?: string;   // 表面质量检验结果描述
   
   // 归档存证字段

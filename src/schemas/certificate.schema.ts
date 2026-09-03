@@ -136,6 +136,7 @@ export const BatchInspectionSchema = z.object({
   })).describe('化学成分检验列表'),
   mechanical: BatchMechanicalSchema.describe('力学性能检验项'),
   process: BatchProcessSchema.describe('工艺、金相与解耦无损检验项'),
+  test_methods: z.record(z.string(), z.string()).optional().describe('单项试验在原件中明确列出的依据方法标准字典 (如 {"flaring": "GB/T242-2007", "flattening": "GB/T246-2017", "intergranularCorrosion": "GB/T4334-2020 方法 E"})'),
   dimensions: z.string().optional().describe('规格尺寸实测 (如 OD 15.0mm × WT 0.8mm × L 6000mm)'),
   additional_tests: z.array(AdditionalTestItemSchema).optional().default([]).describe('弹性长尾检验项数组'),
 }).passthrough();
@@ -435,6 +436,14 @@ export function buildDynamicSchemaStructureTemplate(): string {
         "grainSize": "晶粒度 (如 7.0 级)",
         "ndt_et": "涡流检测实测结果 (若有，必须独立提取至此，如 合格 OK)",
         "ndt_ut": "超声波检测实测结果 (若有，必须独立提取至此，如 合格 OK)"
+      },
+      "test_methods": {
+        "flaring": "扩口试验执行标准 (如 GB/T242-2007)",
+        "flattening": "压扁试验执行标准 (如 GB/T246-2017)",
+        "intergranularCorrosion": "晶间腐蚀执行标准 (如 GB/T4334-2020 方法 E)",
+        "grainSize": "晶粒度执行标准 (如 GB/T6394-2017)",
+        "ndt_et": "涡流检测执行标准 (如 GB/T7735-2016)",
+        "ndt_ut": "超声波检测执行标准 (如 GB/T5777-2019)"
       },
       "dimensions": "规格尺寸 (如 OD 15.0mm × WT 0.8mm × L 6000mm)",
       "additional_tests": [

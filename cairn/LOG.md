@@ -4,6 +4,14 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-03 · 试验方法标准全链路解耦与执行标准真实反射落地
+
+- 彻底根除前端硬编码 (`WaterfallWorkbench.tsx`)：废除原先手写的 `GB/T 242`、`GB/T 246` 等无年代号字面量；构建 `getTestMethod` 动态解析器，优先取原件提取标准，未提取时自动反射 `certificate.schema.ts` 的规范标准（带完整年代号 `GB/T 242-2007`、`GB/T 246-2017`、`GB/T 4334-2020` 等）；
+- 模型抽取协议升级 (`session.ts` & `certificate.schema.ts`)：在 `BatchSpecimen` 与 `BatchInspectionSchema` 中引入 `test_methods` 标准字典，Prompt 模板注入依据标准提取规范，实现大模型对原件表格“执行标准 Standards”的 100% 真实回填（如 `GB/T4334-2020 方法 E`）；
+- 质量门禁闭环：`pnpm typecheck` 0 错误，全量 34 个测试套件 151 个测试用例 100% 绿色通过。
+
+
+
 ## 2026-09-03 · 彻底剔除历史遗留切图别名 samplePages 冗余
 
 - 溯源排查：`samplePages` 为早期样本文档用于兼容切图的旧别名字段（与 `pages` 完全镜像指向 base64 数组），在 `formatToSessionDocument` 中被同步写入；

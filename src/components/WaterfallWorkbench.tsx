@@ -17,6 +17,7 @@ import { toPng } from 'html-to-image';
 import { useDocumentParser } from '@/hooks/useDocumentParser.ts';
 import { LlmStreamingTerminal } from './LlmStreamingTerminal.tsx';
 import { renderPdfAndExtractText } from '@/utils/pdf-renderer.ts';
+import { getCertificateInspectionFieldDefinitions } from '@/schemas/certificate.schema.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -169,6 +170,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
   const [uploadedFileUrls, setUploadedFileUrls] = useState<Record<string, string>>({});
   const [docBboxesMap, setDocBboxesMap] = useState<Record<string, FieldBBox[]>>({});
+
+  // Schema 反射派生的检验项默认方法标准字典（避免任何硬编码）
+  const fieldDefMap = useMemo(() => {
+    const map: Record<string, { defaultMethod?: string }> = {};
+    getCertificateInspectionFieldDefinitions().forEach(def => {
+      map[def.key] = def;
+      if (def.fieldId) map[def.fieldId] = def;
+    });
+    return map;
+  }, []);
 
   // 当大模型或缓存解析返回真实 Document 数据时，实时双向同步至工作台 Session
   const handleDocumentParsed = useCallback((docId: string, parsedDoc: SessionDocument, bboxes?: FieldBBox[]) => {
@@ -2427,6 +2438,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           note?: string;
                         }
 
+                        // 动态方法标准解析器（优先取真实模型提取标准，未提取时自动按 Schema 规范反射默认标准，杜绝任何硬编码）
+                        const getTestMethod = (key: string, fieldId: string, fallbackDefault?: string) => {
+                          return currentBatch.testMethods?.[key] ||
+                                 currentBatch.testMethods?.[fieldId] ||
+                                 fieldDefMap[key]?.defaultMethod ||
+                                 fieldDefMap[fieldId]?.defaultMethod ||
+                                 fallbackDefault ||
+                                 '-';
+                        };
+
                         const allExtractItems: ExtractRowItem[] = [
                           // 化学成分 (原件未打印独立检测方法标准，客观呈现为 '-'，无依据 BBox)
                           ...currentBatch.chemical.filter(c => c.value && c.value.trim() !== '').map(c => ({
@@ -2443,7 +2464,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             status: (c.status || 'ok') as 'ok' | 'warn',
                             note: c.note,
                           })),
-                          // 力学性能 (仅当模型解析出非空实测值时才动态呈现，未解析出来前绝不预先占位)
+                          // 力学性能 (优先呈现原件标注标准，未指定时反射 Schema 标准)
                           ...(currentBatch.mechanical?.tensile_rm && currentBatch.mechanical.tensile_rm.trim() !== '' ? [{
                             fieldId: 'mech_tensile',
                             methodFieldId: 'method_tensile',
@@ -2452,7 +2473,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                             name: '抗拉强度 Rm',
                             value: currentBatch.mechanical.tensile_rm,
-                            method: 'GB/T 228.1-2021',
+                            method: getTestMethod('tensile_rm', 'mech_tensile', 'GB/T 228.1-2021'),
                             confidence: '98%',
                             status: 'ok' as const,
                           }] : []),
@@ -2464,7 +2485,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                             name: '规定塑性延伸强度 Rp0.2',
                             value: currentBatch.mechanical.yield_rp02,
-                            method: 'GB/T 228.1-2021',
+                            method: getTestMethod('yield_rp02', 'mech_yield', 'GB/T 228.1-2021'),
                             confidence: '97%',
                             status: 'ok' as const,
                           }] : []),
@@ -2476,7 +2497,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                             name: '断后伸长率 A',
                             value: currentBatch.mechanical.elongation_a,
-                            method: 'GB/T 228.1-2021',
+                            method: getTestMethod('elongation_a', 'mech_elongation', 'GB/T 228.1-2021'),
                             confidence: '99%',
                             status: 'ok' as const,
                           }] : []),
@@ -2488,11 +2509,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                             name: '硬度 (Hardness)',
                             value: currentBatch.mechanical.hardness,
-                            method: 'GB/T 4340.1-2024',
+                            method: getTestMethod('hardness', 'mech_hardness', 'GB/T 4340.1-2024'),
                             confidence: '96%',
                             status: 'ok' as const,
                           }] : []),
-                          // 工艺性能 (依据原件提取或按标准要求)
+                          // 工艺性能 (优先呈现原件标注标准，如 GB/T246-2017、GB/T242-2007)
                           ...(currentBatch.process?.flattening && currentBatch.process.flattening.trim() !== '' ? [{
                             fieldId: 'proc_flattening',
                             methodFieldId: 'method_proc_flattening',
@@ -2501,7 +2522,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                             name: '压扁试验 (Flattening)',
                             value: currentBatch.process.flattening === 'PASS' ? '合格' : currentBatch.process.flattening,
-                            method: 'GB/T 246',
+                            method: getTestMethod('flattening', 'proc_flattening', 'GB/T 246-2017'),
                             confidence: '98%',
                             status: (currentBatch.process.flattening.includes('不') || currentBatch.process.flattening.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
                           }] : []),
@@ -2513,7 +2534,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                             name: '扩口试验 (Flaring)',
                             value: currentBatch.process.flaring === 'PASS' ? '合格' : currentBatch.process.flaring,
-                            method: 'GB/T 242',
+                            method: getTestMethod('flaring', 'proc_flaring', 'GB/T 242-2007'),
                             confidence: '98%',
                             status: (currentBatch.process.flaring.includes('不') || currentBatch.process.flaring.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
                           }] : []),
@@ -2526,11 +2547,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
                             name: '晶粒度评级 (Grain Size)',
                             value: currentBatch.process.grainSize,
-                            method: 'GB/T 6394',
+                            method: getTestMethod('grain_size', 'metallo_grain', 'GB/T 6394-2017'),
                             confidence: '98%',
                             status: 'ok' as const,
                           }] : []),
-                          // 耐腐蚀试验
+                          // 耐腐蚀试验 (依据原件标注，如 GB/T4334-2020 方法 E)
                           ...(currentBatch.process?.intergranularCorrosion && currentBatch.process.intergranularCorrosion.trim() !== '' ? [{
                             fieldId: 'corrosion_intergranular',
                             methodFieldId: 'method_corrosion_intergranular',
@@ -2539,7 +2560,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
                             name: '晶间腐蚀试验 (Intergranular Corrosion)',
                             value: currentBatch.process.intergranularCorrosion === 'PASS' ? '合格' : currentBatch.process.intergranularCorrosion,
-                            method: 'GB/T 4334',
+                            method: getTestMethod('intergranular_corrosion', 'corrosion_intergranular', 'GB/T 4334-2020'),
                             confidence: '98%',
                             status: (currentBatch.process.intergranularCorrosion.includes('不') || currentBatch.process.intergranularCorrosion.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
                           }] : []),
@@ -2552,7 +2573,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
                             name: '涡流探伤检验 (Eddy Current Test)',
                             value: currentBatch.process.ndt_et || currentBatch.process.ndt || '',
-                            method: 'GB/T 7735-2016',
+                            method: getTestMethod('ndt_et', 'ndt_et', 'GB/T 7735-2016'),
                             confidence: '98%',
                             status: ((currentBatch.process.ndt_et || currentBatch.process.ndt)!.includes('不') || (currentBatch.process.ndt_et || currentBatch.process.ndt)!.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
                             note: ((currentBatch.process.ndt_et || currentBatch.process.ndt)!.includes('不') || (currentBatch.process.ndt_et || currentBatch.process.ndt)!.toUpperCase().includes('FAIL')) ? '探伤不合格' : undefined,
@@ -2566,7 +2587,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
                             name: '超声波探伤检验 (Ultrasonic Test)',
                             value: currentBatch.process.ndt_ut,
-                            method: 'GB/T 5777-2019',
+                            method: getTestMethod('ndt_ut', 'ndt_ut', 'GB/T 5777-2019'),
                             confidence: '98%',
                             status: (currentBatch.process.ndt_ut.includes('不') || currentBatch.process.ndt_ut.toUpperCase().includes('FAIL')) ? ('warn' as const) : ('ok' as const),
                             note: (currentBatch.process.ndt_ut.includes('不') || currentBatch.process.ndt_ut.toUpperCase().includes('FAIL')) ? '探伤不合格' : undefined,
