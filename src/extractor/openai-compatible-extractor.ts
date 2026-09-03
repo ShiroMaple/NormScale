@@ -128,7 +128,95 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
   }
 
   /**
-   * 执行大模型抽取调用 (OpenAI Compatible 双模态输入)
+   * 构建 Prompt 消息体辅助方法
+   */
+  public buildPromptMessages(
+    input: Buffer | Uint8Array | string,
+    options?: ExtractOptions & { filename?: string }
+  ) {
+    let textPrompt = `请对以下工业质保书 (${options?.filename || '质保书.pdf'}) 进行多炉批与全项理化检验数据结构化提取。`;
+    if (options?.extractedText && options.extractedText.trim().length > 0) {
+      textPrompt += `\n\n【PDF 矢量文本层分离内容（供高精度文本核验）】：\n${options.extractedText.slice(0, 30000)}`;
+    } else if (typeof input === 'string' && input.length > 0) {
+      textPrompt += `\n\n【文本内容】：\n${input.slice(0, 30000)}`;
+    }
+
+    let userContent: any = textPrompt;
+
+    if (options?.pageImages && options.pageImages.length > 0) {
+      const parts: any[] = [{ type: 'text', text: textPrompt }];
+      options.pageImages.forEach((img) => {
+        const imgUrl = img.startsWith('data:') ? img : `data:image/png;base64,${img}`;
+        parts.push({
+          type: 'image_url',
+          image_url: { url: imgUrl, detail: 'high' },
+        });
+      });
+      userContent = parts;
+    }
+
+    const systemPrompt = options?.customPrompt || buildDynamicExtractionPrompt({
+      includeBbox: options?.includeBbox,
+    });
+
+    return { systemPrompt, userContent };
+  }
+
+  /**
+   * 安全剥离并解析大模型返回的 JSON
+   */
+  public parseCleanJson(text: string): any {
+    let cleaned = text.trim();
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * 组装标准的 RawCertificatePayload
+   */
+  public buildPayloadResult(
+    parsed: any,
+    rawText: string,
+    inputTokens: number,
+    outputTokens: number
+  ): RawCertificatePayload {
+    return {
+      source_provider: `openai-compatible:${this.activeConfig.model}`,
+      overall_confidence: 0.95,
+      header: {
+        certificate_no: parsed.header?.certificateNo || '',
+        declared_standard: parsed.header?.declaredStandard || '',
+        declared_grade: parsed.header?.declaredGrade || '',
+        supplier_name: parsed.header?.supplierName || '',
+        construction_number: parsed.header?.constructionNo || '',
+        heat_number: parsed.header?.heatNo || '',
+        heat_treatment_lot_number: parsed.header?.packNo || '',
+        batch_lot_number: parsed.batches?.[0]?.batchNo || '',
+        delivery_state: parsed.header?.deliveryState || '',
+        material_product_name: parsed.header?.productName || '',
+        dimensions: parsed.header?.dimensions || '',
+      },
+      batches: Array.isArray(parsed.batches) ? parsed.batches : [],
+      bboxes: Array.isArray(parsed.bboxes) ? parsed.bboxes : [],
+      test_records: [],
+      rawText,
+      tokens: {
+        input: inputTokens,
+        output: outputTokens,
+      },
+    } as any;
+  }
+
+  /**
+   * 执行大模型抽取调用 (OpenAI Compatible 双模态输入，非流式)
    */
   public async extract(
     input: Buffer | Uint8Array | string,
@@ -148,33 +236,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       'EXTRACTOR',
       `OpenAI兼容抽取 [${this.activeConfig.model} @ ${endpoint}]`,
       async () => {
-        // 构建双模态 User Prompt
-        let textPrompt = `请对以下工业质保书 (${options?.filename || '质保书.pdf'}) 进行多炉批与全项理化检验数据结构化提取。`;
-        if (options?.extractedText && options.extractedText.trim().length > 0) {
-          textPrompt += `\n\n【PDF 矢量文本层分离内容（供高精度文本核验）】：\n${options.extractedText.slice(0, 30000)}`;
-        } else if (typeof input === 'string' && input.length > 0) {
-          textPrompt += `\n\n【文本内容】：\n${input.slice(0, 30000)}`;
-        }
-
-        let userContent: any = textPrompt;
-
-        // 若传入了各页 PNG 高清切图，组装为标准 OpenAI Vision 多模态消息
-        if (options?.pageImages && options.pageImages.length > 0) {
-          const parts: any[] = [{ type: 'text', text: textPrompt }];
-          options.pageImages.forEach((img) => {
-            const imgUrl = img.startsWith('data:') ? img : `data:image/png;base64,${img}`;
-            parts.push({
-              type: 'image_url',
-              image_url: { url: imgUrl, detail: 'high' },
-            });
-          });
-          userContent = parts;
-        }
-
-        // 动态派生 System Prompt（根据 includeBbox 状态自动注入/跳过 BBox 与白名单）
-        const systemPrompt = options?.customPrompt || buildDynamicExtractionPrompt({
-          includeBbox: options?.includeBbox,
-        });
+        const { systemPrompt, userContent } = this.buildPromptMessages(input, options);
 
         const requestBody = {
           model: this.activeConfig.model,
@@ -219,12 +281,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
 
             const data = await response.json();
             const contentStr = data.choices?.[0]?.message?.content || '{}';
-            let parsed: any = {};
-            try {
-              parsed = JSON.parse(contentStr);
-            } catch {
-              parsed = {};
-            }
+            const parsed = this.parseCleanJson(contentStr);
 
             const usage = data.usage || {};
             const promptTokens = usage.prompt_tokens || 1800;
@@ -235,31 +292,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
               `[OpenAI-Extractor] 解析成功，Token 开销: 输入 ${promptTokens} / 输出 ${completionTokens}`
             );
 
-            return {
-              source_provider: `openai-compatible:${this.activeConfig.model}`,
-              overall_confidence: 0.95,
-              header: {
-                certificate_no: parsed.header?.certificateNo || '',
-                declared_standard: parsed.header?.declaredStandard || '',
-                declared_grade: parsed.header?.declaredGrade || '',
-                supplier_name: parsed.header?.supplierName || '',
-                construction_number: parsed.header?.constructionNo || '',
-                heat_number: parsed.header?.heatNo || '',
-                heat_treatment_lot_number: parsed.header?.packNo || '',
-                batch_lot_number: parsed.batches?.[0]?.batchNo || '',
-                delivery_state: parsed.header?.deliveryState || '',
-                material_product_name: parsed.header?.productName || '',
-                dimensions: parsed.header?.dimensions || '',
-              },
-              batches: Array.isArray(parsed.batches) ? parsed.batches : [],
-              bboxes: Array.isArray(parsed.bboxes) ? parsed.bboxes : [],
-              test_records: [],
-              rawText: contentStr,
-              tokens: {
-                input: promptTokens,
-                output: completionTokens,
-              },
-            } as any;
+            return this.buildPayloadResult(parsed, contentStr, promptTokens, completionTokens);
           } catch (err: any) {
             clearTimeout(timer);
             lastError = err;
@@ -274,6 +307,149 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
         }
 
         throw lastError || new ModelApiExecutionError('大模型服务调用重试耗尽失败');
+      }
+    );
+
+    return profiled.result;
+  }
+
+  /**
+   * 执行大模型真实实时流式抽取调用 (OpenAI Compatible stream: true)
+   */
+  public async extractStream(
+    input: Buffer | Uint8Array | string,
+    options?: ExtractOptions & { filename?: string },
+    onChunk?: (delta: string) => void
+  ): Promise<RawCertificatePayload> {
+    const apiKey = this.getResolvedApiKey();
+    if (!apiKey) {
+      throw new MissingApiKeyError(
+        `未配置有效的大模型 API 凭证 (环境变量 ${this.activeConfig.apiKey || 'KIMI_API_KEY/OPENAI_API_KEY'} 未设置)。`
+      );
+    }
+
+    const endpoint = `${this.activeConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const timeoutMs = options?.timeoutMs || this.timeoutMs;
+
+    const profiled = await PerformanceProfiler.profileAsync(
+      'EXTRACTOR',
+      `OpenAI兼容流式抽取 [${this.activeConfig.model} @ ${endpoint}]`,
+      async () => {
+        const { systemPrompt, userContent } = this.buildPromptMessages(input, options);
+
+        const requestBody = {
+          model: this.activeConfig.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 1,
+          stream: true,
+          response_format: { type: 'json_object' },
+        };
+
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+          try {
+            logger.info('EXTRACTOR', `[OpenAI-Extractor-Stream] 发起流式解析请求 (尝试 ${attempt + 1}/${this.maxRetries + 1}): ${endpoint}`);
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(requestBody),
+              signal: controller.signal,
+            });
+
+            clearTimeout(timer);
+
+            if (!response.ok) {
+              const errBody = await response.text();
+              throw new ModelApiExecutionError(
+                `大模型接口响应异常 [HTTP ${response.status}]: ${errBody}`,
+                response.status,
+                errBody
+              );
+            }
+
+            const reader = response.body?.getReader();
+            if (!reader) {
+              throw new ModelApiExecutionError('模型服务未提供有效响应流体');
+            }
+
+            const decoder = new TextDecoder('utf-8');
+            let fullContent = '';
+            let buffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith(':')) continue;
+                if (trimmed === 'data: [DONE]') continue;
+                if (trimmed.startsWith('data: ')) {
+                  const jsonStr = trimmed.slice(6);
+                  try {
+                    const parsedChunk = JSON.parse(jsonStr);
+                    const delta = parsedChunk.choices?.[0]?.delta?.content || '';
+                    if (delta) {
+                      fullContent += delta;
+                      onChunk?.(delta);
+                    }
+                  } catch {
+                    // 容错处理未闭合的 chunk
+                  }
+                }
+              }
+            }
+
+            if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
+              try {
+                const parsedChunk = JSON.parse(buffer.trim().slice(6));
+                const delta = parsedChunk.choices?.[0]?.delta?.content || '';
+                if (delta) {
+                  fullContent += delta;
+                  onChunk?.(delta);
+                }
+              } catch {
+                // ignore
+              }
+            }
+
+            const parsed = this.parseCleanJson(fullContent);
+            const promptTokens = 1800;
+            const completionTokens = Math.max(200, Math.ceil(fullContent.length / 3.5));
+
+            logger.info(
+              'EXTRACTOR',
+              `[OpenAI-Extractor-Stream] 流式解析成功，累计字符: ${fullContent.length}，估算 Token: 输出 ${completionTokens}`
+            );
+
+            return this.buildPayloadResult(parsed, fullContent, promptTokens, completionTokens);
+          } catch (err: any) {
+            clearTimeout(timer);
+            lastError = err;
+            if (err.name === 'AbortError') {
+              lastError = new ModelApiExecutionError(`大模型调用超时 (${timeoutMs}ms)`);
+            }
+            logger.warn('EXTRACTOR', `[OpenAI-Extractor-Stream] 第 ${attempt + 1} 次调用失败: ${err.message}`);
+            if (attempt < this.maxRetries) {
+              await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            }
+          }
+        }
+
+        throw lastError || new ModelApiExecutionError('大模型流式服务调用重试耗尽失败');
       }
     );
 

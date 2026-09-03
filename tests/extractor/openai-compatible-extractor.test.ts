@@ -117,5 +117,72 @@ describe('OpenAiCompatibleExtractor', () => {
     expect(batch?.additionalTests?.[1]?.key).toBe('ndt_pt');
     expect(batch?.additionalTests?.[1]?.result).toBe('无表面裂纹及缺陷');
   });
+
+  it('parseCleanJson 应该安全剥离 markdown 代码块并解析对象', () => {
+    const extractor = new OpenAiCompatibleExtractor();
+    const markdownJson = '```json\n{"header": {"certificateNo": "TEST-123"}}\n```';
+    const parsed = extractor.parseCleanJson(markdownJson);
+    expect(parsed.header?.certificateNo).toBe('TEST-123');
+
+    const rawJson = '{"valid": true}';
+    expect(extractor.parseCleanJson(rawJson)).toEqual({ valid: true });
+
+    const brokenJson = '{"broken: ';
+    expect(extractor.parseCleanJson(brokenJson)).toEqual({});
+  });
+
+  it('extractStream 能够正确消费 SSE 数据流并在 onChunk 收到增量更新', async () => {
+    const extractor = new OpenAiCompatibleExtractor({ apiKey: 'sk-test-mock-key' });
+
+    // Mock global.fetch 模拟 SSE 流式传输
+    const originalFetch = global.fetch;
+    const makeChunk = (content: string) =>
+      `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
+
+    const sseChunks = [
+      makeChunk('{"header":{"certificateNo":"'),
+      makeChunk('STREAM-MTC-888'),
+      makeChunk('"}}'),
+      'data: [DONE]\n\n',
+    ];
+
+    let chunkIndex = 0;
+    const mockStream = new ReadableStream({
+      pull(controller) {
+        if (chunkIndex < sseChunks.length) {
+          const encoder = new TextEncoder();
+          controller.enqueue(encoder.encode(sseChunks[chunkIndex]!));
+          chunkIndex++;
+        } else {
+          controller.close();
+        }
+      },
+    });
+
+    global.fetch = async () => {
+      return {
+        ok: true,
+        status: 200,
+        body: mockStream,
+      } as any;
+    };
+
+    try {
+      const receivedDeltas: string[] = [];
+      const payload = await extractor.extractStream(
+        'sample text',
+        { filename: 'stream.pdf' },
+        (delta) => {
+          receivedDeltas.push(delta);
+        }
+      );
+
+      expect(receivedDeltas.length).toBeGreaterThan(0);
+      expect(receivedDeltas.join('')).toContain('STREAM-MTC-888');
+      expect(payload.header?.certificate_no).toBe('STREAM-MTC-888');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
 

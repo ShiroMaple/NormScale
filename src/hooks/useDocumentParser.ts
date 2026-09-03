@@ -106,138 +106,185 @@ export function useDocumentParser(
         if (forceReparse) {
           formData.append('forceReparse', 'true');
         }
+        formData.append('stream', 'true');
 
+        const startTime = Date.now();
         const res = await fetch('/api/documents/parse', {
           method: 'POST',
+          headers: {
+            Accept: 'text/event-stream',
+          },
           body: formData,
         });
 
-        const data = await res.json();
-
-        if (!res.ok || !data.success) {
-          const errMessage = data.error || '文档解析受阻';
-          setLastError(errMessage);
-
-          setTasks(prev => {
-            const currentTask = prev[docId];
-            if (!currentTask) return prev;
-            const updatedTask: DocumentParsingTask = {
-              ...currentTask,
-              status: 'error',
-              progress: 0,
-              stepPhase: '解析失败/阻断',
-              errorMsg: errMessage,
-            };
-            const next: Record<string, DocumentParsingTask> = {
-              ...prev,
-              [docId]: updatedTask,
-            };
-            recalculateMetrics(next);
-            return next;
-          });
-
-          activeWorkersRef.current = Math.max(0, activeWorkersRef.current - 1);
-          setIsParsingActive(false);
-          return;
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `请求异常 [HTTP ${res.status}]`);
         }
 
-        const parseResult = data.result;
-        if (parseResult?.sessionDocument) {
-          onDocumentParsed?.(docId, parseResult.sessionDocument, parseResult.bboxes);
+        const reader = res.body?.getReader();
+        if (!reader) {
+          throw new Error('未获取到有效流式响应流体');
         }
-        const rawJsonText = parseResult.rawStreamingJson || JSON.stringify(parseResult.sessionDocument, null, 2);
-        const isFromCache = parseResult.tokenStats?.isFromCache;
 
-        // 模拟平滑流式打字输出
-        const totalChars = rawJsonText.length;
-        const targetDuration = isFromCache ? 0.6 : Math.max(1.5, parseResult.tokenStats?.durationSeconds || 2.5);
-        const intervalMs = 30;
-        const totalSteps = Math.floor((targetDuration * 1000) / intervalMs);
-        const charsPerStep = Math.max(12, Math.ceil(totalChars / totalSteps));
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let accumulatedStreamingJson = '';
+        let currentProgress = 10;
+        let currentStepPhase = '1/5 预处理资产检索中...';
+        let estimatedOutputTokens = 0;
 
-        let currentStep = 0;
-        let currentChars = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        const interval = setInterval(() => {
-          currentStep++;
-          currentChars = Math.min(totalChars, currentChars + charsPerStep);
-          const streamedText = rawJsonText.slice(0, currentChars);
-          const progress = Math.min(99, Math.floor((currentStep / totalSteps) * 100));
+          buffer += decoder.decode(value, { stream: true });
+          const messages = buffer.split('\n\n');
+          buffer = messages.pop() || '';
 
-          let stepPhase = isFromCache
-            ? 'MD5 缓存命中，秒级重放提取单据中...'
-            : '2/3 大模型提取理化与力学指标中...';
-          if (progress > 80) {
-            stepPhase = '3/3 结构化数据映射就绪...';
-          }
+          for (const message of messages) {
+            const lines = message.split('\n');
+            let eventType = 'message';
+            let dataStr = '';
 
-          setTasks(prev => {
-            const currentTask = prev[docId];
-            if (!currentTask || currentTask.status !== 'parsing') return prev;
-
-            const updatedTask: DocumentParsingTask = {
-              ...currentTask,
-              progress,
-              streamingJson: streamedText,
-              stepPhase,
-              outputTokens: Math.floor((currentChars / totalChars) * (parseResult.tokenStats?.outputTokens || 400)),
-              durationSeconds: parseFloat(((currentStep * intervalMs) / 1000).toFixed(1)),
-            };
-            const next: Record<string, DocumentParsingTask> = {
-              ...prev,
-              [docId]: updatedTask,
-            };
-            recalculateMetrics(next);
-            return next;
-          });
-
-          if (currentChars >= totalChars && currentStep >= totalSteps) {
-            clearInterval(interval);
-
-            // 完成该任务
-            setTimeout(() => {
-              setTasks(prev => {
-                const currentTask = prev[docId];
-                if (!currentTask) return prev;
-
-                const updatedTask: DocumentParsingTask = {
-                  ...currentTask,
-                  status: 'ready',
-                  progress: 100,
-                  streamingJson: rawJsonText,
-                  stepPhase: isFromCache ? '已命中本地 MD5 缓存 (0 Token 开销)' : '解析完成，数据已规整就绪',
-                  inputTokens: parseResult.tokenStats?.inputTokens || 0,
-                  outputTokens: parseResult.tokenStats?.outputTokens || 0,
-                  durationSeconds: parseResult.tokenStats?.durationSeconds || 0.1,
-                  completedAt: new Date().toLocaleTimeString(),
-                };
-                const next: Record<string, DocumentParsingTask> = {
-                  ...prev,
-                  [docId]: updatedTask,
-                };
-                recalculateMetrics(next);
-                return next;
-              });
-
-              activeWorkersRef.current = Math.max(0, activeWorkersRef.current - 1);
-
-              // 取下一项
-              if (queueRef.current.length > 0) {
-                const nextDocId = queueRef.current.shift();
-                if (nextDocId) {
-                  executeDocumentWorker(nextDocId);
-                }
-              } else if (activeWorkersRef.current === 0) {
-                setIsParsingActive(false);
+            for (const line of lines) {
+              if (line.startsWith('event: ')) {
+                eventType = line.slice(7).trim();
+              } else if (line.startsWith('data: ')) {
+                dataStr = line.slice(6).trim();
               }
-            }, 100);
-          }
-        }, intervalMs);
+            }
 
-        if (!timerRefs.current[docId]) {
-          timerRefs.current[docId] = [];
+            if (!dataStr) continue;
+
+            try {
+              const data = JSON.parse(dataStr);
+
+              // 1. 命中有效解析缓存 (秒级直出，跳过流式打印过程，静默就绪)
+              if (eventType === 'cached') {
+                const parseResult = data.result;
+                if (parseResult?.sessionDocument) {
+                  onDocumentParsed?.(docId, parseResult.sessionDocument, parseResult.bboxes);
+                }
+                const formattedJson = parseResult.rawStreamingJson || JSON.stringify(parseResult.sessionDocument, null, 2);
+
+                setTasks(prev => {
+                  const currentTask = prev[docId];
+                  if (!currentTask) return prev;
+                  const updatedTask: DocumentParsingTask = {
+                    ...currentTask,
+                    status: 'ready',
+                    progress: 100,
+                    streamingJson: formattedJson,
+                    stepPhase: '已命中本地 MD5 缓存 (0 Token 开销)',
+                    inputTokens: parseResult.tokenStats?.inputTokens || 0,
+                    outputTokens: parseResult.tokenStats?.outputTokens || 0,
+                    durationSeconds: 0.05,
+                    completedAt: new Date().toLocaleTimeString(),
+                  };
+                  const next: Record<string, DocumentParsingTask> = {
+                    ...prev,
+                    [docId]: updatedTask,
+                  };
+                  recalculateMetrics(next);
+                  return next;
+                });
+                break;
+              }
+
+              // 2. 真实进度事件
+              if (eventType === 'progress') {
+                currentProgress = data.progress ?? currentProgress;
+                currentStepPhase = data.stepPhase ?? currentStepPhase;
+
+                setTasks(prev => {
+                  const currentTask = prev[docId];
+                  if (!currentTask || currentTask.status !== 'parsing') return prev;
+                  const durationSec = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
+                  const updatedTask: DocumentParsingTask = {
+                    ...currentTask,
+                    progress: currentProgress,
+                    stepPhase: currentStepPhase,
+                    durationSeconds: durationSec,
+                  };
+                  const next = { ...prev, [docId]: updatedTask };
+                  recalculateMetrics(next);
+                  return next;
+                });
+              }
+
+              // 3. 真实增量 Chunk 事件
+              if (eventType === 'chunk') {
+                accumulatedStreamingJson += data.delta || '';
+                currentProgress = data.progress ?? currentProgress;
+                estimatedOutputTokens = data.outputTokens ?? Math.ceil(accumulatedStreamingJson.length / 3.5);
+
+                setTasks(prev => {
+                  const currentTask = prev[docId];
+                  if (!currentTask || currentTask.status !== 'parsing') return prev;
+                  const durationSec = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
+                  const updatedTask: DocumentParsingTask = {
+                    ...currentTask,
+                    progress: currentProgress,
+                    streamingJson: accumulatedStreamingJson,
+                    stepPhase: '3/5 大模型实时生成理化与力学检验指标中...',
+                    outputTokens: estimatedOutputTokens,
+                    durationSeconds: durationSec,
+                  };
+                  const next = { ...prev, [docId]: updatedTask };
+                  recalculateMetrics(next);
+                  return next;
+                });
+              }
+
+              // 4. 解析完成事件 (交付结构化数据与格式化美化 JSON)
+              if (eventType === 'complete') {
+                const parseResult = data.result;
+                if (parseResult?.sessionDocument) {
+                  onDocumentParsed?.(docId, parseResult.sessionDocument, parseResult.bboxes);
+                }
+                const formattedJson = parseResult.rawStreamingJson || JSON.stringify(parseResult.sessionDocument, null, 2);
+                const durationSec = parseResult.tokenStats?.durationSeconds || parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
+
+                setTasks(prev => {
+                  const currentTask = prev[docId];
+                  if (!currentTask) return prev;
+                  const updatedTask: DocumentParsingTask = {
+                    ...currentTask,
+                    status: 'ready',
+                    progress: 100,
+                    streamingJson: formattedJson,
+                    stepPhase: '解析完成，全景数据已结构化入库',
+                    inputTokens: parseResult.tokenStats?.inputTokens || 1800,
+                    outputTokens: parseResult.tokenStats?.outputTokens || estimatedOutputTokens,
+                    durationSeconds: durationSec,
+                    completedAt: new Date().toLocaleTimeString(),
+                  };
+                  const next = { ...prev, [docId]: updatedTask };
+                  recalculateMetrics(next);
+                  return next;
+                });
+              }
+
+              // 5. 错误事件
+              if (eventType === 'error') {
+                throw new Error(data.error || '模型服务返回解析错误');
+              }
+            } catch (err: any) {
+              if (eventType === 'error') throw err;
+            }
+          }
         }
-        timerRefs.current[docId]!.push(interval);
+
+        activeWorkersRef.current = Math.max(0, activeWorkersRef.current - 1);
+        if (queueRef.current.length > 0) {
+          const nextDocId = queueRef.current.shift();
+          if (nextDocId) {
+            executeDocumentWorker(nextDocId);
+          }
+        } else if (activeWorkersRef.current === 0) {
+          setIsParsingActive(false);
+        }
       } catch (err: any) {
         console.error(`[useDocumentParser] 文档 ${docId} 解析异常:`, err);
         setLastError(err.message || '网络连接或服务端异常');
@@ -264,7 +311,7 @@ export function useDocumentParser(
         setIsParsingActive(false);
       }
     },
-    [recalculateMetrics]
+    [recalculateMetrics, onDocumentParsed]
   );
 
   // 启动整个 Session 的并发解析

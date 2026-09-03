@@ -4,6 +4,40 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-03 · 彻底剔除历史遗留切图别名 samplePages 冗余
+
+- 溯源排查：`samplePages` 为早期样本文档用于兼容切图的旧别名字段（与 `pages` 完全镜像指向 base64 数组），在 `formatToSessionDocument` 中被同步写入；
+- 端到端彻底省去 (`LlmStreamingTerminal.tsx` & `route.ts`)：在终端渲染展示、一键复制以及服务端 `rawStreamingJson` 序列化时，同步将 `samplePages` 与 `pages` 彻底剔除，杜绝切图数据污染终端控制台；
+- 质量门禁闭环：`pnpm typecheck` 0 错误，全量 34 个测试套件 151 个测试用例 100% 绿色通过。
+
+
+
+## 2026-09-03 · 终端视窗视野扩增与工业控制台去花哨设计
+
+- 移除拟物点缀 (`LlmStreamingTerminal.tsx`)：彻底移除左上角 3 个模拟 MacOS 红黄绿圆点，去除多余装饰，对齐系统工业级控制台的严谨克制基调；
+- 视窗高度大幅扩增 (`LlmStreamingTerminal.tsx`)：展开时由 `h-48`（192px）提升至 `h-80 min-h-[320px]`（320px），成倍扩展垂直阅读视野，让多批次全项指标一屏尽览；
+- 质量门禁闭环：`pnpm typecheck` 0 错误，全量 34 个测试套件 151 个测试用例 100% 绿色通过。
+
+
+
+## 2026-09-03 · 终端输出剔除 pages 冗余与高亮配色对齐规范
+
+- 剔除 pages 冗余切图字段 (`LlmStreamingTerminal.tsx` & `route.ts`)：在格式化输出展示与复制时彻底省去庞大的 `pages` 数组，消除数万字符 base64 对终端滚动的性能卡顿，聚焦核心质保书元数据与理化指标；
+- 语法高亮配色校准 (`LlmStreamingTerminal.tsx`)：JSON Key 采用浓黑色 (`text-zinc-950 dark:text-zinc-100 font-bold`)，字符串采用网站主题蓝 (`text-primary dark:text-primary-fixed-dim`)，数值（紫）、布尔（橙）、空值（红）保持不变；
+- 质量门禁闭环：`pnpm typecheck` 0 错误，全量 34 个测试套件 151 个测试用例 100% 绿色通过。
+
+
+
+## 2026-09-03 · 端到端真流式（SSE）解析管线与语法着色格式化落地
+
+- 彻底剔除假流式 (`useDocumentParser.ts`)：废除前端 `setInterval` 模拟打字切片，使用 `response.body.getReader()` 消费真实 SSE 流；
+- 五段式真实生命周期与两级缓存直出 (`route.ts`)：输出 `text/event-stream`，命中 `.cache/parses` 触发 `cached` 秒级直出跳过流式动画；仅有预处理缓存时复用切图并启动真流式；进度绑定后端 5 阶段真实状态；
+- 模型真实流式调用 (`openai-compatible-extractor.ts`)：新增 `extractStream` 启用 `stream: true` 并实时回调 `onChunk`，新增 `parseCleanJson` 剥离 markdown；
+- 终端完成态语法着色与美化 (`LlmStreamingTerminal.tsx`)：完成态自动双空格 `JSON.stringify` 美化，并对 Key、字符串、数字、布尔做终端彩色语法高亮；
+- 质量门禁闭环：`pnpm typecheck` 0 错误，全量 34 个测试套件 151 个测试用例 100% 绿色通过。
+
+
+
 ## 2026-09-03 · 预览视窗单行清爽模式与气泡互斥覆盖交互落地
 
 - 交互形态革新 (`WaterfallWorkbench.tsx`)：废除双层纵向堆叠布局，工具栏恢复经典的 44px (`h-11`) 标准单行高度；

@@ -21,12 +21,18 @@ export async function POST(request: Request) {
     let forceReparse = false;
     let clientExtractedText: string | undefined;
     let clientPageImages: string[] | undefined;
+    let isStreamRequested = (request.headers.get('accept') || '').includes('text/event-stream');
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
       const fileEntry = formData.get('file');
       const forceVal = formData.get('forceReparse');
       forceReparse = forceVal === 'true' || forceVal === '1';
+
+      const streamVal = formData.get('stream');
+      if (streamVal === 'true' || streamVal === '1') {
+        isStreamRequested = true;
+      }
 
       const md5Entry = formData.get('md5');
       if (md5Entry && typeof md5Entry === 'string') {
@@ -72,6 +78,9 @@ export async function POST(request: Request) {
       forceReparse = Boolean(json.forceReparse);
       clientExtractedText = json.extractedText;
       clientPageImages = json.pageImages;
+      if (json.stream) {
+        isStreamRequested = true;
+      }
       if (json.fileBase64) {
         fileBuffer = Buffer.from(json.fileBase64, 'base64');
         fileSize = `${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB`;
@@ -165,6 +174,38 @@ export async function POST(request: Request) {
           'EXTRACTOR',
           `[API /api/documents/parse] 命中有效解析缓存 [${filename}] (版本: ${validParseResult.parserConfigVersion || '1.0.0'}, MD5: ${md5}, BBox: ${bboxes.length} 个)`
         );
+
+        if (isStreamRequested) {
+          const encoder = new TextEncoder();
+          const customStream = new ReadableStream({
+            start(controller) {
+              const payload = `event: cached\ndata: ${JSON.stringify({
+                type: 'cached',
+                cached: true,
+                md5,
+                result: {
+                  ...validParseResult,
+                  bboxes,
+                  tokenStats: {
+                    ...validParseResult.tokenStats,
+                    isFromCache: true,
+                    durationSeconds: 0.05,
+                  },
+                },
+              })}\n\n`;
+              controller.enqueue(encoder.encode(payload));
+              controller.close();
+            },
+          });
+          return new Response(customStream, {
+            headers: {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache, no-transform',
+              'Connection': 'keep-alive',
+            },
+          });
+        }
+
         return NextResponse.json({
           success: true,
           cached: true,
@@ -185,6 +226,29 @@ export async function POST(request: Request) {
     // 6. 未命中有效解析缓存（或强制重新解析/配置版本失效）：检查 API Key 门禁
     const resolvedApiKey = extractor.getResolvedApiKey();
     if (!resolvedApiKey) {
+      if (isStreamRequested) {
+        const encoder = new TextEncoder();
+        const errStream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `event: error\ndata: ${JSON.stringify({
+                  error: '未配置有效的大模型 API Key，且当前文档未命中缓存，无法执行解析。请联系管理员在系统管理中配置 API 凭证。',
+                  code: 'MISSING_API_KEY',
+                })}\n\n`
+              )
+            );
+            controller.close();
+          },
+        });
+        return new Response(errStream, {
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+          },
+          status: 400,
+        });
+      }
+
       return NextResponse.json(
         {
           success: false,
@@ -216,10 +280,142 @@ export async function POST(request: Request) {
 
     logger.info(
       'EXTRACTOR',
-      `[API /api/documents/parse] 发起双模态大模型抽取: ${filename} (配置版本: ${currentConfigVersion}, 文本层长度: ${extractedTextToUse?.length || 0}, 切图数: ${pageImagesToUse.length})`
+      `[API /api/documents/parse] 发起双模态大模型抽取: ${filename} (配置版本: ${currentConfigVersion}, 文本层长度: ${extractedTextToUse?.length || 0}, 切图数: ${pageImagesToUse.length}, 流式: ${isStreamRequested})`
     );
 
     const inputContent = fileBuffer || filename;
+
+    // 若客户端请求了 SSE 真实流式输出
+    if (isStreamRequested) {
+      const encoder = new TextEncoder();
+      const customStream = new ReadableStream({
+        async start(controller) {
+          const sendEvent = (event: string, data: any) => {
+            try {
+              controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+            } catch {
+              // client closed
+            }
+          };
+
+          try {
+            // 阶段 1: 预处理完成 (10%)
+            sendEvent('progress', {
+              type: 'progress',
+              phase: 'PREPROCESSING',
+              stepPhase: '1/5 预处理资产检索完成 (切图与矢量文本)',
+              progress: 10,
+            });
+
+            // 阶段 2: 建立连接，等待首字 (25%)
+            sendEvent('progress', {
+              type: 'progress',
+              phase: 'LLM_CONNECTING',
+              stepPhase: '2/5 已连接大模型服务，等待首字输出 (TTFT)...',
+              progress: 25,
+            });
+
+            // 阶段 3: 真实实时流式输出 (30%~85%)
+            let streamedChars = 0;
+            const rawResult = await extractor.extractStream(
+              inputContent,
+              {
+                filename,
+                extractedText: extractedTextToUse,
+                pageImages: pageImagesToUse,
+                includeBbox: true,
+              },
+              (delta) => {
+                streamedChars += delta.length;
+                const dynamicProgress = Math.min(85, 30 + Math.floor(streamedChars / 40));
+                sendEvent('chunk', {
+                  type: 'chunk',
+                  delta,
+                  progress: dynamicProgress,
+                  outputTokens: Math.ceil(streamedChars / 3.5),
+                });
+              }
+            );
+
+            // 阶段 4: Zod 结构校验与 BBox 坐标校验 (90%)
+            sendEvent('progress', {
+              type: 'progress',
+              phase: 'VALIDATING',
+              stepPhase: '4/5 模型输出完成，正在执行 Zod 结构校验与视觉 BBox 关联...',
+              progress: 90,
+            });
+
+            const durationSeconds = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
+            const docId = `doc_${md5!.slice(0, 8)}`;
+            const sessionDoc = extractor.formatToSessionDocument(
+              docId,
+              filename,
+              fileSize,
+              rawResult,
+              clientPageImages || preprocessedAssets?.images
+            );
+
+            let bboxes = (rawResult as any).bboxes || [];
+            if (bboxes.length === 0 && preprocessedAssets?.tokens && preprocessedAssets.tokens.length > 0) {
+              bboxes = matchFieldBBoxesFromTokens(sessionDoc, preprocessedAssets.tokens);
+            }
+
+            const { pages: _discardPages, samplePages: _discardSamplePages, ...cleanSessionDoc } = sessionDoc;
+            const formattedRawJson = JSON.stringify(cleanSessionDoc, null, 2);
+
+            const cacheItem: CachedParseResult = {
+              md5: md5!,
+              filename,
+              fileSize,
+              parserConfigVersion: currentConfigVersion,
+              originalFilePath,
+              preprocessedDir: preprocessedAssets?.dir,
+              extractedTextPath: preprocessedAssets?.textPath,
+              isTextBased: preprocessedAssets?.isTextBased ?? Boolean(extractedTextToUse && extractedTextToUse.length > 20),
+              pageCount: preprocessedAssets?.pageCount ?? sessionDoc.pageCount,
+              pageImages: preprocessedAssets?.images,
+              model: (extractor as any).activeConfig?.model || 'kimi-k2.7-code',
+              provider: (extractor as any).activeConfig?.provider || 'Moonshot',
+              parsedAt: new Date().toISOString(),
+              tokenStats: {
+                inputTokens: (rawResult as any).tokens?.input || 1800,
+                outputTokens: (rawResult as any).tokens?.output || Math.ceil(streamedChars / 3.5),
+                durationSeconds,
+                isFromCache: false,
+              },
+              rawStreamingJson: formattedRawJson,
+              sessionDocument: sessionDoc,
+              bboxes,
+            };
+
+            globalParseCacheStore.set(md5!, cacheItem);
+
+            // 阶段 5: 完成态 (100%)
+            sendEvent('complete', {
+              type: 'complete',
+              cached: false,
+              md5,
+              result: cacheItem,
+            });
+          } catch (streamErr: any) {
+            logger.error('EXTRACTOR', `[API /api/documents/parse] SSE 流式异常: ${streamErr.stack || streamErr.message}`);
+            sendEvent('error', {
+              error: streamErr.message || '文档流式解析异常',
+            });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(customStream, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
 
     // 统一由大模型在抽取结构化数据的同时输出 BBox 视觉坐标（结合 Schema 反射的严格白名单闭集约束）
     const rawResult = await extractor.extract(inputContent, {
@@ -276,7 +472,10 @@ export async function POST(request: Request) {
         durationSeconds,
         isFromCache: false,
       },
-      rawStreamingJson: (rawResult as any).rawText || JSON.stringify(sessionDoc, null, 2),
+      rawStreamingJson: (() => {
+        const { pages: _discardPages2, samplePages: _discardSamplePages2, ...cleanSessionDoc2 } = sessionDoc;
+        return JSON.stringify(cleanSessionDoc2, null, 2);
+      })(),
       sessionDocument: sessionDoc,
       bboxes,
     };
