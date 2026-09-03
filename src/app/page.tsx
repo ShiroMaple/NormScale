@@ -132,10 +132,33 @@ export default function DashboardPage() {
   };
 
   const [loadedSession, setLoadedSession] = useState<InspectionSession | null>(null);
+  const [currentWorkbenchSession, setCurrentWorkbenchSession] = useState<InspectionSession | null>(null);
+  const [pendingSessionToLoad, setPendingSessionToLoad] = useState<InspectionSession | null>(null);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
 
+  // 判断工作台中是否存在活动作业文档/批次数据
+  const hasActiveSession = Boolean(
+    currentWorkbenchSession &&
+    currentWorkbenchSession.documents &&
+    currentWorkbenchSession.documents.length > 0
+  );
+
+  // 从历史台账加载会话处理器：若当前有正在进行的检验会话，弹出覆盖警告弹窗，否则直接载入
   const handleLoadSessionToWorkbench = (sess: InspectionSession) => {
-    setLoadedSession(sess);
+    if (hasActiveSession) {
+      setPendingSessionToLoad(sess);
+      setIsConfirmModalOpen(true);
+    } else {
+      executeLoadSession(sess);
+    }
+  };
+
+  // 真正执行覆盖加载并切回工作台
+  const executeLoadSession = (sess: InspectionSession) => {
+    setLoadedSession({ ...sess });
     setActiveTab('workbench');
+    setIsConfirmModalOpen(false);
+    setPendingSessionToLoad(null);
   };
 
   return (
@@ -161,8 +184,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* 视图 1：受控垂直平滑滑动质检工作台 */}
-        {activeTab === 'workbench' && (
+        {/* 视图 1：受控垂直平滑滑动质检工作台 (Keep-Alive 保活：切换到其它导航 Tab 时保持会话状态与解析进度不被销毁) */}
+        <div className={`w-full h-full ${activeTab === 'workbench' ? 'block' : 'hidden'}`}>
           <WaterfallWorkbench
             standardsData={standardsData}
             samples={samples}
@@ -173,8 +196,9 @@ export default function DashboardPage() {
             onOpenHitlDrawer={() => {}}
             onTriggerAudit={() => handleExecuteAudit(selectedSampleId)}
             loadedSession={loadedSession}
+            onSessionChange={setCurrentWorkbenchSession}
           />
-        )}
+        </div>
 
         {/* 视图 2：历史质检台账明细 */}
         {activeTab === 'ledger' && (
@@ -187,6 +211,62 @@ export default function DashboardPage() {
         {/* 视图 4：系统管理与运维配置控制台 */}
         {activeTab === 'admin' && <AdminConsole />}
       </main>
+
+      {/* 历史会话加载覆盖警告确认弹窗 */}
+      {isConfirmModalOpen && pendingSessionToLoad && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant dark:border-border-dark rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">warning</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-on-surface dark:text-surface-bright">
+                  覆盖当前作业会话确认
+                </h3>
+                <p className="text-xs text-on-surface-variant dark:text-outline-variant mt-1.5 leading-relaxed">
+                  工作台中当前存在正在进行的检验作业（已包含 <strong className="text-primary dark:text-primary-fixed-dim font-bold">{currentWorkbenchSession?.documents.length || 0}</strong> 份文档、<strong className="text-primary dark:text-primary-fixed-dim font-bold">{currentWorkbenchSession?.totalBatches || 0}</strong> 个炉批）。
+                </p>
+
+                <div className="mt-3 p-3 rounded-lg bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark text-xs space-y-1">
+                  <div className="text-[11px] text-on-surface-variant dark:text-outline-variant font-medium">即将载入的历史台账：</div>
+                  <div className="font-bold text-on-surface dark:text-surface-bright font-mono truncate">
+                    {pendingSessionToLoad.title || pendingSessionToLoad.sessionId}
+                  </div>
+                  <div className="text-[11px] text-on-surface-variant dark:text-outline-variant">
+                    生成时间: {pendingSessionToLoad.createdAt} ({pendingSessionToLoad.totalDocuments} 份文档 · {pendingSessionToLoad.totalBatches} 个批次)
+                  </div>
+                </div>
+
+                <p className="text-xs text-red-500 dark:text-red-400 font-medium mt-2.5">
+                  注意：从历史台账载入将重置当前工作台现场并覆盖未保存的检验进度。
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-outline-variant/40 dark:border-border-dark">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmModalOpen(false);
+                  setPendingSessionToLoad(null);
+                }}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-dark-high transition-colors cursor-pointer"
+              >
+                取消（保留当前作业）
+              </button>
+              <button
+                type="button"
+                onClick={() => executeLoadSession(pendingSessionToLoad)}
+                className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-base">restore_page</span>
+                <span>确认覆盖并载入</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 人机协同干预右侧 480px 抽屉 */}
       <HitlDrawer

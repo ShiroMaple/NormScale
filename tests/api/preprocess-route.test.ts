@@ -104,5 +104,24 @@ describe('API: /api/documents/preprocess (即时预处理与切图落盘端点)'
     expect(fs.existsSync(page2Path)).toBe(true);
     expect(fs.existsSync(textPath)).toBe(true);
     expect(fs.readFileSync(textPath, 'utf-8')).toBe(fakeText);
+
+    // 验证 GET /api/documents/preprocess?md5=...&page=1 正常流与边界
+    const getReq = new Request(`http://localhost:3000/api/documents/preprocess?md5=${data.md5}&page=1`);
+    const { GET } = await import('../../src/app/api/documents/preprocess/route.ts');
+    const getRes = await GET(getReq);
+    expect(getRes.status).toBe(200);
+    expect(getRes.headers.get('Content-Type')).toBe('image/png');
+    const imgBuf = await getRes.arrayBuffer();
+    expect(imgBuf.byteLength).toBeGreaterThan(0);
+
+    // 异常边界：缺失 md5 参数
+    const noMd5Req = new Request('http://localhost:3000/api/documents/preprocess');
+    const noMd5Res = await GET(noMd5Req);
+    expect(noMd5Res.status).toBe(400);
+
+    // 异常边界：请求不存在的页码
+    const notFoundReq = new Request(`http://localhost:3000/api/documents/preprocess?md5=${data.md5}&page=999`);
+    const notFoundRes = await GET(notFoundReq);
+    expect(notFoundRes.status).toBe(404);
   });
 });

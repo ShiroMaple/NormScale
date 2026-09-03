@@ -6,6 +6,7 @@ import { globalParseCacheStore, CachedParseResult } from '@/repository/parse-cac
 import { OpenAiCompatibleExtractor, MissingApiKeyError, ModelApiExecutionError } from '@/extractor/openai-compatible-extractor.ts';
 import { globalDocumentPreprocessorService } from '@/services/document-preprocessor.service.ts';
 import { matchFieldBBoxesFromTokens } from '@/utils/bbox-matcher.ts';
+import { ConfidenceEvaluator } from '@/engine/confidence-evaluator.ts';
 import { logger } from '@/logger/index.ts';
 
 export async function POST(request: Request) {
@@ -170,10 +171,28 @@ export async function POST(request: Request) {
           );
         }
 
+        // 自动自愈校准历史缓存中的真实 OCR 置信度与牌号匹配度
+        if (validParseResult.sessionDocument?.batches) {
+          validParseResult.sessionDocument.batches = validParseResult.sessionDocument.batches.map(b =>
+            ConfidenceEvaluator.enrichBatchConfidences(b, bboxes)
+          );
+          globalParseCacheStore.set(md5, validParseResult);
+        }
+
         logger.info(
           'EXTRACTOR',
           `[API /api/documents/parse] 命中有效解析缓存 [${filename}] (版本: ${validParseResult.parserConfigVersion || '1.0.0'}, MD5: ${md5}, BBox: ${bboxes.length} 个)`
         );
+
+        let pageUrls = validParseResult.sessionDocument?.pages || [];
+        if (pageUrls.length === 0 && preprocessedAssets?.images && preprocessedAssets.images.length > 0) {
+          pageUrls = preprocessedAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${md5}&page=${idx + 1}`);
+          validParseResult.sessionDocument = {
+            ...validParseResult.sessionDocument,
+            pages: pageUrls,
+            samplePages: pageUrls,
+          };
+        }
 
         if (isStreamRequested) {
           const encoder = new TextEncoder();
@@ -355,10 +374,22 @@ export async function POST(request: Request) {
               clientPageImages || preprocessedAssets?.images
             );
 
+            let pageUrls = sessionDoc.pages || [];
+            if (pageUrls.length === 0 && preprocessedAssets?.images && preprocessedAssets.images.length > 0) {
+              pageUrls = preprocessedAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${md5}&page=${idx + 1}`);
+              sessionDoc.pages = pageUrls;
+              sessionDoc.samplePages = pageUrls;
+            }
+
             let bboxes = (rawResult as any).bboxes || [];
             if (bboxes.length === 0 && preprocessedAssets?.tokens && preprocessedAssets.tokens.length > 0) {
               bboxes = matchFieldBBoxesFromTokens(sessionDoc, preprocessedAssets.tokens);
             }
+
+            // 结合真实生成的视觉 BBox 覆盖率重新校准各批次置信度真值
+            sessionDoc.batches = sessionDoc.batches.map(b =>
+              ConfidenceEvaluator.enrichBatchConfidences(b, bboxes)
+            );
 
             const { pages: _discardPages, samplePages: _discardSamplePages, ...cleanSessionDoc } = sessionDoc;
             const formattedRawJson = JSON.stringify(cleanSessionDoc, null, 2);
@@ -450,6 +481,18 @@ export async function POST(request: Request) {
         `[API /api/documents/parse] 成功采纳大模型直接解析生成的 ${bboxes.length} 个视觉 BBox 标注框`
       );
     }
+
+    let nonStreamPageUrls = sessionDoc.pages || [];
+    if (nonStreamPageUrls.length === 0 && preprocessedAssets?.images && preprocessedAssets.images.length > 0) {
+      nonStreamPageUrls = preprocessedAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${md5}&page=${idx + 1}`);
+      sessionDoc.pages = nonStreamPageUrls;
+      sessionDoc.samplePages = nonStreamPageUrls;
+    }
+
+    // 结合真实生成的视觉 BBox 覆盖率重新校准各批次置信度真值
+    sessionDoc.batches = sessionDoc.batches.map(b =>
+      ConfidenceEvaluator.enrichBatchConfidences(b, bboxes)
+    );
 
     // 9. 建立自包含完整元数据索引并写入本地缓存
     const cacheItem: CachedParseResult = {

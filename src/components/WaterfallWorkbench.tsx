@@ -18,6 +18,7 @@ import { useDocumentParser } from '@/hooks/useDocumentParser.ts';
 import { LlmStreamingTerminal } from './LlmStreamingTerminal.tsx';
 import { renderPdfAndExtractText } from '@/utils/pdf-renderer.ts';
 import { getCertificateInspectionFieldDefinitions } from '@/schemas/certificate.schema.ts';
+import { ConfidenceEvaluator } from '@/engine/confidence-evaluator.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -33,6 +34,7 @@ interface WaterfallWorkbenchProps {
   onOpenHitlDrawer: () => void;
   onTriggerAudit: () => void;
   loadedSession?: InspectionSession | null;
+  onSessionChange?: (session: InspectionSession) => void;
   initialStep?: number;
 }
 
@@ -109,11 +111,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   onOpenHitlDrawer,
   onTriggerAudit: _onTriggerAudit,
   loadedSession,
+  onSessionChange,
   initialStep = 0,
 }) => {
   // 当前激活的步骤索引：0 (Step 1), 1 (Step 2), 2 (Step 3), 3 (Step 4)
   const [currentStep, setCurrentStep] = useState<number>(initialStep);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [rotation, setRotation] = useState<number>(0); // 顺时针旋转角度 (0, 90, 180, 270)
+  const [pageOrientationOverride, setPageOrientationOverride] = useState<'auto' | 'portrait' | 'landscape'>('auto'); // 用户版式覆盖 (auto自适应, portrait强制竖版, landscape强制横版)
+  const [pageAspectRatios, setPageAspectRatios] = useState<Record<number, number>>({}); // 页面自适应宽高比缓存
+  const [pdfViewportWidth, setPdfViewportWidth] = useState<number>(560); // PDF视窗实时净可用宽度 (自适应横向留白)
   const [selectedExportFormat, setSelectedExportFormat] = useState<string>('PDF');
   const [activeTabCategory, setActiveTabCategory] = useState<string>('all');
   // 步骤 3: 全景合规比对矩阵分类页签与标准/牌号双搜索控件状态
@@ -144,6 +151,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [selectedBatchNo, setSelectedBatchNo] = useState<string>(
     session.documents[0]?.batches[0]?.batchNo || ''
   );
+
+  // 监听工作台 Session 变化，实时同步通知顶层主页面 (用于页面切换保活与台账加载覆盖提示)
+  useEffect(() => {
+    onSessionChange?.(session);
+  }, [session, onSessionChange]);
 
   // 源文档 OCR 视觉 BBox 与右侧解析字段双向联动状态
   const [highlightedFieldId, setHighlightedFieldId] = useState<string | null>(null);
@@ -190,9 +202,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         const preservedPages = (parsedDoc.pages && parsedDoc.pages.length > 0)
           ? parsedDoc.pages
           : (d.pages && d.pages.length > 0 ? d.pages : (d.samplePages && d.samplePages.length > 0 ? d.samplePages : undefined));
+        const enrichedBatches = (parsedDoc.batches || []).map(b =>
+          ConfidenceEvaluator.enrichBatchConfidences(b, bboxes)
+        );
         return {
           ...parsedDoc,
+          batches: enrichedBatches,
           docId,
+          md5: parsedDoc.md5 || d.md5,
           ocrStatus: 'DONE',
           pages: preservedPages,
           samplePages: preservedPages,
@@ -263,7 +280,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
   }, [selectedDocId, currentDocTask?.status]);
 
-  // 首次载入或文档/缩放变化时，确保 PDF 视窗水平居中
+  // 切换文档时自动重置旋转角度、版式覆盖与长宽比缓存
+  useEffect(() => {
+    setRotation(0);
+    setPageOrientationOverride('auto');
+    setPageAspectRatios({});
+  }, [selectedDocId]);
+
+  // 首次载入或文档/缩放/旋转变化时，确保 PDF 视窗水平居中
   useEffect(() => {
     const container = pdfScrollContainerRef.current;
     if (!container) return;
@@ -273,7 +297,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       }
     }, 50);
     return () => clearTimeout(centerTimer);
-  }, [zoomLevel, currentDocPage, selectedDocId, currentStep]);
+  }, [zoomLevel, rotation, currentDocPage, selectedDocId, currentStep]);
+
+  // 监听 PDF 视窗物理容器宽度，自适应计算横向呼吸留白与整页完整预览
+  useEffect(() => {
+    const el = pdfScrollContainerRef.current;
+    if (!el) return;
+    const updateWidth = () => {
+      if (el.clientWidth > 100) {
+        setPdfViewportWidth(el.clientWidth);
+      }
+    };
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(el);
+    window.addEventListener('resize', updateWidth);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateWidth);
+    };
+  }, [currentStep, selectedDocId]);
 
   // 组件卸载时安全清理定时器
   useEffect(() => {
@@ -900,6 +943,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           ...doc,
           batches: doc.batches.map(b => {
             if (b.batchNo !== selectedBatchNo) return b;
+            let updatedB = { ...b };
 
             // 1. 化学成分
             if (fieldId.startsWith('chem_')) {
@@ -1019,10 +1063,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               return { ...b, supplier: newValue };
             }
             if (fieldId === 'meta_productName') {
-              return { ...b, productName: newValue };
+              updatedB = { ...b, productName: newValue };
             }
 
-            return b;
+            // 实时结合当前 BBox 覆盖率重新动态评估 OCR 置信度与牌号匹配度真值
+            return ConfidenceEvaluator.enrichBatchConfidences(updatedB, bboxes);
           }),
         };
       }),
@@ -1856,15 +1901,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                   {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 (自带独立滚动条) */}
                   <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
-                    {/* PDF 阅读器顶部工具栏 (固定 44px 高度单行清爽模式，气泡触发时原位平滑覆盖开关，退出时恢复开关) */}
-                    <div className="h-11 min-h-[44px] max-h-[44px] px-3.5 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0 box-border">
-                      <div className="flex items-center gap-1.5 truncate max-w-[140px] sm:max-w-[170px] shrink-0">
-                        <span className="material-symbols-outlined text-base text-red-500 shrink-0">picture_as_pdf</span>
-                        <span className="font-bold truncate text-on-surface dark:text-surface-bright">{currentDoc.filename}</span>
-                      </div>
-
-                      {/* 居中单行容器：平时展示“启用定位聚焦（实验功能）”开关；功能启用且气泡出现时，直接在原位展示蓝色气泡覆盖开关 */}
-                      <div className="flex-1 flex items-center justify-center min-w-0 h-full">
+                    {/* PDF 阅读器顶部工具栏 (省略重复文件名标题，全量释放横向空间给功能按钮) */}
+                    <div className="h-11 min-h-[44px] max-h-[44px] px-3 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0 box-border">
+                      {/* 左侧：定位聚焦开关 / 活跃气泡徽章 */}
+                      <div className="flex items-center min-w-0 shrink-0">
                         {(() => {
                           const isPageMagnified = isBboxFocusEnabled && !!magnifiedFieldId;
                           const activeFieldBox = (isBboxFocusEnabled && (magnifiedFieldId || highlightedFieldId))
@@ -1874,12 +1914,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           // 1. 功能启用且气泡处于激活状态时：在原位渲染蓝色气泡徽章覆盖开关
                           if (isBboxFocusEnabled && (isPageMagnified || activeFieldBox)) {
                             return (
-                              <div className="h-7 box-border flex items-center gap-1.5 px-2.5 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[280px] shrink-0">
+                              <div className="h-7 box-border flex items-center gap-1.5 px-2 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[180px] shrink-0">
                                 <span className="material-symbols-outlined text-xs shrink-0">
                                   {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
                                 </span>
                                 <span className="truncate">
-                                  {isPageMagnified ? '聚焦放大 150%' : '已定位'}: {activeFieldBox?.label || '当前项'}
+                                  {isPageMagnified ? '聚焦' : '已定位'}: {activeFieldBox?.label || '当前项'}
                                 </span>
                                 {isPageMagnified && (
                                   <button
@@ -1888,24 +1928,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                       e.stopPropagation();
                                       handleResetMagnify();
                                     }}
-                                    className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
+                                    className="ml-0.5 px-1 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
                                     title="按 ESC 键亦可快速退出放大"
                                   >
-                                    退出 (ESC)
+                                    退出（ESC）
                                   </button>
                                 )}
                               </div>
                             );
                           }
 
-                          // 2. 平时或未激活气泡时：居中展示“启用定位聚焦 (实验功能)”开关
+                          // 2. 平时或未激活气泡时：展示紧凑精巧的“定位聚焦”开关
                           return (
                             <label
                               onClick={() => handleToggleBboxFocus(!isBboxFocusEnabled)}
-                              className="h-7 box-border flex items-center gap-1.5 px-2.5 rounded-lg hover:bg-surface-container-high/60 dark:hover:bg-surface-dark-high transition-colors cursor-pointer select-none group shrink-0"
+                              className="h-7 box-border flex items-center gap-1.5 px-2 rounded-lg hover:bg-surface-container-high/60 dark:hover:bg-surface-dark-high transition-colors cursor-pointer select-none group shrink-0"
+                              title="开启后，鼠标悬浮检验项时在 PDF 上精确定位高亮"
                             >
+                              <span className="material-symbols-outlined text-sm text-primary">filter_center_focus</span>
                               <span className={`text-[11px] transition-colors ${isBboxFocusEnabled ? 'text-primary dark:text-primary-fixed-dim font-bold' : 'text-on-surface-variant/80 group-hover:text-on-surface dark:group-hover:text-surface-bright font-medium'}`}>
-                                启用定位聚焦 (实验功能)
+                                定位聚焦（实验功能）
                               </span>
                               <div
                                 role="switch"
@@ -1950,6 +1992,62 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             +
                           </button>
                         </div>
+
+                        {/* 顺时针旋转 90° 控制按钮 (纠偏扫描件方向) */}
+                        <div className="flex items-center">
+                          <button
+                            type="button"
+                            onClick={() => setRotation(prev => (prev + 90) % 360)}
+                            className={`h-6 px-1.5 flex items-center gap-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded transition-colors cursor-pointer ${rotation > 0 ? 'text-primary dark:text-primary-fixed-dim bg-primary/10 font-bold' : 'text-on-surface-variant'
+                              }`}
+                            title="顺时针旋转 90° (纠正扫描件方向)"
+                          >
+                            <span className="material-symbols-outlined text-sm">rotate_right</span>
+                            {rotation > 0 && (
+                              <span className="text-[10px] font-bold">{rotation}°</span>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* 版式切换控制按钮 (自适应 / 强制横版 / 强制竖版) */}
+                        <div className="flex items-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPageOrientationOverride(prev => {
+                                if (prev === 'auto') return 'landscape';
+                                if (prev === 'landscape') return 'portrait';
+                                return 'auto';
+                              });
+                            }}
+                            className={`h-6 px-1.5 flex items-center gap-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded transition-colors cursor-pointer text-xs ${pageOrientationOverride !== 'auto'
+                              ? 'text-primary dark:text-primary-fixed-dim bg-primary/10 font-bold'
+                              : 'text-on-surface-variant'
+                              }`}
+                            title={`当前版式: ${pageOrientationOverride === 'auto'
+                              ? '自动感知'
+                              : pageOrientationOverride === 'landscape'
+                                ? '强制横版'
+                                : '强制竖版'
+                              } (点击切换)`}
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              {pageOrientationOverride === 'landscape'
+                                ? 'stay_current_landscape'
+                                : pageOrientationOverride === 'portrait'
+                                  ? 'stay_current_portrait'
+                                  : 'crop_free'}
+                            </span>
+                            <span className="text-[10px] font-medium">
+                              {pageOrientationOverride === 'auto'
+                                ? '自适应'
+                                : pageOrientationOverride === 'landscape'
+                                  ? '横版'
+                                  : '竖版'}
+                            </span>
+                          </button>
+                        </div>
+
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
@@ -1976,7 +2074,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                     {/* 源文档视窗：支持真实多页高清切图/PDF栅格化页面纵向连续平铺 */}
                     {(() => {
-                      const docPages = currentDoc.pages || currentDoc.samplePages || [];
+                      // 优先使用真实提取的 pages，若未持久化但具备文档 md5，自动自愈回补服务端预处理的高清切图 URL
+                      const docPages = (currentDoc.pages && currentDoc.pages.length > 0)
+                        ? currentDoc.pages
+                        : (currentDoc.samplePages && currentDoc.samplePages.length > 0)
+                          ? currentDoc.samplePages
+                          : (currentDoc.md5
+                            ? Array.from({ length: currentDoc.pageCount || 1 }, (_, i) => `/api/documents/preprocess?md5=${currentDoc.md5}&page=${i + 1}`)
+                            : []);
                       if (docPages.length > 0) {
                         return (
                           <div
@@ -1988,7 +2093,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <div
                               className="w-full flex flex-col items-center gap-5 py-3 transition-[padding,min-width]"
                               style={{
-                                minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(100, Math.round((zoomLevel / 100) * (magnifiedFieldId ? 160 : 100)))}%` : '100%',
+                                minWidth: (magnifiedFieldId || zoomLevel > 100 || rotation > 0) ? `${Math.max(100, Math.round((zoomLevel / 100) * (magnifiedFieldId ? 160 : 100)))}%` : '100%',
                                 padding: magnifiedFieldId ? '16px 32px' : '10px 0px',
                               }}
                             >
@@ -2006,11 +2111,36 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
 
                                 const MAGNIFY_SCALE = 1.5;
-                                const pageWidth = Math.round(480 * (zoomLevel / 100));
-                                const pageHeight = Math.round(pageWidth * 1.414);
 
-                                const extraHeight = (MAGNIFY_SCALE - 1) * pageHeight;
-                                const extraWidth = (MAGNIFY_SCALE - 1) * pageWidth;
+                                // 页面宽高比推算：优先响应用户显式版式覆盖，其次根据图片 naturalWidth/naturalHeight 自动检测
+                                const detectedRatio = pageAspectRatios[pageNum];
+                                let effectiveRatio: number;
+                                if (pageOrientationOverride === 'landscape') {
+                                  effectiveRatio = detectedRatio && detectedRatio > 1.05 ? detectedRatio : 1.4142; // 强制横版
+                                } else if (pageOrientationOverride === 'portrait') {
+                                  effectiveRatio = detectedRatio && detectedRatio < 0.95 ? detectedRatio : 0.7071; // 强制竖版
+                                } else {
+                                  // auto 模式：优先使用图片检测值；若未检测到但已顺时针旋转 90/270 度，自动切换为横版
+                                  effectiveRatio = detectedRatio || (rotation === 90 || rotation === 270 ? 1.4142 : 0.7071);
+                                }
+
+                                const isLandscape = effectiveRatio > 1.05;
+
+                                // 动态横向留白与 Fit Width：保留左右各 16px 舒适呼吸留白，确保横版在视口中 100% 完整可见不被截断
+                                const usableWidth = Math.max(280, pdfViewportWidth - 32);
+                                const baseWidth = isLandscape
+                                  ? usableWidth
+                                  : Math.min(Math.round(usableWidth * 0.78), 480);
+                                const rawPageWidth = Math.round(baseWidth * (zoomLevel / 100));
+                                const rawPageHeight = Math.round(rawPageWidth / effectiveRatio);
+
+                                const isRotated90or270 = rotation === 90 || rotation === 270;
+                                // 视觉外层占位宽高：若顺时针旋转了 90° 或 270°，外层容器宽高相应调换
+                                const visualWidth = isRotated90or270 ? rawPageHeight : rawPageWidth;
+                                const visualHeight = isRotated90or270 ? rawPageWidth : rawPageHeight;
+
+                                const extraHeight = (MAGNIFY_SCALE - 1) * visualHeight;
+                                const extraWidth = (MAGNIFY_SCALE - 1) * visualWidth;
 
                                 const topMargin = isPageMagnified ? Math.round((originY / 100) * extraHeight) : 0;
                                 const bottomMargin = isPageMagnified ? Math.round(((100 - originY) / 100) * extraHeight) : 0;
@@ -2033,49 +2163,78 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                       className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
                                         }`}
                                       style={{
-                                        width: `${pageWidth}px`,
-                                        aspectRatio: '1 / 1.414',
-                                        transform: isPageMagnified ? `scale(${MAGNIFY_SCALE})` : 'scale(1)',
-                                        transformOrigin: `${originX}% ${originY}%`,
-                                        transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out',
+                                        width: `${visualWidth}px`,
+                                        height: `${visualHeight}px`,
+                                        position: 'relative',
+                                        overflow: 'visible',
+                                        transition: 'box-shadow 250ms ease-out, width 150ms ease-out, height 150ms ease-out',
                                       }}
                                     >
-                                      {/* 页码徽章 */}
-                                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white text-[11px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
-                                        第 {pageNum} / {docPages.length} 页
+                                      {/* 内层可旋转放缩画布容器：包含高清底图与 BBox 图层，旋转放缩时两者严格同步 */}
+                                      <div
+                                        className="absolute"
+                                        style={{
+                                          width: `${rawPageWidth}px`,
+                                          height: `${rawPageHeight}px`,
+                                          left: '50%',
+                                          top: '50%',
+                                          transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${isPageMagnified ? MAGNIFY_SCALE : 1})`,
+                                          transformOrigin: isPageMagnified && !isRotated90or270 ? `${originX}% ${originY}%` : 'center center',
+                                          transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1)',
+                                        }}
+                                      >
+                                        {/* 页码与版式徽章 */}
+                                        <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/65 text-white text-[11px] rounded backdrop-blur-xs z-10 pointer-events-none shadow-xs">
+                                          第 {pageNum} / {docPages.length} 页 {isLandscape ? '· 横版' : ''}
+                                        </div>
+
+                                        {/* 真实高清页面底图：自然宽高比精准贴合容器，彻底消灭空白与错位 */}
+                                        <img
+                                          ref={(el) => {
+                                            if (el && el.complete && el.naturalWidth && el.naturalHeight) {
+                                              const ratio = Number((el.naturalWidth / el.naturalHeight).toFixed(4));
+                                              if (pageAspectRatios[pageNum] !== ratio) {
+                                                setPageAspectRatios(prev => (prev[pageNum] === ratio ? prev : { ...prev, [pageNum]: ratio }));
+                                              }
+                                            }
+                                          }}
+                                          src={pageSrc}
+                                          alt={`第 ${pageNum} 页`}
+                                          onLoad={(e) => {
+                                            const img = e.currentTarget;
+                                            if (img.naturalWidth && img.naturalHeight) {
+                                              const ratio = Number((img.naturalWidth / img.naturalHeight).toFixed(4));
+                                              setPageAspectRatios(prev => (prev[pageNum] === ratio ? prev : { ...prev, [pageNum]: ratio }));
+                                            }
+                                          }}
+                                          className="w-full h-full object-fill block select-none pointer-events-none"
+                                          loading="eager"
+                                        />
+
+                                        {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡，仅在启用定位聚焦时生效) */}
+                                        {isBboxFocusEnabled && pageBBoxes.map((box) => {
+                                          const isHighlighted = highlightedFieldId === box.id;
+                                          return (
+                                            <div
+                                              key={box.id}
+                                              id={`bbox-${box.id}`}
+                                              onMouseEnter={() => scrollToRightField(box.id)}
+                                              onMouseLeave={() => handleFieldHover(null)}
+                                              className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
+                                                ? 'border-2 border-primary bg-primary/10 z-20 shadow-xs'
+                                                : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
+                                                }`}
+                                              style={{
+                                                left: `${box.x}%`,
+                                                top: `${box.y}%`,
+                                                width: `${box.w}%`,
+                                                height: `${box.h}%`,
+                                              }}
+                                              title={box.label}
+                                            />
+                                          );
+                                        })}
                                       </div>
-
-                                      {/* 真实高清页面底图 */}
-                                      <img
-                                        src={pageSrc}
-                                        alt={`第 ${pageNum} 页`}
-                                        className="w-full h-full object-contain select-none pointer-events-none"
-                                        loading="eager"
-                                      />
-
-                                      {/* 动态自适应百分比 BBox 标注框层 (单实线、高透光、零遮挡，仅在启用定位聚焦时生效) */}
-                                      {isBboxFocusEnabled && pageBBoxes.map((box) => {
-                                        const isHighlighted = highlightedFieldId === box.id;
-                                        return (
-                                          <div
-                                            key={box.id}
-                                            id={`bbox-${box.id}`}
-                                            onMouseEnter={() => scrollToRightField(box.id)}
-                                            onMouseLeave={() => handleFieldHover(null)}
-                                            className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
-                                              ? 'border-2 border-primary bg-primary/10 z-20 shadow-xs'
-                                              : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
-                                              }`}
-                                            style={{
-                                              left: `${box.x}%`,
-                                              top: `${box.y}%`,
-                                              width: `${box.w}%`,
-                                              height: `${box.h}%`,
-                                            }}
-                                            title={box.label}
-                                          />
-                                        );
-                                      })}
                                     </div>
                                   </div>
                                 );
@@ -2097,8 +2256,27 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
                         const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
                         const MAGNIFY_SCALE = 1.5;
-                        const pageWidth = Math.round(480 * (zoomLevel / 100));
-                        const pageHeight = Math.round(680 * (zoomLevel / 100));
+
+                        const detectedRatio = pageAspectRatios[1];
+                        let effectiveRatio: number;
+                        if (pageOrientationOverride === 'landscape') {
+                          effectiveRatio = detectedRatio && detectedRatio > 1.05 ? detectedRatio : 1.4142;
+                        } else if (pageOrientationOverride === 'portrait') {
+                          effectiveRatio = detectedRatio && detectedRatio < 0.95 ? detectedRatio : 0.7071;
+                        } else {
+                          effectiveRatio = detectedRatio || (rotation === 90 || rotation === 270 ? 1.4142 : 0.7071);
+                        }
+                        const isLandscape = effectiveRatio > 1.05;
+                        const usableWidth = Math.max(280, pdfViewportWidth - 32);
+                        const baseWidth = isLandscape
+                          ? usableWidth
+                          : Math.min(Math.round(usableWidth * 0.78), 480);
+                        const rawPageWidth = Math.round(baseWidth * (zoomLevel / 100));
+                        const rawPageHeight = Math.round(rawPageWidth / effectiveRatio);
+
+                        const isRotated90or270 = rotation === 90 || rotation === 270;
+                        const visualWidth = isRotated90or270 ? rawPageHeight : rawPageWidth;
+                        const visualHeight = isRotated90or270 ? rawPageWidth : rawPageHeight;
 
                         return (
                           <div
@@ -2110,7 +2288,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <div
                               className="w-full flex flex-col items-center gap-5 py-3 transition-[padding,min-width]"
                               style={{
-                                minWidth: (magnifiedFieldId || zoomLevel > 100) ? `${Math.max(100, Math.round((zoomLevel / 100) * (magnifiedFieldId ? 160 : 100)))}%` : '100%',
+                                minWidth: (magnifiedFieldId || zoomLevel > 100 || rotation > 0) ? `${Math.max(100, Math.round((zoomLevel / 100) * (magnifiedFieldId ? 160 : 100)))}%` : '100%',
                                 padding: magnifiedFieldId ? '16px 32px' : '10px 0px',
                               }}
                             >
@@ -2119,49 +2297,69 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'
                                   }`}
                                 style={{
-                                  width: `${pageWidth}px`,
-                                  height: `${pageHeight}px`,
-                                  transform: isPageMagnified ? `scale(${MAGNIFY_SCALE})` : 'scale(1)',
-                                  transformOrigin: `${originX}% ${originY}%`,
-                                  transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms ease-out, width 150ms ease-out, height 150ms ease-out',
+                                  width: `${visualWidth}px`,
+                                  height: `${visualHeight}px`,
+                                  position: 'relative',
+                                  overflow: 'visible',
+                                  transition: 'box-shadow 250ms ease-out, width 150ms ease-out, height 150ms ease-out',
                                 }}
                               >
-                                {isImage ? (
-                                  <img
-                                    src={fallbackBlobUrl}
-                                    alt={currentDoc.filename}
-                                    className="w-full h-full object-contain select-none pointer-events-none"
-                                  />
-                                ) : (
-                                  <iframe
-                                    key={fallbackBlobUrl}
-                                    src={`${fallbackBlobUrl}#toolbar=0&view=FitH`}
-                                    className="w-full h-full border-0 rounded-sm bg-white pointer-events-auto"
-                                    title={currentDoc.filename}
-                                  />
-                                )}
-                                {bboxes.map((box) => {
-                                  const isHighlighted = highlightedFieldId === box.id;
-                                  return (
-                                    <div
-                                      key={box.id}
-                                      id={`bbox-${box.id}`}
-                                      onMouseEnter={() => scrollToRightField(box.id)}
-                                      onMouseLeave={() => handleFieldHover(null)}
-                                      className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
-                                        ? 'border-2 border-primary bg-primary/20 ring-2 ring-primary/40 z-30 shadow-xs'
-                                        : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
-                                        }`}
-                                      style={{
-                                        left: `${box.x}%`,
-                                        top: `${box.y}%`,
-                                        width: `${box.w}%`,
-                                        height: `${box.h}%`,
+                                <div
+                                  className="absolute"
+                                  style={{
+                                    width: `${rawPageWidth}px`,
+                                    height: `${rawPageHeight}px`,
+                                    left: '50%',
+                                    top: '50%',
+                                    transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${isPageMagnified ? MAGNIFY_SCALE : 1})`,
+                                    transformOrigin: isPageMagnified && !isRotated90or270 ? `${originX}% ${originY}%` : 'center center',
+                                    transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1)',
+                                  }}
+                                >
+                                  {isImage ? (
+                                    <img
+                                      src={fallbackBlobUrl}
+                                      alt={currentDoc.filename}
+                                      onLoad={(e) => {
+                                        const img = e.currentTarget;
+                                        if (img.naturalWidth && img.naturalHeight) {
+                                          const ratio = Number((img.naturalWidth / img.naturalHeight).toFixed(4));
+                                          setPageAspectRatios(prev => (prev[1] === ratio ? prev : { ...prev, 1: ratio }));
+                                        }
                                       }}
-                                      title={box.label}
+                                      className="w-full h-full object-fill block select-none pointer-events-none"
                                     />
-                                  );
-                                })}
+                                  ) : (
+                                    <iframe
+                                      key={fallbackBlobUrl}
+                                      src={`${fallbackBlobUrl}#toolbar=0&view=FitH`}
+                                      className="w-full h-full border-0 rounded-sm bg-white pointer-events-auto"
+                                      title={currentDoc.filename}
+                                    />
+                                  )}
+                                  {bboxes.map((box) => {
+                                    const isHighlighted = highlightedFieldId === box.id;
+                                    return (
+                                      <div
+                                        key={box.id}
+                                        id={`bbox-${box.id}`}
+                                        onMouseEnter={() => scrollToRightField(box.id)}
+                                        onMouseLeave={() => handleFieldHover(null)}
+                                        className={`absolute rounded-xs transition-all duration-150 cursor-pointer ${isHighlighted
+                                          ? 'border-2 border-primary bg-primary/20 ring-2 ring-primary/40 z-30 shadow-xs'
+                                          : 'hover:bg-primary/10 hover:border hover:border-primary/40 border border-dashed border-primary/20 z-10'
+                                          }`}
+                                        style={{
+                                          left: `${box.x}%`,
+                                          top: `${box.y}%`,
+                                          width: `${box.w}%`,
+                                          height: `${box.h}%`,
+                                        }}
+                                        title={box.label}
+                                      />
+                                    );
+                                  })}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -2227,8 +2425,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             />
                           </div>
 
-                          <div className="flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full bg-status-pass-bg text-status-pass-text text-xs  font-bold border border-emerald-300 dark:border-emerald-800 shadow-2xs h-8">
-                            <span className="material-symbols-outlined text-sm">verified</span>
+                          {/* 动态真值 OCR 置信度徽章 (方案 A：综合元数据、检验项有效性与视觉定位覆盖率) */}
+                          <div
+                            className={`flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border shadow-2xs h-8 select-none transition-colors ${currentBatch.ocrConfidence >= 90
+                              ? 'bg-status-pass-bg text-status-pass-text border-emerald-300 dark:border-emerald-800'
+                              : currentBatch.ocrConfidence >= 75
+                                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                              }`}
+                            title="当前批次综合数据抽取质量与定位覆盖率加权评估值 (真实多维动态测算)"
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              {currentBatch.ocrConfidence >= 90 ? 'verified' : currentBatch.ocrConfidence >= 75 ? 'info' : 'warning'}
+                            </span>
                             <span>当前批次 OCR 置信度: {currentBatch.ocrConfidence}%</span>
                           </div>
 
@@ -2322,9 +2531,23 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           >
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant">材料牌号 (Material Grade)</span>
-                              <span className="px-1.5 py-0.2 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-bold rounded shrink-0">
+                              {/* 暂不展示牌号匹配度
+                              <span
+                                className={`px-1.5 py-0.2 text-[10px] font-bold rounded shrink-0 border transition-colors ${currentBatch.gradeMatchConfidence === 100
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                  : currentBatch.gradeMatchConfidence >= 90
+                                    ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                  }`}
+                                title={currentBatch.gradeMatchConfidence === 100
+                                  ? '标准规格切片库精确命中 (100%)'
+                                  : currentBatch.gradeMatchConfidence >= 90
+                                    ? '工业通用别名消歧映射成功 (98%)'
+                                    : '未收录未知牌号，建议人工复核 (50%)'
+                                }
+                              >
                                 匹配度 {currentBatch.gradeMatchConfidence}%
-                              </span>
+                              </span> */}
                             </div>
                             <input
                               type="text"
@@ -2623,7 +2846,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               ? String(t.result)
                               : (t.value_num !== null && t.value_num !== undefined ? `${t.value_num}${t.unit ? ` ${t.unit}` : ''}` : '--');
                             const isFail = t.conclusion === 'FAIL' || safeValue.includes('不') || safeValue.toUpperCase().includes('FAIL');
-                            
+
                             // 智能推断分类：彻底纠正模型将尺寸/表面标记为 process 的偏差
                             const s = `${t.key || ''} ${t.name || ''}`.toLowerCase();
                             let catKey = t.category || 'process';

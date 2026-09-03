@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { globalDocumentPreprocessorService } from '@/services/document-preprocessor.service.ts';
 import { globalParseCacheStore } from '@/repository/parse-cache-store.ts';
 import { OpenAiCompatibleExtractor } from '@/extractor/openai-compatible-extractor.ts';
@@ -129,3 +131,38 @@ export async function POST(request: Request) {
     );
   }
 }
+
+/**
+ * GET /api/documents/preprocess?md5=...&page=...
+ * 提取并直接输出指定文档切图的真实 PNG 图片流
+ */
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const md5 = searchParams.get('md5');
+    const pageStr = searchParams.get('page') || '1';
+    const pageNum = parseInt(pageStr, 10) || 1;
+
+    if (!md5) {
+      return NextResponse.json({ success: false, error: '缺少 md5 参数' }, { status: 400 });
+    }
+
+    const preprocessedDir = path.join(process.cwd(), '.cache', 'preprocessed', md5);
+    const pageFile = path.join(preprocessedDir, `page-${pageNum}.png`);
+
+    if (fs.existsSync(pageFile)) {
+      const imgBuffer = fs.readFileSync(pageFile);
+      return new Response(imgBuffer, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      });
+    }
+
+    return NextResponse.json({ success: false, error: '未找到对应切图' }, { status: 404 });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+

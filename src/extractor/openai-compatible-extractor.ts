@@ -9,6 +9,7 @@ import { logger } from '../logger/index.ts';
 import { PerformanceProfiler } from '../logger/profiler.ts';
 import { SessionDocument, BatchSpecimen } from '../types/session.ts';
 import { buildDynamicExtractionPrompt } from './prompt-builder.ts';
+import { ConfidenceEvaluator } from '../engine/confidence-evaluator.ts';
 
 export interface LlmConfigItem {
   id: string;
@@ -495,8 +496,21 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       deliveryState: header.delivery_state || header.deliveryState || '',
       verdict: 'PASS',
       verdictSummary: '大模型结构化提取完成',
-      ocrConfidence: 95,
-      gradeMatchConfidence: 95,
+      ocrConfidence: ConfidenceEvaluator.calculateOcrConfidence({
+        certificateNo: header.certificate_no || header.certificateNo || '',
+        batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),
+        grade: header.declared_grade || header.declaredGrade || '',
+        supplier: header.supplier_name || header.supplierName || '',
+        standard: header.declared_standard || header.declaredStandard || '',
+        chemical: Array.isArray(b.chemical) ? b.chemical : [],
+        mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
+        process: b.process || {},
+        additionalTests: b.additional_tests || b.additionalTests || [],
+      } as any),
+      gradeMatchConfidence: ConfidenceEvaluator.calculateGradeMatchConfidence(
+        header.declared_grade || header.declaredGrade || '',
+        header.declared_standard || header.declaredStandard || ''
+      ),
       chemical: Array.isArray(b.chemical) ? b.chemical : [],
       mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
       process: {

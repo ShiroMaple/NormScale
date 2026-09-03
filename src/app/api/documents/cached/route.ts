@@ -7,6 +7,7 @@ import { logger } from '@/logger/index.ts';
 
 import { globalDocumentPreprocessorService } from '@/services/document-preprocessor.service.ts';
 import { matchFieldBBoxesFromTokens } from '@/utils/bbox-matcher.ts';
+import { ConfidenceEvaluator } from '@/engine/confidence-evaluator.ts';
 
 export interface CachedDocSummary {
   md5: string;
@@ -71,7 +72,7 @@ export async function GET(request: Request) {
       }
 
       if (cached) {
-        // 自愈补全 bboxes
+        // 自愈补全 bboxes 与 pages 切图 URL 列表
         const preprocessedAssets = globalDocumentPreprocessorService.getPreprocessed(cached.md5);
         let bboxes = cached.bboxes || [];
         if (bboxes.length === 0 && preprocessedAssets?.tokens && preprocessedAssets.tokens.length > 0) {
@@ -80,11 +81,30 @@ export async function GET(request: Request) {
           globalParseCacheStore.set(cached.md5, cached);
         }
 
+        // 自动自愈校准批次真实 OCR 置信度与牌号匹配度
+        if (cached.sessionDocument?.batches) {
+          cached.sessionDocument.batches = cached.sessionDocument.batches.map(b =>
+            ConfidenceEvaluator.enrichBatchConfidences(b, bboxes)
+          );
+          globalParseCacheStore.set(cached.md5, cached);
+        }
+
+        let pageUrls = cached.sessionDocument?.pages || [];
+        if (pageUrls.length === 0 && preprocessedAssets?.images && preprocessedAssets.images.length > 0) {
+          pageUrls = preprocessedAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${cached.md5}&page=${idx + 1}`);
+          cached.sessionDocument = {
+            ...cached.sessionDocument,
+            pages: pageUrls,
+            samplePages: pageUrls,
+          };
+        }
+
         return NextResponse.json({
           success: true,
           result: {
             ...cached,
             bboxes,
+            sessionDocument: cached.sessionDocument,
           },
         });
       }
