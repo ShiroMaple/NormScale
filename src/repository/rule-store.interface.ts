@@ -1,4 +1,5 @@
 import { SpecificationSlice, StandardMeta, StandardRuleSet } from '../schemas/standard.schema';
+import { CompositeSlice } from '../engine/multi-standard-composer';
 
 export interface StandardOverview {
   standard_id: string;
@@ -16,6 +17,13 @@ export interface IRuleStore {
    * @param routingKey 路由特征键，如 '06Cr19Ni10', 'S30408', 'SUS304', 'Class_8.8'
    */
   resolveRuleSlice(standardId: string, routingKey: string): Promise<SpecificationSlice | undefined>;
+
+  /**
+   * 跨多份标准解析并自动合成严苛交集切片 (CompositeSlice)
+   * @param standardIds 标准代号数组，如 ['GB/T 13296-2023', 'NB/T 47019.5-2021']
+   * @param routingKey 牌号/规格路由键，如 'S32168' 或 '06Cr18Ni11Ti'
+   */
+  resolveCompositeSlice(standardIds: string[], routingKey: string): Promise<CompositeSlice | undefined>;
 
   /**
    * 获取标准的元信息及尺寸公差表

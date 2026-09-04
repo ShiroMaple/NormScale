@@ -12,6 +12,11 @@ import {
 import { IRuleStore, StandardOverview } from './rule-store.interface';
 import { logger } from '../logger';
 import { PerformanceProfiler } from '../logger/profiler';
+import {
+  CompositeSlice,
+  composeMultiStandardSlices,
+  SliceWithStandardMeta,
+} from '../engine/multi-standard-composer';
 
 export class FileRuleStore implements IRuleStore {
   private baseDir: string;
@@ -216,6 +221,34 @@ export class FileRuleStore implements IRuleStore {
       logger.debug('REPOSITORY', `标准 [${standardId}] 内部未找到规格切片路由键: [${routingKey}]`);
     }
     return slice;
+  }
+
+  public async resolveCompositeSlice(
+    standardIds: string[],
+    routingKey: string
+  ): Promise<CompositeSlice | undefined> {
+    await this.ensureInitialized();
+    if (!standardIds || standardIds.length === 0) return undefined;
+
+    const slicesWithMeta: SliceWithStandardMeta[] = [];
+    for (const stdId of standardIds) {
+      const slice = await this.resolveRuleSlice(stdId, routingKey);
+      if (slice) {
+        const meta = await this.getStandardMeta(stdId);
+        slicesWithMeta.push({
+          slice,
+          standardId: stdId,
+          standardName: meta?.standard_name,
+        });
+      }
+    }
+
+    if (slicesWithMeta.length === 0) {
+      logger.warn('REPOSITORY', `多标准检索未命中任何切片: [${standardIds.join(', ')}] -> [${routingKey}]`);
+      return undefined;
+    }
+
+    return composeMultiStandardSlices(slicesWithMeta);
   }
 
   public async getStandardMeta(standardId: string): Promise<StandardMeta | undefined> {

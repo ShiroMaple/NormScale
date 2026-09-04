@@ -108,7 +108,7 @@ export class PropertyKeyNormalizer {
     }
 
     // (c) 断后伸长率 (Elongation, A, EL, A50)
-    if (/^(ELONGATION|EL|A50|A|断后伸长率|伸长率|延伸率)$/i.test(upperStr) || upperStr.includes('伸长率') || upperStr.includes('延伸率')) {
+    if (/^(ELONGATION|EL|A50|A|断后伸长率|伸长率|延伸率)/i.test(upperStr) || upperStr.includes('伸长率') || upperStr.includes('延伸率') || upperStr.includes('ELONGATION')) {
       return {
         raw_property_name: rawName,
         property_key: 'elongation_A',

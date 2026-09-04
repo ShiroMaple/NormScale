@@ -19,6 +19,7 @@ import { LlmStreamingTerminal } from './LlmStreamingTerminal.tsx';
 import { renderPdfAndExtractText } from '@/utils/pdf-renderer.ts';
 import { getCertificateInspectionFieldDefinitions } from '@/schemas/certificate.schema.ts';
 import { ConfidenceEvaluator } from '@/engine/confidence-evaluator.ts';
+import { resolveFinalDisposition, getDispositionBadgeMeta, SystemVerdict, HumanVerdict } from '@/engine/dual-track-verdict.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -3318,6 +3319,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   statusLabel: string;
                   ruleBasis: string;
                   note?: string;
+                  isScissorsDifference?: boolean;
+                  strictStandardId?: string;
+                  scissorsAttribution?: string;
+                  multiStandardEvaluations?: Array<{
+                    standard_id: string;
+                    standard_short: string;
+                    requirement_text: string;
+                    status: string;
+                    is_governing?: boolean;
+                    message?: string;
+                  }>;
                 }
 
                 // 构建全景比对矩阵数据项 (完全动态化，无任何硬编码 mock 兜底)
@@ -3367,19 +3379,70 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     statusLabel: currentBatch.mechanical.yield_rp02 ? '✓ PASS' : '待提取',
                     ruleBasis: '常温屈服试验',
                   },
-                  {
-                    id: 'mech_a',
-                    category: 'mechanical',
-                    categoryLabel: '力学',
-                    categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                    name: '断后伸长率 A',
-                    measuredValue: currentBatch.mechanical.elongation_a || '--',
-                    standardRequirement: '按标准技术规范',
-                    deviation: currentBatch.mechanical.elongation_a ? '实测有效' : '--',
-                    status: currentBatch.mechanical.elongation_a ? 'PASS' : 'INFO',
-                    statusLabel: currentBatch.mechanical.elongation_a ? '✓ PASS' : '待提取',
-                    ruleBasis: '断后伸长率试验',
-                  },
+                  (() => {
+                    const valRaw = currentBatch.mechanical.elongation_a;
+                    const valNum = valRaw ? parseFloat(valRaw) : NaN;
+                    const hasNB = selectedStandardIds.some(s => s.includes('47019'));
+                    const isDual = selectedStandardIds.length > 1;
+
+                    if (!hasNB && !isDual) {
+                      return {
+                        id: 'mech_a',
+                        category: 'mechanical' as const,
+                        categoryLabel: '力学',
+                        categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                        name: '断后伸长率 A',
+                        measuredValue: valRaw || '--',
+                        standardRequirement: '≥ 35.0% (GB/T 13296)',
+                        deviation: !isNaN(valNum) ? (valNum >= 35 ? '符合要求' : `欠达标 ${(valNum - 35).toFixed(1)}%`) : '--',
+                        status: !isNaN(valNum) ? (valNum >= 35 ? 'PASS' as const : 'FAIL' as const) : 'INFO' as const,
+                        statusLabel: !isNaN(valNum) ? (valNum >= 35 ? '✓ PASS' : '✗ FAIL') : '待提取',
+                        ruleBasis: '断后伸长率试验 (A)',
+                      };
+                    }
+
+                    // 双标/多标严苛交集 (GB/T 13296 下限 35.0% vs NB/T 47019.5 下限 40.0%)
+                    const isGbPass = !isNaN(valNum) && valNum >= 35;
+                    const isNbPass = !isNaN(valNum) && valNum >= 40;
+                    const isScissors = isGbPass && !isNbPass;
+                    const overallPass = isNbPass;
+
+                    return {
+                      id: 'mech_a',
+                      category: 'mechanical' as const,
+                      categoryLabel: '力学',
+                      categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                      name: '断后伸长率 A',
+                      measuredValue: valRaw || '--',
+                      standardRequirement: '≥ 40.0% [NB] / ≥ 35.0% [GB]',
+                      deviation: !isNaN(valNum)
+                        ? (overallPass ? '符合最严包络线 (≥40%)' : isScissors ? `加严欠达标 ${(valNum - 40).toFixed(1)}%` : `超差欠达标 ${(valNum - 35).toFixed(1)}%`)
+                        : '--',
+                      status: !isNaN(valNum) ? (overallPass ? 'PASS' as const : 'FAIL' as const) : 'INFO' as const,
+                      statusLabel: !isNaN(valNum) ? (overallPass ? '✓ PASS' : isScissors ? '✗ 加严未达标' : '✗ FAIL') : '待提取',
+                      ruleBasis: '严苛包络线：取 NB/T 47019.5 下限 ≥40.0% (严于 GB 35.0%)',
+                      isScissorsDifference: isScissors,
+                      strictStandardId: 'NB/T 47019.5-2021',
+                      scissorsAttribution: '实测值满足通用国标 GB/T 13296 (≥35%)，但未满足承压订货标准 NB/T 47019.5 (≥40%)，按严苛就高原则判定不合格。责任归属于 NB/T 47019.5 订货加严条款。',
+                      multiStandardEvaluations: [
+                        {
+                          standard_id: 'GB/T 13296-2023',
+                          standard_short: 'GB',
+                          requirement_text: '≥ 35.0%',
+                          status: isGbPass ? 'PASS' : 'FAIL',
+                          message: isGbPass ? '满足通用国标' : '未达国标',
+                        },
+                        {
+                          standard_id: 'NB/T 47019.5-2021',
+                          standard_short: 'NB',
+                          requirement_text: '≥ 40.0%',
+                          status: isNbPass ? 'PASS' : 'FAIL',
+                          is_governing: true,
+                          message: isNbPass ? '满足承压订货标' : `未达加严要求 (欠达标 ${(valNum - 40).toFixed(1)}%)`,
+                        },
+                      ],
+                    };
+                  })(),
                   ...(currentBatch.mechanical.hardness ? [{
                     id: 'mech_hardness',
                     category: 'mechanical' as const,
@@ -3924,43 +3987,62 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         </div>
 
                         {/* 下部：综合判定看板 (双轨制：系统客观计算 55% vs 人工复核判定 45%，独立分栏背景色，吸纳垂直空隙) */}
-                        <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark shadow-xs flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden items-stretch">
+                        {(() => {
+                          const hasScissors = complianceMatrixItems.some(i => i.isScissorsDifference);
+                          const sysVerdict: SystemVerdict = isHitl
+                            ? 'MANUAL_REVIEW'
+                            : (!computedIsPass || hasScissors)
+                              ? 'FAIL'
+                              : 'PASS';
+                          const humanVerdict: HumanVerdict = currentBatch.humanVerdict;
+                          const arbitration = resolveFinalDisposition(sysVerdict, humanVerdict, currentBatch.humanVerdictSummary);
+                          const badgeMeta = getDispositionBadgeMeta(arbitration.disposition);
 
-                          {/* 1. 左侧约 55% (md:col-span-7)：系统客观判定 */}
-                          <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1 ${isHitl
-                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
-                            : !computedIsPass
-                              ? 'bg-status-fail-bg text-status-fail-text'
-                              : 'bg-status-pass-bg text-status-pass-text'
-                            }`}>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${isHitl ? 'text-amber-600 dark:text-amber-400' : ''}`}>
-                                {isHitl ? 'pending_actions' : !computedIsPass ? 'cancel' : 'check_circle'}
-                              </span>
-                              <h3 className="text-sm sm:text-base font-bold font-headline whitespace-nowrap">
-                                {isHitl
-                                  ? 'HITL 系统判定:待人工介入'
-                                  : !computedIsPass
-                                    ? '系统判定: FAIL 一票否决'
-                                    : '系统判定: PASS 全项合规'}
-                              </h3>
-                            </div>
-                            <p className="text-[12px] opacity-90 font-sans pl-7 line-clamp-2 leading-relaxed" title={computedVerdictSummary}>
-                              {computedVerdictSummary}
-                            </p>
-                          </div>
+                          return (
+                            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark shadow-xs flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden items-stretch">
 
-                          {/* 2. 右侧约 45% (md:col-span-5)：人工复核判定 (独立分栏背景色，按钮占满横幅高度) */}
-                          <div className={`md:col-span-5 min-w-0 p-2.5 md:border-l md:border-current/20 flex items-center justify-between gap-3 ${isHitl
-                            ? 'bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200'
-                            : currentBatch.humanVerdict === 'REJECT'
-                              ? 'bg-status-fail-bg text-status-fail-text'
-                              : currentBatch.humanVerdict === 'PASS'
-                                ? 'bg-status-pass-bg text-status-pass-text'
-                                : !computedIsPass
+                              {/* 1. 左侧约 55% (md:col-span-7)：系统客观判定 */}
+                              <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1.5 ${isHitl
+                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
+                                : sysVerdict === 'FAIL'
                                   ? 'bg-status-fail-bg text-status-fail-text'
                                   : 'bg-status-pass-bg text-status-pass-text'
-                            }`}>
+                                }`}>
+                                <div className="flex items-center gap-2 flex-wrap justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${isHitl ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                                      {isHitl ? 'pending_actions' : sysVerdict === 'FAIL' ? 'cancel' : 'check_circle'}
+                                    </span>
+                                    <h3 className="text-sm sm:text-base font-bold font-headline whitespace-nowrap">
+                                      {isHitl
+                                        ? 'HITL 系统判定:待人工介入'
+                                        : sysVerdict === 'FAIL'
+                                          ? '系统判定: FAIL 一票否决'
+                                          : '系统判定: PASS 全项合规'}
+                                    </h3>
+                                  </div>
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap shadow-2xs ${badgeMeta.badgeClass}`}>
+                                    流转: {arbitration.statusLabel}
+                                  </span>
+                                </div>
+                                <p className="text-[12px] opacity-90 font-sans pl-7 line-clamp-2 leading-relaxed" title={hasScissors ? '包含加严剪刀差失效' : computedVerdictSummary}>
+                                  {hasScissors
+                                    ? `【加严剪刀差】存在指标满足通用国标但未达承压订货加严标，按就高严苛原则判定不合格`
+                                    : (arbitration.auditExplanation || computedVerdictSummary)}
+                                </p>
+                              </div>
+
+                              {/* 2. 右侧约 45% (md:col-span-5)：人工复核判定 (独立分栏背景色，按钮占满横幅高度) */}
+                              <div className={`md:col-span-5 min-w-0 p-2.5 md:border-l md:border-current/20 flex items-center justify-between gap-3 ${isHitl
+                                ? 'bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200'
+                                : currentBatch.humanVerdict === 'REJECT'
+                                  ? 'bg-status-fail-bg text-status-fail-text'
+                                  : currentBatch.humanVerdict === 'PASS'
+                                    ? 'bg-status-pass-bg text-status-pass-text'
+                                    : sysVerdict === 'FAIL'
+                                      ? 'bg-status-fail-bg text-status-fail-text'
+                                      : 'bg-status-pass-bg text-status-pass-text'
+                                }`}>
                             {/* 左侧上下排布：上方人工复核标头，下方状态标签 */}
                             <div className="flex flex-col justify-center gap-1 shrink-0">
                               <div className="flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap">
@@ -4028,6 +4110,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             </div>
                           </div>
                         </div>
+                      );
+                    })()}
 
                       </div>
 
@@ -4104,7 +4188,34 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   {row.name}
                                 </td>
                                 <td className="px-3.5 py-2.5 text-on-surface dark:text-surface-bright font-medium">
-                                  {row.standardRequirement}
+                                  {row.multiStandardEvaluations && row.multiStandardEvaluations.length > 1 ? (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {row.multiStandardEvaluations.map((ev) => (
+                                          <span
+                                            key={ev.standard_id}
+                                            className={`px-1.5 py-0.5 rounded text-[11px] font-mono border whitespace-nowrap ${
+                                              ev.is_governing
+                                                ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold'
+                                                : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant border-outline-variant/30 dark:border-border-dark'
+                                            }`}
+                                            title={`${ev.standard_id}: ${ev.requirement_text} (单标评定: ${ev.status})`}
+                                          >
+                                            {ev.standard_short}: {ev.requirement_text}
+                                            {ev.is_governing && <span className="ml-1 text-amber-600 dark:text-amber-400 font-black">★最严</span>}
+                                          </span>
+                                        ))}
+                                      </div>
+                                      {row.isScissorsDifference && (
+                                        <div className="text-[11px] text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1">
+                                          <span className="material-symbols-outlined text-[13px] text-amber-600">content_cut</span>
+                                          <span>加严剪刀差：{row.scissorsAttribution || '满足国标但未达承压订货加严标'}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    row.standardRequirement
+                                  )}
                                 </td>
                                 <td className="px-3.5 py-2.5 font-bold text-primary dark:text-primary-fixed-dim">
                                   {row.measuredValue}
@@ -4113,13 +4224,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   {row.deviation}
                                 </td>
                                 <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className={`px-2.5 py-0.5 rounded text-[12px] font-bold inline-flex items-center justify-center leading-none ${row.status === 'PASS'
-                                    ? 'bg-status-pass-bg text-status-pass-text'
-                                    : row.status === 'FAIL'
-                                      ? 'bg-status-fail-bg text-status-fail-text font-black'
-                                      : row.status === 'HITL'
-                                        ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs'
-                                        : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                  <span className={`px-2.5 py-0.5 rounded text-[12px] font-bold inline-flex items-center justify-center leading-none ${
+                                    row.isScissorsDifference
+                                      ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-400 dark:border-amber-600 font-black'
+                                      : row.status === 'PASS'
+                                        ? 'bg-status-pass-bg text-status-pass-text'
+                                        : row.status === 'FAIL'
+                                          ? 'bg-status-fail-bg text-status-fail-text font-black'
+                                          : row.status === 'HITL'
+                                            ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs'
+                                            : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                                     }`}>
                                     {row.statusLabel}
                                   </span>

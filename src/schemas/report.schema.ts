@@ -25,6 +25,18 @@ export type AuditStatus = z.infer<typeof AuditStatusSchema>;
    - 校验单项指标的实测值、标准限值、修约计算、超标偏差分析及人机可读日志
    ========================================================================== */
 
+// 校验单来源标准在多标叠加场景下的独立符合性判定结果
+export const SingleStandardEvaluationVerdictSchema = z.object({
+  standard_id: z.string(),                                  // 来源标准 ID (如 "NB/T 47019.5-2021")
+  standard_short: z.string(),                               // 标准简写代号 (如 "NB/T 47019.5")
+  requirement_text: z.string(),                             // 该标准单体技术要求描述 (如 "≥ 40.0%")
+  status: AuditStatusSchema,                                // 针对该标准的单体判定结论 (PASS / FAIL 等)
+  deviation: z.number().nullable().optional(),              // 相对该标准限值的偏差量
+  is_governing: z.boolean().optional(),                     // 该标准是否是最终起到主导加严作用的最严标准
+  message: z.string(),                                      // 针对该标准的独立判定说明
+});
+export type SingleStandardEvaluationVerdict = z.infer<typeof SingleStandardEvaluationVerdictSchema>;
+
 // 校验单条评定规则的比对结果明细矩阵（包含数值修约计算、动态公式边界及公差偏离分析）
 export const RuleEvaluationItemResultSchema = z.object({
   rule_id: z.string(),                                      // 规则唯一标识（例如："GB_T_13296_2023_S30408_CHEM_C"）
@@ -46,6 +58,13 @@ export const RuleEvaluationItemResultSchema = z.object({
   formula_expression: z.string().optional(),                // 动态公式原文（例如："4 * (ctx.chemical.C + ctx.chemical.N)"）
   formula_calculated_bound: z.number().nullable().optional(),// 经 AST 动态公式计算出的实际边界数值
   message: z.string(),                                      // 判定详情与面向人类的可读说明日志（例如："实测值 0.086% 超过标准上限 0.080%，超标 +0.006%"）
+
+  // 多标准双标尺透明追溯扩展字段 (Phase 10)
+  dual_standard_requirement_text: z.string().optional(),    // 多标紧凑展示文本（如 "≥ 40.0% [NB] / ≥ 35.0% [GB]"）
+  is_scissors_difference: z.boolean().optional(),           // 是否落入加严剪刀差失效区间 (满足基础国标但不满足订货加严标)
+  strict_standard_id: z.string().optional(),                // 起主导加严作用的标准代号
+  scissors_attribution: z.string().optional(),              // 剪刀差责任边界归因说明
+  multi_standard_evaluations: z.array(SingleStandardEvaluationVerdictSchema).optional(), // 逐标独立评定清单
 });
 export type RuleEvaluationItemResult = z.infer<typeof RuleEvaluationItemResultSchema>;
 
@@ -126,5 +145,6 @@ export const AuditReportSchema = z.object({
   delivery_state: z.string().optional(),
   inspector: z.string().optional(),
   supervisor: z.string().optional(),
+  final_disposition: z.string().optional(),
 });
 export type AuditReport = z.infer<typeof AuditReportSchema>;

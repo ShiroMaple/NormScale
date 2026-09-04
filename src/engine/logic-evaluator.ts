@@ -205,12 +205,23 @@ export function evaluateQualitativeEnum(
     };
   }
 
-  // 等级比对 (如 U2 级)
+  // 等级比对 (如 U2 级、晶粒度 >= 7 级)
   const reqLevel = criteria.required_level;
+  const minLevel = criteria.min_level;
   const claimedLevel = record.measured_level_claimed;
 
   let isPass = false;
-  if (reqLevel && claimedLevel) {
+  if (minLevel) {
+    const minVal = Number(minLevel);
+    if (!isNaN(minVal) && typeof record.measured_value_num === 'number') {
+      isPass = record.measured_value_num >= minVal;
+    } else if (claimedLevel && !isNaN(Number(claimedLevel))) {
+      isPass = Number(claimedLevel) >= minVal;
+    } else if (record.qualitative_result) {
+      const q = record.qualitative_result.toUpperCase();
+      isPass = (q === 'PASS' || q === '合格' || q === 'QUALIFIED');
+    }
+  } else if (reqLevel && claimedLevel) {
     isPass = (claimedLevel.trim().toUpperCase() === reqLevel.trim().toUpperCase());
   } else if (record.qualitative_result) {
     const q = record.qualitative_result.toUpperCase();
@@ -220,9 +231,15 @@ export function evaluateQualitativeEnum(
   }
 
   const status: AuditStatus = isPass ? 'PASS' : 'FAIL';
-  const reqText = [criteria.test_standard, criteria.required_level, criteria.method, criteria.expected]
+  const minLevelText = minLevel ? `≥ ${minLevel} 级` : undefined;
+  const reqText = [criteria.test_standard, criteria.required_level, minLevelText, criteria.method, criteria.expected]
     .filter(Boolean)
     .join(' ');
+
+  const actualText =
+    typeof record.measured_value_num === 'number'
+      ? `${record.measured_value_num} 级`
+      : (record.conclusion_text || record.measured_level_claimed || record.qualitative_result || '已报送');
 
   return {
     rule_id: rule.rule_id,
@@ -232,7 +249,7 @@ export function evaluateQualitativeEnum(
     status,
     requirement_level: rule.requirement_level,
     standard_requirement_text: reqText || '定性合格',
-    actual_value_text: record.conclusion_text || record.measured_level_claimed || record.qualitative_result || '已报送',
+    actual_value_text: actualText,
     message: isPass ? `合格: 符合标准 ${reqText}` : `不合格: 未达到标准要求 ${reqText}`,
   };
 }

@@ -46,3 +46,5 @@ export * from './logic-evaluator';
 export * from './missing-scanner';
 export * from './tolerance-evaluator';
 export * from './core';
+export * from './multi-standard-composer';
+export * from './dual-track-verdict';
