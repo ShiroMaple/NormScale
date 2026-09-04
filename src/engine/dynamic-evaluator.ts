@@ -341,7 +341,7 @@ export function evaluateDynamicExpression(
     status,
     requirement_level: rule.requirement_level,
     standard_requirement_text: criteria.note || `${calculatedMin ?? ''} ~ ${calculatedMax ?? ''} ${criteria.unit || ''}`.trim(),
-    actual_value_text: `${record.measured_value_raw || rawNum} (修约: ${roundedVal}${criteria.unit || ''})`,
+    actual_value_text: record.measured_value_raw || (criteria.unit ? `${rawNum} ${criteria.unit}` : String(rawNum)),
     measured_value_raw: record.measured_value_raw,
     measured_value_num: rawNum,
     rounded_value: roundedVal,

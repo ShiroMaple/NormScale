@@ -142,6 +142,18 @@ describe('Logic & Qualitative Evaluators (多选、替代组与定性豁免评�
       expect(res.status).toBe('FAIL');
     });
 
+    it('定性评估实测值优先展示原件 extracted raw 文本', () => {
+      const rec: TestRecord = {
+        category: 'ndt',
+        property_key: 'ultrasonic_test',
+        measured_value_raw: '超声检测合格 U2',
+        measured_level_claimed: 'U2',
+      };
+      const res = evaluateQualitativeEnum(utRule, rec);
+      expect(res.status).toBe('PASS');
+      expect(res.actual_value_text).toBe('超声检测合格 U2');
+    });
+
     it('豁免规则 evaluateExemption 恒定返回 EXEMPT', () => {
       const exemptRule: EvaluationRule = {
         rule_id: 'CORROSION_EXEMPT',

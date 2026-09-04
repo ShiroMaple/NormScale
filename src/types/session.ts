@@ -8,6 +8,7 @@
  */
 
 import type { AdditionalTestItem } from '@/schemas/certificate.schema';
+import type { AuditReport } from '@/schemas/report.schema.ts';
 
 export type { AdditionalTestItem };
 
@@ -43,6 +44,7 @@ export interface BatchSpecimen {
   humanVerdict?: 'PASS' | 'REJECT' | 'WAIVED' | null;  // 质检工程师人工签认结论 (非必须，不覆盖系统结果)
   humanVerdictSummary?: string;                        // 人工审批批注或特批放行依据
   humanVerifiedAt?: string;                            // 人工签认时间戳 (ISO 8601)
+  auditReport?: AuditReport;                           // 结构化核验报告 (由底层合规引擎直出，支持多标尺追溯与剪刀差)
   ocrConfidence: number;       // 综合 OCR 视觉解析置信度 (0~100)
   gradeMatchConfidence: number;// 材料牌号标准消歧匹配度 (0~100)
   

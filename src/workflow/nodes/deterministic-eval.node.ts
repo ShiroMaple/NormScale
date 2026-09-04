@@ -10,12 +10,12 @@ import { logger } from '../../logger/index.ts';
  */
 export function createDeterministicEvalNode() {
   return async function deterministicEvalNode(state: QualityAuditState): Promise<Partial<QualityAuditState>> {
-    const { standardRuleSet, normalizedCert } = state;
+    const { standardRuleSet, normalizedCert, compositeSlice } = state;
     const collector = getSafeCollector(state);
 
-    if (!standardRuleSet || !normalizedCert) {
+    if ((!standardRuleSet && !compositeSlice) || !normalizedCert) {
       return {
-        error: 'Deterministic Eval Node Failed: Missing standardRuleSet or normalizedCert',
+        error: 'Deterministic Eval Node Failed: Missing standardRuleSet/compositeSlice or normalizedCert',
         workflowStatus: 'failed',
       };
     }
@@ -24,7 +24,9 @@ export function createDeterministicEvalNode() {
     collector.addTrace('WORKFLOW', 'info', `[节点 4] 启动核心规则比对引擎`);
 
     try {
-      const report = ComplianceEngine.evaluate(standardRuleSet, normalizedCert, { collector });
+      const report = compositeSlice
+        ? ComplianceEngine.evaluateSlice(compositeSlice, normalizedCert, { collector })
+        : ComplianceEngine.evaluate(standardRuleSet!, normalizedCert, { collector });
 
       logger.info(
         'WORKFLOW',

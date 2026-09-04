@@ -59,12 +59,15 @@ export const RuleEvaluationItemResultSchema = z.object({
   formula_calculated_bound: z.number().nullable().optional(),// 经 AST 动态公式计算出的实际边界数值
   message: z.string(),                                      // 判定详情与面向人类的可读说明日志（例如："实测值 0.086% 超过标准上限 0.080%，超标 +0.006%"）
 
-  // 多标准双标尺透明追溯扩展字段 (Phase 10)
+  // 多标准双标尺透明追溯扩展字段 (Phase 10 & 协议优先级演进)
   dual_standard_requirement_text: z.string().optional(),    // 多标紧凑展示文本（如 "≥ 40.0% [NB] / ≥ 35.0% [GB]"）
   is_scissors_difference: z.boolean().optional(),           // 是否落入加严剪刀差失效区间 (满足基础国标但不满足订货加严标)
   strict_standard_id: z.string().optional(),                // 起主导加严作用的标准代号
   scissors_attribution: z.string().optional(),              // 剪刀差责任边界归因说明
   multi_standard_evaluations: z.array(SingleStandardEvaluationVerdictSchema).optional(), // 逐标独立评定清单
+  is_statutory_relaxation_risk: z.boolean().optional(),     // 是否属于高优先级技术协议放宽法定强标底线的风险项
+  statutory_baseline: z.string().optional(),               // 被放宽的国家/行业标准底线限值
+  statutory_relaxation_warning: z.string().optional(),      // 放宽法标风险警示说明
 });
 export type RuleEvaluationItemResult = z.infer<typeof RuleEvaluationItemResultSchema>;
 
@@ -146,5 +149,10 @@ export const AuditReportSchema = z.object({
   inspector: z.string().optional(),
   supervisor: z.string().optional(),
   final_disposition: z.string().optional(),
+
+  // 双层主结论分立呈现 (法定/制造标准符合性 vs 采购技术协议符合性)
+  standard_compliance_verdict: z.enum(['PASS', 'FAIL', 'MANUAL_REVIEW']).optional(),
+  agreement_compliance_verdict: z.enum(['PASS', 'FAIL', 'MANUAL_REVIEW', 'NOT_APPLICABLE']).optional(),
+  statutory_risk_flag: z.boolean().optional(),
 });
 export type AuditReport = z.infer<typeof AuditReportSchema>;

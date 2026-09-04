@@ -19,8 +19,40 @@ export function createExtractNode(extractor?: ICertificateExtractor) {
     logger.info('WORKFLOW', `[Node 1: Extract] 启动文档抽取，当前适配器: [${activeExtractor.providerName}]`);
     collector.addTrace('WORKFLOW', 'info', `[节点 1] 启动数据抽取 (适配器: ${activeExtractor.providerName})`);
 
+    // 若输入已为结构化对象或 JSON 字符串，直接短路直通，避免二次 Mock 抽取损耗
+    if (typeof input === 'object' && input !== null && !(input instanceof Uint8Array) && !(input instanceof Buffer)) {
+      const obj = input as any;
+      if (obj.header || obj.test_records) {
+        logger.info('WORKFLOW', `[Node 1: Extract] 输入已为结构化对象，短路直通归一化节点`);
+        collector.addTrace('WORKFLOW', 'info', `[节点 1] 检测到结构化输入，直接直通`);
+        return {
+          rawPayload: obj,
+          traces: collector.getTraces(),
+          workflowStatus: 'normalizing',
+        };
+      }
+    } else if (typeof input === 'string' && input.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(input);
+        if (parsed && typeof parsed === 'object' && (parsed.header || parsed.test_records)) {
+          logger.info('WORKFLOW', `[Node 1: Extract] 输入已为结构化 JSON 字符串，短路直通归一化节点`);
+          collector.addTrace('WORKFLOW', 'info', `[节点 1] 解析结构化 JSON 成功，直接直通`);
+          return {
+            rawPayload: parsed,
+            traces: collector.getTraces(),
+            workflowStatus: 'normalizing',
+          };
+        }
+      } catch {
+        // 非有效 JSON，正常走 extractor
+      }
+    }
+
     try {
-      const rawPayload = await activeExtractor.extract(input, {
+      const extractorInput = (typeof input === 'object' && !(input instanceof Uint8Array) && !(input instanceof Buffer))
+        ? JSON.stringify(input)
+        : input;
+      const rawPayload = await activeExtractor.extract(extractorInput as string | Buffer, {
         timeoutMs: 45000,
         enableOcrConfidence: true,
       });

@@ -23,40 +23,58 @@ export function createRetrieveStandardNode(ruleStore?: IRuleStore) {
       };
     }
 
-    const standardId = options?.forcedStandardId || normalizedCert.header.declared_standard;
-    const gradeKey = normalizedCert.header.declared_grade;
+    // 解析执行标准代号列表 (支持多标准强制指定或声明标准多选切分)
+    let standardIds: string[] = [];
+    if (options?.forcedStandardIds && options.forcedStandardIds.length > 0) {
+      standardIds = options.forcedStandardIds;
+    } else if (options?.forcedStandardId) {
+      standardIds = options.forcedStandardId.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean);
+    } else if (normalizedCert.header.declared_standard) {
+      standardIds = normalizedCert.header.declared_standard.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean);
+    }
+    if (standardIds.length === 0) {
+      standardIds = ['GB/T 13296-2023'];
+    }
 
-    logger.info('WORKFLOW', `[Node 3: Retrieve Standard] 正在检索标准 [${standardId}] 与规格切片 [${gradeKey}]...`);
-    collector.addTrace('WORKFLOW', 'info', `[节点 3] 检索标准库: 标准 [${standardId}] 切片 [${gradeKey}]`);
+    const gradeKey = options?.forcedGradeKey || normalizedCert.header.declared_grade;
+
+    logger.info('WORKFLOW', `[Node 3: Retrieve Standard] 正在检索标准 [${standardIds.join('、')}] 与规格切片 [${gradeKey}]...`);
+    collector.addTrace('WORKFLOW', 'info', `[节点 3] 检索标准库: 标准 [${standardIds.join('、')}] 切片 [${gradeKey}]`);
 
     try {
-      const standardRuleSet = await store.getCompleteStandard(standardId);
-      if (!standardRuleSet) {
-        const msg = `标准规则库中未收录标准 [${standardId}]`;
-        logger.error('WORKFLOW', `[Node 3: Retrieve Standard] ${msg}`);
-        collector.addTrace('WORKFLOW', 'error', `[节点 3] ${msg}`);
+      const primaryStandardId = standardIds[0]!;
+      const standardRuleSet = await store.getCompleteStandard(primaryStandardId);
+
+      // 无论单标或多标，统一调用 resolveCompositeSlice 获得带追溯元数据的合成切片
+      const compositeSlice = await store.resolveCompositeSlice(standardIds, gradeKey);
+      const matchedSlice = compositeSlice || (await store.resolveRuleSlice(primaryStandardId, gradeKey));
+
+      if (!standardRuleSet && !compositeSlice) {
+        const errorMsg = `未收录标准 [${standardIds.join('、')}]，请检查标准代号或在标准库中补充配置`;
+        logger.error('WORKFLOW', `[Node 3: Retrieve Standard] ${errorMsg}`);
+        collector.addTrace('WORKFLOW', 'error', `[节点 3] ${errorMsg}`);
         return {
-          error: msg,
+          error: `Retrieve Standard Node Failed: ${errorMsg}`,
           traces: collector.getTraces(),
           workflowStatus: 'failed',
         };
       }
 
-      const matchedSlice = await store.resolveRuleSlice(standardId, gradeKey);
       if (!matchedSlice) {
-        const msg = `标准 [${standardId}] 中未检索到规格切片 [${gradeKey}]`;
+        const msg = `标准 [${standardIds.join('、')}] 中未检索到规格切片 [${gradeKey}]`;
         logger.warn('WORKFLOW', `[Node 3: Retrieve Standard] ${msg}`);
         collector.addTrace('WORKFLOW', 'warn', `[节点 3] ${msg}`);
       } else {
         logger.info(
           'WORKFLOW',
-          `[Node 3: Retrieve Standard] 成功装载规格切片 [${matchedSlice.spec_key}] (包含 ${matchedSlice.evaluation_rules.length} 项检验规则)`
+          `[Node 3: Retrieve Standard] 成功装载${compositeSlice ? '多标准合成' : ''}规格切片 [${matchedSlice.spec_key}] (包含 ${matchedSlice.evaluation_rules.length} 项检验规则)`
         );
       }
 
       return {
         standardRuleSet,
         matchedSlice,
+        compositeSlice,
         traces: collector.getTraces(),
         workflowStatus: 'evaluating',
       };

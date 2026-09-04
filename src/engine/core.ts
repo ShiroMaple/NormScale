@@ -4,10 +4,10 @@ import { AuditReport, RuleEvaluationItemResult, AuditSummary, SingleStandardEval
 import { EvaluationContext, evaluateNumericRange } from './numeric-evaluator';
 import { evaluateDynamicExpression } from './dynamic-evaluator';
 import { evaluateOrChoiceGroup, evaluateAlternativeGroup, evaluateQualitativeEnum, evaluateExemption } from './logic-evaluator';
-import { isRuleTriggered } from './missing-scanner';
+import { isRuleTriggered, formatConditionHumanText } from './missing-scanner';
 import { logger as defaultLogger, ILogger, ITraceCollector } from '../logger';
 import { PerformanceProfiler } from '../logger/profiler';
-import { CompositeSlice, CompositeEvaluationRule } from './multi-standard-composer';
+import { CompositeSlice, CompositeEvaluationRule, getStandardShortCode, humanizeDynamicFormulaText } from './multi-standard-composer';
 import { PropertyKeyNormalizer } from '../normalizer/property-key-normalizer';
 
 export interface EngineEvaluationOptions {
@@ -142,6 +142,8 @@ export class ComplianceEngine {
         );
       }
 
+      const dualVerdicts = this.computeDualVerdicts(itemResults, summary);
+
       return {
         certificate_no: header.certificate_no,
         declared_standard: header.declared_standard,
@@ -155,6 +157,9 @@ export class ComplianceEngine {
         unmatched_certificate_records: unmatchedRecords.length > 0 ? unmatchedRecords : undefined,
         audit_traces: collector?.getTraces(),
         performance_metrics: collector?.getPerformanceMetrics(),
+        standard_compliance_verdict: dualVerdicts.standard_compliance_verdict,
+        agreement_compliance_verdict: dualVerdicts.agreement_compliance_verdict,
+        statutory_risk_flag: dualVerdicts.statutory_risk_flag,
       };
     }, log, collector).result;
   }
@@ -246,6 +251,8 @@ export class ComplianceEngine {
         );
       }
 
+      const dualVerdicts = this.computeDualVerdicts(itemResults, summary);
+
       return {
         certificate_no: header.certificate_no,
         declared_standard: header.declared_standard,
@@ -259,6 +266,9 @@ export class ComplianceEngine {
         unmatched_certificate_records: unmatchedRecords.length > 0 ? unmatchedRecords : undefined,
         audit_traces: collector?.getTraces(),
         performance_metrics: collector?.getPerformanceMetrics(),
+        standard_compliance_verdict: dualVerdicts.standard_compliance_verdict,
+        agreement_compliance_verdict: dualVerdicts.agreement_compliance_verdict,
+        statutory_risk_flag: dualVerdicts.statutory_risk_flag,
       };
     }, log, collector).result;
   }
@@ -370,6 +380,74 @@ export class ComplianceEngine {
      ========================================================================== */
 
   /**
+   * 检查质保书实测数据中是否存在针对当前规则的主动报送记录
+   */
+  private static hasReportedTestRecord(
+    rule: EvaluationRule,
+    context: EvaluationContext
+  ): boolean {
+    const normKey = PropertyKeyNormalizer.normalize(rule.property_key, rule.category).property_key;
+
+    // 1. 检查直接命中的 record
+    const directKeys = [
+      rule.property_key,
+      normKey,
+      `${rule.category}_${rule.property_key}`,
+      `${rule.category}_${normKey}`,
+    ];
+
+    for (const k of directKeys) {
+      const rec = context.recordsMap.get(k);
+      if (rec && this.isRecordNonEmpty(rec)) {
+        return true;
+      }
+    }
+
+    // 2. 针对 or_choice_group (如硬度) 检查其 options 子键
+    if (rule.rule_type === 'or_choice_group' && rule.criteria && Array.isArray((rule.criteria as Record<string, unknown>).options)) {
+      const options = (rule.criteria as Record<string, unknown>).options as Array<{ sub_key?: string }>;
+      for (const opt of options) {
+        const subKey = opt.sub_key;
+        if (!subKey) continue;
+        const candidateKeys = [
+          `${rule.property_key}_${subKey}`,
+          subKey,
+          `hardness_${subKey}`,
+        ];
+        for (const ck of candidateKeys) {
+          const rec = context.recordsMap.get(ck);
+          if (rec && this.isRecordNonEmpty(rec)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    // 3. 针对 alternative_group 检查 candidates
+    if (rule.rule_type === 'alternative_group' && rule.criteria && Array.isArray((rule.criteria as Record<string, unknown>).candidates)) {
+      const candidates = (rule.criteria as Record<string, unknown>).candidates as Array<{ candidate_key?: string }>;
+      for (const cand of candidates) {
+        const cKey = cand.candidate_key;
+        if (!cKey) continue;
+        const rec = context.recordsMap.get(cKey) || context.recordsMap.get(`${rule.category}_${cKey}`);
+        if (rec && this.isRecordNonEmpty(rec)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private static isRecordNonEmpty(rec: TestRecord): boolean {
+    if (rec.measured_value_num !== undefined && rec.measured_value_num !== null) return true;
+    if (rec.measured_value_raw && rec.measured_value_raw.trim() !== '') return true;
+    if (rec.qualitative_result && rec.qualitative_result.trim() !== '') return true;
+    if (rec.conclusion_text && rec.conclusion_text.trim() !== '') return true;
+    return false;
+  }
+
+  /**
    * 单条评定规则求值调度器
    */
   private static evaluateSingleRule(
@@ -377,10 +455,14 @@ export class ComplianceEngine {
     context: EvaluationContext
   ): RuleEvaluationItemResult {
     // --------------------------------------------------------------------------
-    // 步骤 1：前置激活条件扫描 (如壁厚 >= 1.7mm 才触发硬度检验，否则跳过)
+    // 步骤 1：前置激活条件扫描与“条件免检，报送即检”双轨调度
     // --------------------------------------------------------------------------
     const triggered = isRuleTriggered(rule, context);
-    if (!triggered) {
+    const hasReported = this.hasReportedTestRecord(rule, context);
+    const humanCondition = formatConditionHumanText(rule.trigger_condition, context);
+
+    if (!triggered && !hasReported) {
+      // 场景 A：前置条件未满足，且供方未主动报送 -> 依法自动豁免跳过 (SKIPPED)
       return {
         rule_id: rule.rule_id,
         category: rule.category,
@@ -388,9 +470,9 @@ export class ComplianceEngine {
         display_name: rule.display_name,
         status: 'SKIPPED',
         requirement_level: rule.requirement_level,
-        standard_requirement_text: '条件未激活',
-        actual_value_text: '不适用',
-        message: `前置条件【${rule.trigger_condition}】未激活，该检验项自动跳过`,
+        standard_requirement_text: `${humanCondition} 强制考核`,
+        actual_value_text: '法定免检 / 未报送',
+        message: `前置条件【${humanCondition}】未激活（法定免检），供方未报送实测数据，该检验项自动跳过`,
       };
     }
 
@@ -417,9 +499,15 @@ export class ComplianceEngine {
         break;
 
       // 3. 跨字段动态公式规则 (例如：Ti >= 4*(C+N) 或 Cr当量计算)
-      case 'dynamic_expression':
+      case 'dynamic_expression': {
         result = evaluateDynamicExpression(rule, record, context);
+        result.standard_requirement_text = humanizeDynamicFormulaText(
+          result.standard_requirement_text,
+          result.formula_calculated_bound,
+          (rule.criteria as Record<string, unknown>)?.['unit'] as string | undefined
+        );
         break;
+      }
 
       // 4. 多选一组合规则 (例如：硬度试验在 HRB / HBW / HV 中任选一种合格即可)
       case 'or_choice_group':
@@ -455,12 +543,11 @@ export class ComplianceEngine {
           };
           break;
         }
-        // 判定文本中是否明确包含合格、PASS 或无裂纹特征
-        const isPass =
-          record.qualitative_result === 'PASS' ||
-          record.qualitative_result === '合格' ||
-          record.conclusion_text?.includes('合格') ||
-          record.conclusion_text?.includes('无裂');
+        // 判定文本中是否包含合格、PASS、OK、无裂特征，且排除不合格与开裂等否定词
+        const rawText = `${record.qualitative_result || ''} ${record.conclusion_text || ''}`.trim();
+        const hasNegative = /不合格|开裂|未通过|未达标|有裂纹|有裂口|有腐蚀|UNQUALIFIED|\bFAIL\b/i.test(rawText);
+        const hasPositive = /合格|PASS|OK|无裂|QUALIFIED|NO_CRACK|NO_CORROSION/i.test(rawText);
+        const isPass = hasPositive && !hasNegative;
         result = {
           rule_id: rule.rule_id,
           category: rule.category,
@@ -469,14 +556,23 @@ export class ComplianceEngine {
           status: isPass ? 'PASS' : 'FAIL',
           requirement_level: rule.requirement_level,
           standard_requirement_text: '试验后无裂纹或裂口',
-          actual_value_text: record.conclusion_text || record.qualitative_result || '已报送',
-          message: isPass ? `合格: ${record.conclusion_text || '试验合格无裂纹'}` : '不合格: 工艺试验未达标',
+          actual_value_text: record.measured_value_raw || record.conclusion_text || record.qualitative_result || '已报送',
+          message: isPass ? `合格: ${record.conclusion_text || record.qualitative_result || '试验合格无裂纹'}` : '不合格: 工艺试验未达标',
         };
         break;
       }
 
       default:
         throw new Error(`Unsupported rule_type '${rule.rule_type}' for rule_id '${rule.rule_id}'`);
+    }
+
+    // 若属于“法定免检但供方主动报送实测值”，追加明确的豁免与实质比对说明
+    if (!triggered && hasReported) {
+      if (result.status === 'PASS') {
+        result.message = `合格: 标准要求${humanCondition}时强制考核，当前规格法定免检（豁免）；供方主动报送实测数据且检验合格，予以认可通过 (${result.message})`;
+      } else if (result.status === 'FAIL') {
+        result.message = `不合格: 规格虽属于法定免检范围 (${humanCondition})，但供方主动报送的实测数据超出标准限值要求 (${result.message})，判定不合格`;
+      }
     }
 
     // --------------------------------------------------------------------------
@@ -504,10 +600,19 @@ export class ComplianceEngine {
           failedStds.push(src.standard_short_code);
         }
 
+        let reqText = src.requirement_text;
+        if (src.raw_rule.rule_type === 'dynamic_expression') {
+          reqText = humanizeDynamicFormulaText(
+            src.requirement_text,
+            singleResult.formula_calculated_bound,
+            (src.raw_rule.criteria as Record<string, unknown>)?.['unit'] as string | undefined
+          );
+        }
+
         multiEvals.push({
           standard_id: src.standard_id,
           standard_short: src.standard_short_code,
-          requirement_text: src.requirement_text,
+          requirement_text: reqText,
           status: singleStatus,
           deviation: singleDeviation,
           is_governing: src.is_governing_strict,
@@ -515,17 +620,50 @@ export class ComplianceEngine {
         });
       }
 
+      // 若属于独占加严规则，将未参与该项考核的标准作为“无要求 / 自动符合基础制造标准”注入 multiEvals 与 passedStds
+      if (trace.is_structural_tightened && Array.isArray(trace.non_participating_standards)) {
+        for (const nonPart of trace.non_participating_standards) {
+          const nonPartShort = getStandardShortCode(nonPart);
+          passedStds.push(nonPartShort);
+          multiEvals.push({
+            standard_id: nonPart,
+            standard_short: nonPartShort,
+            requirement_text: '无强制指标 / 不考核',
+            status: 'PASS',
+            is_governing: false,
+            message: `基础制造标准【${nonPart}】未对本项提出强制检验要求`,
+          });
+        }
+      }
+
       result.multi_standard_evaluations = multiEvals;
       result.is_scissors_difference = false;
+      result.is_statutory_relaxation_risk = Boolean(trace.is_statutory_relaxation_risk);
+      result.statutory_baseline = trace.statutory_baseline;
+      result.statutory_relaxation_warning = trace.statutory_relaxation_warning;
+
+      // 组装精炼的多标准指标比对文本（带入动态公式实测计算值，去除冗余套话）
+      const activeEvals = multiEvals.filter(e => !e.requirement_text.includes('无强制指标'));
+      const comparisonText = (activeEvals.length > 0 ? activeEvals : multiEvals)
+        .map(ev => `${ev.requirement_text} [${ev.standard_short}${trace.is_structural_tightened ? ' 独占加严' : ''}]`)
+        .join(' / ');
 
       // 加严剪刀差判定：全局判定为 FAIL，但至少有 1 份标准通过（例如满足通用国标但不满足订货加严标）
       if (result.status === 'FAIL' && passedStds.length > 0 && failedStds.length > 0) {
         result.is_scissors_difference = true;
-        const attribution = `满足 ${passedStds.join('、')} 要求，但未满足 ${failedStds.join('、')} 承压订货加严要求，按严苛就高原则判定不合格。责任归属于 ${failedStds.join('、')} 订货加严条款。`;
+        const attribution = trace.is_structural_tightened
+          ? `基础制造标准 ${passedStds.join('、')} 无此项强制指标，但承压订货标准 ${failedStds.join('、')} 强制要求，按严苛就高原则判定不合格。责任归属于 ${failedStds.join('、')} 订货加严条款。`
+          : `满足 ${passedStds.join('、')} 要求，但未满足 ${failedStds.join('、')} 承压订货加严要求，按严苛就高原则判定不合格。责任归属于 ${failedStds.join('、')} 订货加严条款。`;
         result.scissors_attribution = attribution;
         result.message = `${attribution} (实测值: ${result.actual_value_text})`;
-      } else if (result.status === 'PASS' && trace.sources.length > 1) {
-        result.message = `合格: 实测值 ${result.actual_value_text} 满足所有标准综合严苛要求 (${trace.dual_standard_requirement_text})`;
+      } else if (result.status === 'PASS' && trace.is_statutory_relaxation_risk) {
+        result.message = `合格: 实测值 ${result.actual_value_text}  (${comparisonText})【提示：合同放宽法标底线，需特批/风险备案】`;
+      } else if (result.status === 'PASS') {
+        if (!triggered && hasReported) {
+          result.message = `合格: 标准要求${humanCondition}时强制考核，当前规格法定免检；供方主动报送实测数据且检验合格  (${comparisonText})，予以认可放行`;
+        } else {
+          result.message = `合格: 实测值 ${result.actual_value_text}  (${comparisonText})`;
+        }
       }
     }
 
@@ -578,6 +716,53 @@ export class ComplianceEngine {
       skipped_count: skippedCount,
       warning_count: warningCount,
       has_critical_fail: hasCriticalFail,
+    };
+  }
+
+  /**
+   * 汇总双层符合性主结论（法定/制造标准符合性 vs 采购技术协议符合性）
+   */
+  private static computeDualVerdicts(
+    itemResults: RuleEvaluationItemResult[],
+    summary: AuditSummary
+  ): {
+    standard_compliance_verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
+    agreement_compliance_verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW' | 'NOT_APPLICABLE';
+    statutory_risk_flag: boolean;
+  } {
+    const statutory_risk_flag = itemResults.some(r => r.is_statutory_relaxation_risk);
+
+    let hasAgreement = false;
+    let agreementFails = 0;
+    let statutoryFails = 0;
+
+    for (const item of itemResults) {
+      if (item.multi_standard_evaluations && item.multi_standard_evaluations.length > 0) {
+        for (const ev of item.multi_standard_evaluations) {
+          const id = ev.standard_id.toUpperCase();
+          const isTA = id.startsWith('TA-') || id.includes('TA_') || id.includes('协议') || id.includes('SPECIFICATION') || id.includes('AGREEMENT');
+          if (isTA) {
+            hasAgreement = true;
+            if (ev.status === 'FAIL') agreementFails++;
+          } else {
+            if (ev.status === 'FAIL') statutoryFails++;
+          }
+        }
+      }
+    }
+
+    if (!hasAgreement) {
+      return {
+        standard_compliance_verdict: summary.overall_status,
+        agreement_compliance_verdict: 'NOT_APPLICABLE',
+        statutory_risk_flag,
+      };
+    }
+
+    return {
+      standard_compliance_verdict: statutoryFails > 0 ? 'FAIL' : 'PASS',
+      agreement_compliance_verdict: agreementFails > 0 ? 'FAIL' : 'PASS',
+      statutory_risk_flag,
     };
   }
 }

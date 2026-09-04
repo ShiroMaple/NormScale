@@ -150,4 +150,134 @@ describe('ComplianceEngine 多标准双标尺合规评定与剪刀差追溯测�
     expect(gbEval?.status).toBe('FAIL');
     expect(nbEval?.status).toBe('FAIL');
   });
+
+  it('Case 4: 包含技术协议放宽法定底线（P放宽至0.040%），实测0.038%在放宽区间，生成双层主结论与风险预警', () => {
+    // 模拟合成切片中 P 元素被技术协议放宽至 0.040% (国标基准为 0.035%)
+    const relaxedSlice: CompositeSlice = {
+      ...compositeSlice,
+      evaluation_rules: compositeSlice.evaluation_rules.map(r => {
+        if (r.property_key === 'P') {
+          return {
+            ...r,
+            criteria: { min: null, max: 0.040, unit: '%' },
+            composite_trace: {
+              canonical_property_key: 'P',
+              display_name: '磷含量 P',
+              governing_standard_id: 'TA-2026-WELD',
+              is_tightened: true,
+              is_statutory_relaxation_risk: true,
+              statutory_baseline: '法定标准底线要求：≤0.035%',
+              statutory_relaxation_warning: '高优先级采购技术协议放宽了法定标准底线要求',
+              dual_standard_requirement_text: '≤ 0.040% [TA] / ≤ 0.035% [GB]',
+              arbitration_reason: '技术协议优先采纳 (放宽法标风险)',
+              sources: [
+                {
+                  standard_id: 'TA-2026-WELD',
+                  standard_short_code: 'TA',
+                  rule_id: 'TA_P',
+                  requirement_level: 'MANDATORY',
+                  requirement_text: '≤ 0.040%',
+                  min: null,
+                  max: 0.040,
+                  is_governing_strict: true,
+                  raw_rule: {
+                    rule_id: 'TA_P',
+                    category: 'chemical',
+                    property_key: 'P',
+                    display_name: '磷 P',
+                    rule_type: 'numeric_range',
+                    requirement_level: 'MANDATORY',
+                    criteria: { min: null, max: 0.040 },
+                  },
+                },
+                {
+                  standard_id: 'GB/T 13296-2023',
+                  standard_short_code: 'GB',
+                  rule_id: 'GB_P',
+                  requirement_level: 'MANDATORY',
+                  requirement_text: '≤ 0.035%',
+                  min: null,
+                  max: 0.035,
+                  is_governing_strict: false,
+                  raw_rule: {
+                    rule_id: 'GB_P',
+                    category: 'chemical',
+                    property_key: 'P',
+                    display_name: '磷 P',
+                    rule_type: 'numeric_range',
+                    requirement_level: 'MANDATORY',
+                    criteria: { min: null, max: 0.035 },
+                  },
+                },
+              ],
+            },
+          };
+        }
+        return r;
+      }),
+    };
+
+    const cert: CertificateExtract = {
+      header: {
+        certificate_no: 'QS-RELAX-004',
+        declared_standard: 'GB/T 13296-2023、TA-2026-WELD',
+        declared_grade: '06Cr18Ni11Ti (S32168)',
+        dimensions: { outer_diameter_mm: 25.0, wall_thickness_mm: 2.0 },
+      },
+      test_records: [
+        { category: 'chemical', property_key: 'P', measured_value_num: 0.038, unit: '%' },
+        { category: 'mechanical', property_key: 'tensile_strength', measured_value_num: 565, unit: 'MPa' },
+        { category: 'mechanical', property_key: 'elongation_A', measured_value_num: 42.0, unit: '%' },
+      ],
+    };
+
+    const report = ComplianceEngine.evaluateSlice(relaxedSlice, cert);
+    const pResult = report.item_results.find(r => r.property_key === 'P');
+
+    expect(pResult).toBeDefined();
+    expect(pResult?.status).toBe('PASS');
+    expect(pResult?.is_statutory_relaxation_risk).toBe(true);
+    expect(pResult?.statutory_baseline).toContain('0.035');
+    expect(pResult?.message).toContain('合同放宽法标底线');
+
+    // 验证双层主结论与全局风险标记
+    expect(report.statutory_risk_flag).toBe(true);
+    expect(report.standard_compliance_verdict).toBe('FAIL'); // 国标 P=0.038% > 0.035% 不合格
+    expect(report.agreement_compliance_verdict).toBe('PASS'); // 技术协议 P=0.038% <= 0.040% 合格
+  });
+
+  it('Case 5: 判定逻辑精炼格式验证 (消除"满足所有标准综合严苛要求"等套话，精准呈现数值比对)', () => {
+    const cert: CertificateExtract = {
+      header: {
+        certificate_no: 'QS-REFINED-005',
+        declared_standard: 'GB/T 13296-2023、NB/T 47019.5-2021',
+        declared_grade: '06Cr18Ni11Ti (S32168)',
+        // 不提供尺寸，验证纯真实数据输入
+      },
+      test_records: [
+        { category: 'chemical', property_key: 'C', measured_value_num: 0.018, measured_value_raw: '0.018', unit: '%' },
+        { category: 'mechanical', property_key: 'elongation_A', measured_value_num: 57.5, measured_value_raw: '57.5、61.5 %', unit: '%' },
+      ],
+    };
+
+    const report = ComplianceEngine.evaluateSlice(compositeSlice, cert);
+
+    // 1. 验证碳 C 元素
+    const cResult = report.item_results.find(r => r.property_key === 'C');
+    expect(cResult).toBeDefined();
+    expect(cResult?.status).toBe('PASS');
+    expect(cResult?.message).not.toContain('满足所有标准综合严苛要求');
+    expect(cResult?.message).toContain('合格: 实测值 0.018');
+    expect(cResult?.message).toContain('≤ 0.08 % [NB/T 47019.5-2021]');
+    expect(cResult?.message).toContain('≤ 0.08 % [GB/T 13296-2023]');
+
+    // 2. 验证断后伸长率
+    const aResult = report.item_results.find(r => r.property_key === 'elongation_A');
+    expect(aResult).toBeDefined();
+    expect(aResult?.status).toBe('PASS');
+    expect(aResult?.message).not.toContain('满足所有标准综合严苛要求');
+    expect(aResult?.message).toContain('合格: 实测值 57.5、61.5 %');
+    expect(aResult?.message).toContain('≥ 40 % [NB/T 47019.5-2021]');
+    expect(aResult?.message).toContain('≥ 35 % [GB/T 13296-2023]');
+  });
 });

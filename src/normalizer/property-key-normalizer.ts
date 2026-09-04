@@ -58,7 +58,9 @@ export class PropertyKeyNormalizer {
    */
   public static normalize(rawName: string, rawCategoryHint?: string): NormalizedPropertyResult {
     const str = rawName.trim();
-    const upperStr = str.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '');
+    // 自动剥离常见工程与视觉标记前缀 (如 geo_surface_quality -> surface_quality, proc_flaring -> flaring)
+    const strippedStr = str.replace(/^(geo|proc|ndt|mech|metallo|chem)_/i, '');
+    const upperStr = strippedStr.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '');
 
     // 1. 优先化学成分判定
     // (a) 纯化学符号 (如 'C', 'SI', 'NI', 'CR', 'MO', 'TI')
@@ -249,8 +251,48 @@ export class PropertyKeyNormalizer {
         is_known: true,
       };
     }
+    if (upperStr.includes('致密性') || upperStr.includes('承压') || upperStr.includes('PRESSURETIGHTNESS')) {
+      return {
+        raw_property_name: rawName,
+        property_key: 'pressure_tightness',
+        category: 'ndt',
+        display_name: '承压/致密性检验',
+        is_known: true,
+      };
+    }
 
-    // 7. 兜底为其他类别
+    // 7. 表面质量与几何尺寸
+    if (upperStr.includes('表面') || upperStr.includes('SURFACE') || upperStr.includes('外观')) {
+      return {
+        raw_property_name: rawName,
+        property_key: 'surface_quality',
+        category: 'surface',
+        display_name: '表面质量与粗糙度',
+        is_known: true,
+      };
+    }
+    if (upperStr.includes('尺寸') || upperStr.includes('DIMENSION') || upperStr.includes('几何尺寸') || upperStr.includes('外径壁厚')) {
+      return {
+        raw_property_name: rawName,
+        property_key: 'dimensions',
+        category: 'geometric',
+        display_name: '几何尺寸规格',
+        is_known: true,
+      };
+    }
+
+    // 8. 金相补充项目
+    if (upperStr.includes('铁素体') || upperStr.includes('FERRITE')) {
+      return {
+        raw_property_name: rawName,
+        property_key: 'ferrite_content',
+        category: 'metallographic',
+        display_name: '铁素体含量',
+        is_known: true,
+      };
+    }
+
+    // 9. 兜底为其他类别
     const fallbackCat: RuleCategory = (rawCategoryHint as RuleCategory) || 'other';
     return {
       raw_property_name: rawName,

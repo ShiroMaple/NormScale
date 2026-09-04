@@ -32,9 +32,37 @@ export function evaluateOrChoiceGroup(
       context.recordsMap.get(option.sub_key) ||
       context.recordsMap.get(propKey);
 
-    if (record && (record.sub_property === option.sub_key || !record.sub_property || record.property_key === option.sub_key)) {
-      matchedRecords.push({ option, record });
+    if (!record) continue;
+
+    // 1. 如果 record 显式指定了 sub_property，必须精确匹配
+    if (record.sub_property) {
+      if (record.sub_property.toUpperCase() === option.sub_key.toUpperCase()) {
+        matchedRecords.push({ option, record });
+      }
+      continue;
     }
+
+    // 2. 如果未显式指定 sub_property，检查实测原始文本或单位是否明确指明了具体硬度标尺
+    const rawText = `${record.measured_value_raw || ''} ${record.unit || ''} ${(record as Record<string, unknown>).display_name || ''}`.toUpperCase();
+    const hasHV = rawText.includes('HV') || rawText.includes('维氏');
+    const hasHRB = rawText.includes('HRB') || rawText.includes('洛氏');
+    const hasHBW = rawText.includes('HBW') || rawText.includes('HBS') || rawText.includes('布氏');
+
+    if (hasHV || hasHRB || hasHBW) {
+      const optUpper = option.sub_key.toUpperCase();
+      if (optUpper === 'HV' && hasHV) {
+        matchedRecords.push({ option, record });
+      } else if (optUpper === 'HRB' && hasHRB) {
+        matchedRecords.push({ option, record });
+      } else if (optUpper === 'HBW' && hasHBW) {
+        matchedRecords.push({ option, record });
+      }
+      // 若包含特定硬度标尺但非当前 option，则跳过，防止跨标尺错配
+      continue;
+    }
+
+    // 3. 若无任何具体标尺标识，则退化为通用候选匹配
+    matchedRecords.push({ option, record });
   }
 
   // 1. 如果没有报送任何一个选项
@@ -95,6 +123,11 @@ export function evaluateOrChoiceGroup(
     ? `合格: 多选一满足要求 (${details.join('; ')})`
     : `不合格: 实测指标均未达标 (${details.join('; ')})`;
 
+  const rawOrChoiceValue = firstPassRecord?.measured_value_raw
+    || (firstPassRecord?.measured_value_num !== undefined && firstPassRecord?.measured_value_num !== null ? String(firstPassRecord.measured_value_num) : undefined)
+    || matchedRecords[0]?.record.measured_value_raw
+    || details.join('; ');
+
   return {
     rule_id: rule.rule_id,
     category: rule.category,
@@ -103,8 +136,8 @@ export function evaluateOrChoiceGroup(
     status,
     requirement_level: rule.requirement_level,
     standard_requirement_text: criteria.options.map(o => `${o.sub_key} <= ${o.criteria.max}`).join(' 或 '),
-    actual_value_text: details.join('; '),
-    measured_value_raw: firstPassRecord?.measured_value_raw,
+    actual_value_text: rawOrChoiceValue,
+    measured_value_raw: firstPassRecord?.measured_value_raw || matchedRecords[0]?.record.measured_value_raw,
     measured_value_num: firstPassRecord?.measured_value_num ?? null,
     rounded_value: firstPassRecord ? firstPassRounded : null,
     message,
@@ -122,7 +155,7 @@ export function evaluateAlternativeGroup(
   const displayName = rule.display_name;
   const propKey = rule.property_key;
 
-  const candidateResults: Array<{ name: string; isPass: boolean; text: string }> = [];
+  const candidateResults: Array<{ name: string; isPass: boolean; text: string; rawText?: string }> = [];
 
   for (const candidate of criteria.candidates) {
     const key = candidate.candidate_key;
@@ -137,10 +170,13 @@ export function evaluateAlternativeGroup(
         (candidate.required_level && record.measured_level_claimed === candidate.required_level) ||
         (record.conclusion_text && (record.conclusion_text.includes('合格') || record.conclusion_text.includes('PASS')));
 
+      const itemRaw = record.measured_value_raw || record.conclusion_text || record.qualitative_result;
+
       candidateResults.push({
         name: candidate.display_name || key,
         isPass: Boolean(isQualified),
         text: `${candidate.display_name || key}: ${record.conclusion_text || record.measured_level_claimed || record.qualitative_result || '已测'} (${isQualified ? '合格' : '不合格'})`,
+        rawText: itemRaw,
       });
     }
   }
@@ -165,6 +201,8 @@ export function evaluateAlternativeGroup(
   const atLeastOnePass = candidateResults.some(c => c.isPass);
   const status: AuditStatus = atLeastOnePass ? 'PASS' : 'FAIL';
   const summaryText = candidateResults.map(c => c.text).join('; ');
+  const passedCandidate = candidateResults.find(c => c.isPass);
+  const rawAlternativeText = passedCandidate?.rawText || candidateResults[0]?.rawText || '已报送';
 
   return {
     rule_id: rule.rule_id,
@@ -174,7 +212,8 @@ export function evaluateAlternativeGroup(
     status,
     requirement_level: rule.requirement_level,
     standard_requirement_text: criteria.candidates.map(c => c.display_name || c.candidate_key).join(' 或 '),
-    actual_value_text: summaryText,
+    actual_value_text: rawAlternativeText,
+    measured_value_raw: rawAlternativeText,
     message: atLeastOnePass ? `合格: 满足替代检验要求 (${summaryText})` : `不合格: 替代检验项均未通过 (${summaryText})`,
   };
 }
@@ -217,29 +256,36 @@ export function evaluateQualitativeEnum(
       isPass = record.measured_value_num >= minVal;
     } else if (claimedLevel && !isNaN(Number(claimedLevel))) {
       isPass = Number(claimedLevel) >= minVal;
-    } else if (record.qualitative_result) {
-      const q = record.qualitative_result.toUpperCase();
-      isPass = (q === 'PASS' || q === '合格' || q === 'QUALIFIED');
+    } else {
+      const q = `${record.qualitative_result || ''} ${record.conclusion_text || ''}`.trim();
+      isPass = /合格|PASS|OK|QUALIFIED|\bTRUE\b/i.test(q) && !/不合格|FAIL|UNQUALIFIED|\bFALSE\b/i.test(q);
     }
   } else if (reqLevel && claimedLevel) {
     isPass = (claimedLevel.trim().toUpperCase() === reqLevel.trim().toUpperCase());
-  } else if (record.qualitative_result) {
-    const q = record.qualitative_result.toUpperCase();
-    isPass = (q === 'PASS' || q === '合格' || q === 'QUALIFIED');
-  } else if (record.conclusion_text) {
-    isPass = record.conclusion_text.includes('合格') || record.conclusion_text.includes('PASS');
+  } else {
+    const q = `${record.qualitative_result || ''} ${record.conclusion_text || ''}`.trim();
+    if (q) {
+      const hasNeg = /不合格|未达到|未通过|有腐蚀|有裂纹|有裂口|开裂|UNQUALIFIED|\bFAIL\b|\bFALSE\b/i.test(q);
+      const hasPos = /合格|PASS|OK|QUALIFIED|无裂|NO_CRACK|NO_CORROSION|\bTRUE\b/i.test(q);
+      isPass = hasPos && !hasNeg;
+    }
   }
 
   const status: AuditStatus = isPass ? 'PASS' : 'FAIL';
   const minLevelText = minLevel ? `≥ ${minLevel} 级` : undefined;
-  const reqText = [criteria.test_standard, criteria.required_level, minLevelText, criteria.method, criteria.expected]
+  const specReq = [criteria.required_level, minLevelText, criteria.method, criteria.expected]
     .filter(Boolean)
     .join(' ');
+  const methodStr = criteria.test_standard ? ` (方法标准: ${criteria.test_standard})` : '';
+  const reqText = specReq ? `${specReq}${methodStr}` : (criteria.test_standard || '定性合格要求');
 
   const actualText =
-    typeof record.measured_value_num === 'number'
-      ? `${record.measured_value_num} 级`
-      : (record.conclusion_text || record.measured_level_claimed || record.qualitative_result || '已报送');
+    record.measured_value_raw ||
+    (typeof record.measured_value_num === 'number' ? `${record.measured_value_num} 级` : undefined) ||
+    record.conclusion_text ||
+    record.qualitative_result ||
+    record.measured_level_claimed ||
+    '已报送';
 
   return {
     rule_id: rule.rule_id,
@@ -248,9 +294,12 @@ export function evaluateQualitativeEnum(
     display_name: displayName,
     status,
     requirement_level: rule.requirement_level,
-    standard_requirement_text: reqText || '定性合格',
+    standard_requirement_text: reqText,
     actual_value_text: actualText,
-    message: isPass ? `合格: 符合标准 ${reqText}` : `不合格: 未达到标准要求 ${reqText}`,
+    measured_value_raw: record.measured_value_raw || actualText,
+    message: isPass
+      ? `合格: 符合指标要求 ${specReq || '定性合格'}${methodStr}`
+      : `未达标: 未达到指标要求 ${specReq || '合格要求'}${methodStr} (实测值: ${actualText})`,
   };
 }
 

@@ -4,6 +4,93 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-04 · 尺寸规格硬编码兜底彻底清零、判定逻辑数值比对精准精炼与多标一致标签折叠
+
+- 尺寸规格硬编码兜底彻底清理 (`src/app/api/audit/submit/route.ts`):
+  1. 根除历史遗留的 `25.0mm × 2.0mm` 虚假兜底默认值，无实测尺寸时一律如实为 `undefined`，不可无据追溯；
+- 判定逻辑文案精准精炼 (`src/engine/core.ts`, `src/engine/numeric-evaluator.ts`):
+  1. 严格落实用户格式模版，保留实测值与各标准要求比对，彻底剔除「满足所有标准综合严苛要求」套话；
+  2. 格式精炼为 `合格: 实测值 ${actual}  (${dualComparisonText})`，例如 `合格: 实测值 0.018  (≤ 0.08 % [NB/T 47019.5-2021] / ≤ 0.08 % [GB/T 13296-2023])`；
+- 执行标准要求标签一致性紧凑折叠 (`src/components/WaterfallWorkbench.tsx`):
+  1. 多标要求完全一致项（如 C、Si、Mn 等）折叠为紧凑标签 `标准A + 标准B: 指标 ★`，极大收拢表格垂直高度；
+  2. 剪刀差指标（如延伸率 40% vs 35%）及独占加严项自动分行展开对比，金色 ★ 标亮主导严苛条款；
+- 质量门禁: 39 套件 188 用例全通，Next.js 15 生产打包 0 错误通过。
+
+## 2026-09-04 · 判定逻辑文案去套话精炼、NO_CORROSION_TREND规范汉化与探伤等级动态化
+
+- 判定逻辑文案彻底去冗脱套 (`src/engine/core.ts`):
+  1. 彻底移除重复机械套话「满足所有标准综合严苛要求 (...一大串重复括号...)」；
+  2. 针对指标一致项精简为「各执行标准指标要求一致，实测数据达标」，加严项精简为「实测数据满足主导加严标准【XXX】严苛指标要求」，信息密度与专业度大幅提升；
+- 晶间腐蚀试验要求规范汉化 (`src/engine/multi-standard-composer.ts`):
+  1. 根除规则切片 JSON 内部枚举代码 `NO_CORROSION_TREND` 暴露；
+  2. 统一转义为符合工业标准要求的中文表述「按 Method_E 检验无晶间腐蚀倾向」；
+- 探伤声称等级动态提取与去硬编码 (`src/app/api/audit/submit/route.ts`, `src/engine/logic-evaluator.ts`):
+  1. 废除无损检测中写死 `E2H`/`U2` 默认等级的历史遗留桩，通过正则从报送文本中动态解析；
+  2. 增强定性求值器对布尔值/英文正向词的鲁棒容差；
+- 质量门禁: 39 个测试套件 187 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误。
+
+## 2026-09-04 · 多标准标签垂直换行排列、动态公式带入计算值注入与偏差量代数差精算
+
+- 多标准标签垂直排布与统一样式 (`src/components/WaterfallWorkbench.tsx`):
+  1. 将横向堆叠重构为垂直逐行排列（`flex-col items-start gap-1`），每输出一个标签自动换行，天然支撑 N ≥ 2 部标准与技术协议自上而下堆叠；
+  2. 统一浅灰背景，当前起控制主导作用的标准标签采用【琥珀黄背景 + ★】醒目标示；
+- 动态公式变量美化与计算值注入 (`src/engine/multi-standard-composer.ts`, `src/engine/core.ts`):
+  1. 彻底清除代码内部变量名（如 `ctx.chemical.C` -> `C`，`*` -> `×`）；
+  2. 自动代入当前质保书实测参数计算边界并紧随公式后注入，如 `NB/T 47019.5-2021: ≥ 5×(C+N) [即 ≥ 0.285%] 且 ≤ 0.7% ★`；
+- 【偏差量 / 吻合度】列代数差与达标文案升级 (`src/components/WaterfallWorkbench.tsx`, `src/engine/numeric-evaluator.ts`):
+  1. 数值比较合格项给出标准工程代数差（`实测值 - 标准阈值`，如 `+100 MPa`、`+17.5%`、`-0.032%`），多读数按最贴近标准线的临界点精确计算；
+  2. 定性项目文本由“吻合”统一升级为更契合工业规范的“达标”；
+- 质量门禁: 39 个测试套件 187 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误。
+
+## 2026-09-04 · 实测值纯净化与全景比对矩阵列职责彻底重构
+
+- 实测值 100% 原文去污染 (`src/app/api/audit/submit/route.ts`, `src/engine/numeric-evaluator.ts`, `src/engine/dynamic-evaluator.ts`, `src/engine/logic-evaluator.ts`, `src/engine/core.ts`):
+  1. 彻底剔除数值列夹带的 `(修约: ...)`，原汁原味展示原始数字或文本；
+  2. 彻底修正超声探伤、表面质量、水压替代组等字段，优先展示步骤 2 提取的原始字样（如 `合格 OK`、多点硬度串），杜绝机器码（U2/PASS）和推导摘要污染；
+- 全景比对大表 7 列职责彻底重构归位 (`src/components/WaterfallWorkbench.tsx`):
+  1. 列 3【执行标准要求】：胶囊标签完整保留带年份标准号（如 `NB/T 47019.5-2021`、`GB/T 13296-2023`），杜绝法规歧义；
+  2. 列 4【报告测量值】：纯净原汁原味展示；
+  3. 列 5【偏差量 / 吻合度】：回归真正量化偏差（超标标红加粗如 `+0.006%` / `-0.5 级`，合格显示 `达标` 或 `吻合`，免检/跳过显示 `-`）；
+  4. 列 7【判定逻辑 / 审核说明】：装入 `item.message` 详尽判定逻辑、免检依据与剪刀差归因，彻底消除孤立重复的标准号；
+- 标准代号年份保留机制 (`src/engine/multi-standard-composer.ts`): 调整 `getStandardShortCode`，完整保留标准年份后缀；
+- 质量门禁: 39 个测试套件 186 个测试 100% 绿色通过，`tsc --noEmit` 0 错误，`pnpm build` 生产构建成功。
+
+## 2026-09-04 · 硬度前置条件自然语言转义与“条件免检，报送即检”双轨机制落地
+
+- 前置条件业务自然语言转义 (`src/engine/missing-scanner.ts`): 实现 `formatConditionHumanText`，将 `ctx.header.dimensions.wall_thickness_mm >= 1.7` 彻底解耦为面向质检员的 `壁厚需 ≥ 1.7mm (实际壁厚: 0.8mm)`，杜绝底层代码变量暴露；
+- “条件免检，报送即检”双轨调度引擎 (`src/engine/core.ts`): 
+  1. 未激活且未报送: 按法定免检处理判定 `SKIPPED`，清晰提示标准强制门槛与依法免检理由；
+  2. 未激活但供方主动报送: 自动激活实质合规核验，合格判 `PASS` 并注明“法定免检，供方主动报送有效放行”，超标判 `FAIL` 准确拦截未固溶等质量隐患；
+- 多选一硬度标尺防呆隔离 (`src/engine/logic-evaluator.ts`): 智能解析原始实测文本单位（HV/HRB/HBW），避免 139.3 HV1 错误跨标尺拿去与 HRB ≤ 90 比对造成假超标；
+- 规格复合表达式解析增强 (`src/app/api/audit/submit/route.ts`): 支持正则提取 `OD 15.0mm × WT 0.8mm` 显式标识，准确解构壁厚与外径；
+- 质量门禁: `compliance-engine.test.ts` 新增免检主动报送合格与超标拦截测试，39 个测试套件 183 个测试 100% 绿色通过，`tsc --noEmit` 0 错误。
+
+## 2026-09-04 · 真实质保书1核验缺陷修复、长尾检验项通用模式化与结构性剪刀差扩展
+
+- 化学成分不等式数值安全提取 (`src/app/api/audit/submit/route.ts`): 支持正则提取 `<0.01`、`≤0.005` 等带不等式前缀数值，保守代入钛稳定化计算公式 `5*(C+N)`，消除动态公式未找到元素异常；
+- 定性检验项模糊容差归一化 (`src/engine/core.ts`, `src/engine/logic-evaluator.ts`): 废除严格全等比对，采用中英文正向词（合格/PASS/OK/无裂/QUALIFIED）与排他否定词（不合格/开裂/未通过）复合正则检测，压扁试验、扩口试验与晶间腐蚀试验稳定判定合格；
+- 长尾检验项通用模式化 (`src/normalizer/property-key-normalizer.ts`): 补齐表面质量、尺寸公差、铁素体含量等 7 大类别通用词典与工程前缀剥离，在提交适配器中统一归一化，消除 `geo_surface_quality` 脱节漏检；
+- 方法标准与技术要求文案解耦 (`src/engine/logic-evaluator.ts`): 区分产品技术指标与试验方法标准，消除“未达到标准要求 GB/T 6394 ≥ 7 级”等歧义提示；
+- 结构性加严剪刀差机制落地 (`src/engine/multi-standard-composer.ts`, `src/engine/core.ts`): 扩展多标准合成器与核验引擎，准确识别“基础制造国标无强制指标，承压订货标准独占强制加严必检”场景，将晶粒度 6.5 级准确识别为加严剪刀差并注入双标尺追溯；
+- 质量门禁: 针对真实质保书 1 载荷新增集成测试，39 个测试套件 181 个用例全量通过，`tsc --noEmit` 0 错误。
+
+## 2026-09-04 · 步骤 3 底层引擎与工作台全景矩阵完全打通、牌号免选与技术协议占位落地
+
+- LangGraph 状态图与统一驱动契约打通 (`src/app/api/audit/submit/route.ts`, `src/workflow/`): `POST /api/audit/submit` 扩展支持 `batchSpecimen`、`standardIds`、`gradeKey` 直通调度，通过 `FileRuleStore.resolveCompositeSlice` 检索多标合成切片，状态图短路 Mock 抽取直出完整 `AuditReport`；
+- 牌号免选原则与三层架构闭环: 确立“质保书声明牌号与实测不符直接判 FAIL，不予质检员换牌号凑合格”原则。步骤 2 负责物理印章遮挡与 OCR 修正，HITL 抽屉负责国际别名消歧，步骤 3 彻底移除牌号下拉框，只读展示声明牌号胶囊；
+- 【应用技术协议】位置置换 (`src/components/WaterfallWorkbench.tsx`): 原牌号选择器 UI 位置替换为【应用技术协议】卡片，选项暂时留空不填充内容，留待后续完善；
+- 动态标准数据源: 彻底废除前端静态写死 `STANDARDS_CATALOG` 依赖，优先基于 `standardsData` (`GET /api/standards`) 全动态构建多选目录；
+- 全景矩阵 100% 引擎驱动: 彻底删除步骤 3 中 `chemRows`、`mechRows` 及伸长率 35/40 的局部 if-else 特例代码，100% 遍历真实 `AuditReport.item_results`，漏检项标红 `【✗ 漏检/未检验】`，质保书非标项（施工号、炉号）排布在表底 `【ℹ️ 供参考】`；
+- 台账防重算安全机制: 已持有 `auditReport` 的历史批次原汁原味渲染，杜绝静默重算破坏历史现场，保留显式【重新核验】按键与骨架加载动效；
+- 质量门禁: 新增 `tests/api/audit-submit-batch.test.ts`，全系统 39 个测试套件 180 个单元测试 100% 绿色通过，`tsc --noEmit` 0 错误。
+
+## 2026-09-04 · 技术协议优先级调度引擎升级与步骤 1 专用上传入口落地
+
+- 优先级调度引擎与分级管控落地 (`src/engine/multi-standard-composer.ts`, `src/engine/core.ts`)：构建五级优先级调度体系（协议 1 > 行标 2 > 企标 3 > 国标 4 > 其他 5）；协议加严指标主导合成生效；若协议逆向放宽或豁免法标强标底线，判定采纳协议限值并置位 `is_statutory_relaxation_risk: true`，留存 `statutory_baseline` 及警示文案；
+- 双层主结论分立契约 (`src/schemas/report.schema.ts`)：报告 Schema 增设 `standard_compliance_verdict`、`agreement_compliance_verdict` 与 `statutory_risk_flag`，实现法标验收合规与采购合同索赔结论分立；
+- 步骤 1 前端独立上传入口 (`src/components/WaterfallWorkbench.tsx`)：三栏网格重构（质保书上传、待处理队列、技术协议上传卡片），限定单会话仅允许上传 1 份 PDF，提供未传虚线/已选展示及重选移除交互，明确标示【功能待实施 · 暂未接入后端】；
+- 质量门禁闭环：新增测试用例覆盖协议加严主导与放宽法标风险判定，全量 38 个测试套件 178 个单元测试 100% 绿色通过，`tsc --noEmit` 0 错误。
+
 ## 2026-09-04 · /grill-me 技术协议与标准优先级调度体系架构共识
 
 - 行业合理性权威论证：技术协议（订货补充规范）属于《民法典》买卖合同专有要约，行业普遍执行【技术协议 > 行业订货标 > 国家通用标】及“加严优先、特殊覆盖一般”准则；

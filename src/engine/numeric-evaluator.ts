@@ -103,7 +103,8 @@ export function evaluateNumericRange(
   const valBn = new BigNumber(roundedVal);
   let isPass = true;
   let deviation: number | null = null;
-  let message = `合格: 实测修约值 ${roundedVal}${criteria.unit || ''}`;
+  const reqText = formatRangeRequirement({ ...criteria, min: standardMin, max: standardMax });
+  let message = `合格: 实测值 ${record.measured_value_raw || roundedVal}  (${reqText})`;
 
   // 检查下限指标（如屈服强度、断后伸长率下限）
   if (standardMin !== null && standardMin !== undefined) {
@@ -143,7 +144,7 @@ export function evaluateNumericRange(
     status,
     requirement_level: rule.requirement_level,
     standard_requirement_text: formatRangeRequirement({ ...criteria, min: standardMin, max: standardMax }),
-    actual_value_text: `${record.measured_value_raw || rawNum} (修约: ${roundedVal}${criteria.unit || ''})`,
+    actual_value_text: record.measured_value_raw || (criteria.unit ? `${rawNum} ${criteria.unit}` : String(rawNum)),
     measured_value_raw: record.measured_value_raw,
     measured_value_num: rawNum,
     rounded_value: roundedVal,

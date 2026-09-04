@@ -3,6 +3,7 @@ import { RawCertificatePayload } from '../extractor/extractor.interface.ts';
 import { CertificateExtract } from '../schemas/certificate.schema.ts';
 import { NormalizationAuditLog } from '../normalizer/certificate-normalizer.ts';
 import { StandardRuleSet, SpecificationSlice } from '../schemas/standard.schema.ts';
+import { CompositeSlice } from '../engine/multi-standard-composer.ts';
 import { AuditReport, RuleEvaluationItemResult, AuditTraceItem } from '../schemas/report.schema.ts';
 import { ITraceCollector } from '../logger/logger.interface.ts';
 
@@ -113,6 +114,10 @@ export interface WorkflowOptions {
   minConfidenceThreshold?: number;
   /** 强制指定执行标准代号 (覆盖质保书提取声明) */
   forcedStandardId?: string;
+  /** 强制指定多份执行标准代号列表 (覆盖质保书提取声明) */
+  forcedStandardIds?: string[];
+  /** 强制指定材料牌号 (覆盖质保书提取声明) */
+  forcedGradeKey?: string;
   /** 是否跳过语义条款复核 (仅执行确定性规则比对) */
   skipSemanticReview?: boolean;
   /** 质检任务上下文标识 */
@@ -138,7 +143,7 @@ export const QualityAuditStateAnnotation = Annotation.Root({
   /** 任务唯一标识 (用于 Checkpoint 状态持久化与恢复) */
   taskId: Annotation<string>(),
   /** 原始质保证书输入 (Buffer, Base64 或预设样本标识) */
-  input: Annotation<Buffer | Uint8Array | string>(),
+  input: Annotation<Buffer | Uint8Array | string | Record<string, unknown>>(),
   /** 运行期配置参数 */
   options: Annotation<WorkflowOptions | undefined>(),
   /** 当前工作流生命周期状态 */
@@ -153,6 +158,8 @@ export const QualityAuditStateAnnotation = Annotation.Root({
   standardRuleSet: Annotation<StandardRuleSet | undefined>(),
   /** 命中的具体规格切片 */
   matchedSlice: Annotation<SpecificationSlice | undefined>(),
+  /** 多标准叠加合成切片 (CompositeSlice) */
+  compositeSlice: Annotation<CompositeSlice | undefined>(),
   /** 确定性规则核验单项明细矩阵 */
   itemResults: Annotation<RuleEvaluationItemResult[] | undefined>(),
   /** 文本性技术条款语义复核明细 */

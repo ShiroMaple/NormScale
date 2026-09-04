@@ -174,6 +174,80 @@ describe('ComplianceEngine 核心核验引擎黄金基准测试集 (GB/T 13296-2
       const hardnessResult = report.item_results.find(r => r.property_key === 'hardness');
       expect(hardnessResult?.status).toBe('SKIPPED');
       expect(hardnessResult?.message).toContain('未激活');
+      expect(hardnessResult?.message).toContain('壁厚需 ≥ 1.7mm');
+    });
+
+    it('薄壁管 (S=1.5mm < 1.7mm) 主动报送合格硬度 (140 HV <= 200 HV) 触发【报送即检】并判定为 PASS', () => {
+      const thinWallReportedCert: CertificateExtract = {
+        header: {
+          certificate_no: 'QS-202608-004A-REP',
+          declared_standard: 'GB/T 13296-2023',
+          declared_grade: '06Cr19Ni10',
+          dimensions: { outer_diameter_mm: 25.0, wall_thickness_mm: 1.5 }, // S=1.5 < 1.7
+        },
+        test_records: [
+          { category: 'chemical', property_key: 'C', measured_value_num: 0.042, unit: '%' },
+          { category: 'chemical', property_key: 'Si', measured_value_num: 0.55, unit: '%' },
+          { category: 'chemical', property_key: 'Mn', measured_value_num: 1.20, unit: '%' },
+          { category: 'chemical', property_key: 'P', measured_value_num: 0.028, unit: '%' },
+          { category: 'chemical', property_key: 'S', measured_value_num: 0.008, unit: '%' },
+          { category: 'chemical', property_key: 'Ni', measured_value_num: 8.15, unit: '%' },
+          { category: 'chemical', property_key: 'Cr', measured_value_num: 18.30, unit: '%' },
+          { category: 'mechanical', property_key: 'tensile_strength', measured_value_num: 565, unit: 'MPa' },
+          { category: 'mechanical', property_key: 'yield_strength_rp02', measured_value_num: 230, unit: 'MPa' },
+          { category: 'mechanical', property_key: 'elongation_A', measured_value_num: 42.5, unit: '%' },
+          // 主动报送硬度测试数据
+          { category: 'mechanical', property_key: 'hardness', sub_property: 'HV', measured_value_num: 140, unit: 'HV' },
+          { category: 'process', property_key: 'flattening_test', qualitative_result: 'PASS' },
+          { category: 'ndt', property_key: 'eddy_current_test', measured_level_claimed: 'E3H', qualitative_result: 'PASS' },
+          { category: 'ndt', property_key: 'ultrasonic_test', measured_level_claimed: 'U2', qualitative_result: 'PASS' },
+          { category: 'corrosion', property_key: 'intergranular_corrosion', qualitative_result: 'PASS' },
+        ],
+      };
+
+      const report = ComplianceEngine.evaluate(standardRuleSet, thinWallReportedCert);
+      expect(report.summary.overall_status).toBe('PASS');
+
+      const hardnessResult = report.item_results.find(r => r.property_key === 'hardness');
+      expect(hardnessResult?.status).toBe('PASS');
+      expect(hardnessResult?.message).toContain('法定免检');
+      expect(hardnessResult?.message).toContain('主动报送');
+    });
+
+    it('薄壁管 (S=1.5mm < 1.7mm) 主动报送超标硬度 (250 HV > 200 HV) 触发【报送即检】准确拦截判定为 FAIL', () => {
+      const thinWallFailCert: CertificateExtract = {
+        header: {
+          certificate_no: 'QS-202608-004A-FAIL',
+          declared_standard: 'GB/T 13296-2023',
+          declared_grade: '06Cr19Ni10',
+          dimensions: { outer_diameter_mm: 25.0, wall_thickness_mm: 1.5 }, // S=1.5 < 1.7
+        },
+        test_records: [
+          { category: 'chemical', property_key: 'C', measured_value_num: 0.042, unit: '%' },
+          { category: 'chemical', property_key: 'Si', measured_value_num: 0.55, unit: '%' },
+          { category: 'chemical', property_key: 'Mn', measured_value_num: 1.20, unit: '%' },
+          { category: 'chemical', property_key: 'P', measured_value_num: 0.028, unit: '%' },
+          { category: 'chemical', property_key: 'S', measured_value_num: 0.008, unit: '%' },
+          { category: 'chemical', property_key: 'Ni', measured_value_num: 8.15, unit: '%' },
+          { category: 'chemical', property_key: 'Cr', measured_value_num: 18.30, unit: '%' },
+          { category: 'mechanical', property_key: 'tensile_strength', measured_value_num: 565, unit: 'MPa' },
+          { category: 'mechanical', property_key: 'yield_strength_rp02', measured_value_num: 230, unit: 'MPa' },
+          { category: 'mechanical', property_key: 'elongation_A', measured_value_num: 42.5, unit: '%' },
+          // 主动报送但超标的硬度数据
+          { category: 'mechanical', property_key: 'hardness', sub_property: 'HV', measured_value_num: 250, unit: 'HV' },
+          { category: 'process', property_key: 'flattening_test', qualitative_result: 'PASS' },
+          { category: 'ndt', property_key: 'eddy_current_test', measured_level_claimed: 'E3H', qualitative_result: 'PASS' },
+          { category: 'ndt', property_key: 'ultrasonic_test', measured_level_claimed: 'U2', qualitative_result: 'PASS' },
+          { category: 'corrosion', property_key: 'intergranular_corrosion', qualitative_result: 'PASS' },
+        ],
+      };
+
+      const report = ComplianceEngine.evaluate(standardRuleSet, thinWallFailCert);
+      expect(report.summary.overall_status).toBe('FAIL');
+
+      const hardnessResult = report.item_results.find(r => r.property_key === 'hardness');
+      expect(hardnessResult?.status).toBe('FAIL');
+      expect(hardnessResult?.message).toContain('超出标准限值');
     });
 
     it('07Cr19Ni11Ti 晶间腐蚀自动标记为 EXEMPT', () => {

@@ -19,6 +19,8 @@ export interface SourceRuleTrace {
   unit?: string;
   is_governing_strict: boolean;
   raw_rule: EvaluationRule;
+  category?: StandardCategory;
+  priority?: number;
 }
 
 /**
@@ -33,6 +35,11 @@ export interface MultiStandardRuleTrace {
   is_tightened: boolean;
   dual_standard_requirement_text: string;
   arbitration_reason: string;
+  is_structural_tightened?: boolean;
+  non_participating_standards?: string[];
+  is_statutory_relaxation_risk?: boolean;
+  statutory_baseline?: string;
+  statutory_relaxation_warning?: string;
 }
 
 /**
@@ -60,10 +67,60 @@ export interface CompositeSlice extends SpecificationSlice {
   evaluation_rules: CompositeEvaluationRule[];
 }
 
+export type StandardCategory = 'technical_agreement' | 'industry_standard' | 'national_standard' | 'enterprise_standard';
+
 export interface SliceWithStandardMeta {
   slice: SpecificationSlice;
   standardId: string;
   standardName?: string;
+  category?: StandardCategory;
+  priority?: number;
+}
+
+/**
+ * 推断标准的默认分类与优先级 (技术协议 1 > 行业订货标 2 > 企标 3 > 国家基础标 4)
+ */
+export function inferStandardCategoryAndPriority(meta: {
+  standardId: string;
+  category?: StandardCategory;
+  priority?: number;
+}): { category: StandardCategory; priority: number } {
+  let cat = meta.category;
+  if (!cat) {
+    const id = meta.standardId.toUpperCase();
+    if (id.startsWith('TA-') || id.includes('TA_') || id.includes('协议') || id.includes('AGREEMENT') || id.includes('SPECIFICATION')) {
+      cat = 'technical_agreement';
+    } else if (id.includes('NB/T') || id.includes('NB_T') || id.includes('HG/T') || id.includes('HG_T') || id.includes('JB/T') || id.includes('JB_T')) {
+      cat = 'industry_standard';
+    } else if (id.includes('GB/T') || id.includes('GB_T') || id.startsWith('GB')) {
+      cat = 'national_standard';
+    } else if (id.startsWith('Q/') || id.startsWith('Q_')) {
+      cat = 'enterprise_standard';
+    } else {
+      cat = 'national_standard';
+    }
+  }
+
+  let pri = meta.priority;
+  if (pri === undefined) {
+    switch (cat) {
+      case 'technical_agreement':
+        pri = 1;
+        break;
+      case 'industry_standard':
+        pri = 2;
+        break;
+      case 'enterprise_standard':
+        pri = 3;
+        break;
+      case 'national_standard':
+      default:
+        pri = 4;
+        break;
+    }
+  }
+
+  return { category: cat, priority: pri };
 }
 
 /** 检验要求等级严格度权重排序：MANDATORY > CONDITIONAL > OPTIONAL_AGREED > EXEMPT */
@@ -91,12 +148,50 @@ const ULTRASONIC_LEVEL_RANK: Record<string, number> = {
 };
 
 /**
- * 格式化标准代号简写 (例如 "NB/T 47019.5-2021" -> "NB/T 47019.5", "GB/T 13296-2023" -> "GB/T 13296")
+ * 格式化标准代号（保留包含年份的完整代号，例如 "NB/T 47019.5-2021"、"GB/T 13296-2023"，杜绝法规歧义）
  */
 export function getStandardShortCode(standardId: string): string {
-  const trimmed = standardId.trim();
-  const yearMatch = trimmed.match(/^(.*?)(?:-\d{4})?$/);
-  return yearMatch ? yearMatch[1] || trimmed : trimmed;
+  return standardId.trim();
+}
+
+/**
+ * 清理动态公式中的系统内部变量名（如 ctx.chemical.C -> C）
+ */
+export function cleanFormulaVariableNames(expr?: string): string | undefined {
+  if (!expr) return expr;
+  return expr
+    .replace(/ctx\.chemical\.([A-Za-z0-9]+)/g, '$1')
+    .replace(/ctx\.mechanical\.([A-Za-z0-9_]+)/g, '$1')
+    .replace(/ctx\.dimensions\.([A-Za-z0-9_]+)/g, '$1')
+    .replace(/\s*\*\s*/g, '×')
+    .replace(/\s*\+\s*/g, '+');
+}
+
+/**
+ * 美化动态公式中的代码变量，并将实测代入后的具体计算比较值注入要求文本中
+ */
+export function humanizeDynamicFormulaText(
+  rawText: string,
+  calculatedBound?: number | null,
+  unit?: string
+): string {
+  if (!rawText) return rawText;
+
+  let text = cleanFormulaVariableNames(rawText) || rawText;
+
+  if (calculatedBound !== null && calculatedBound !== undefined && !isNaN(calculatedBound)) {
+    const unitStr = unit || '%';
+    if (!text.includes('[即')) {
+      if (text.includes('且')) {
+        text = text.replace(/^(≥\s*[^且]+?)\s*且\s*/, `$1 [即 ≥ ${calculatedBound}${unitStr}] 且 `);
+      } else {
+        const prefix = text.includes('≤') ? '≤' : (text.includes('≥') ? '≥' : '');
+        text = `${text.trim()} [即 ${prefix} ${calculatedBound}${unitStr}]`;
+      }
+    }
+  }
+
+  return text.replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
@@ -120,15 +215,15 @@ export function formatRuleRequirementText(rule: EvaluationRule): string {
   }
 
   if (rule.rule_type === 'dynamic_expression') {
-    const fMin = rule.criteria['formula_min'];
-    const fMax = rule.criteria['formula_max'];
+    const fMin = cleanFormulaVariableNames(rule.criteria['formula_min']);
+    const fMax = cleanFormulaVariableNames(rule.criteria['formula_max']);
     const max = rule.criteria['max'];
     const min = rule.criteria['min'];
     if (fMin && max) return `≥ ${fMin} 且 ≤ ${max}%`;
     if (fMin) return `≥ ${fMin}`;
     if (fMax) return `≤ ${fMax}`;
     if (min) return `≥ ${min}`;
-    return rule.criteria['note'] || '公式动态计算';
+    return cleanFormulaVariableNames(rule.criteria['note']) || '公式动态计算';
   }
 
   if (rule.rule_type === 'dynamic_formula_pass') {
@@ -145,7 +240,12 @@ export function formatRuleRequirementText(rule: EvaluationRule): string {
     const minLevel = rule.criteria['min_level'];
     if (reqLevel) return `验收等级 ${reqLevel} 级`;
     if (minLevel) return `评级 ≥ ${minLevel} 级`;
-    return rule.criteria['expected'] || '定性试验合格';
+    const exp = rule.criteria['expected'];
+    if (exp === 'NO_CORROSION_TREND' || rule.property_key === 'intergranular_corrosion') {
+      const method = rule.criteria['method'] || 'Method_E';
+      return `按 ${method} 检验无晶间腐蚀倾向`;
+    }
+    return exp || '定性试验合格';
   }
 
   if (rule.rule_type === 'qualitative_pass') {
@@ -187,11 +287,26 @@ export function composeMultiStandardSlices(
     return undefined;
   }
 
-  // 1. 整理各来源标准信息
+  // 1. 规范化各切片优先级与分类，并按优先级从高到低排序 (数值越小优先级越高: 1 > 2 > 3)
+  const normalizedSlices = slicesWithMeta.map((s, idx) => {
+    const { category, priority } = inferStandardCategoryAndPriority({
+      standardId: s.standardId,
+      category: s.category,
+      priority: s.priority,
+    });
+    return {
+      ...s,
+      category,
+      priority,
+      originalIndex: idx,
+    };
+  });
+  normalizedSlices.sort((a, b) => a.priority - b.priority || a.originalIndex - b.originalIndex);
+
   const sourceStandards = slicesWithMeta.map(s => s.standardId || s.slice.standard_code || 'STANDARD');
   const sourceStandardsNames = slicesWithMeta.map(s => s.standardName || s.standardId || s.slice.display_name);
 
-  // 2. 选取基准切片元数据（优先取第一个，通常是主申报标准）
+  // 2. 选取基准切片元数据（优先取原始声明的主申报标准切片）
   const primarySlice = slicesWithMeta[0]!.slice;
 
   // 3. 收集所有规则，按规范化属性键 (canonical_property_key) 分组
@@ -199,10 +314,12 @@ export function composeMultiStandardSlices(
     rule: EvaluationRule;
     standardId: string;
     standardName?: string;
+    category: StandardCategory;
+    priority: number;
   }
   const groupedRules = new Map<string, RuleGroupItem[]>();
 
-  for (const item of slicesWithMeta) {
+  for (const item of normalizedSlices) {
     const stdId = item.standardId || item.slice.standard_code || 'STANDARD';
     for (const rule of item.slice.evaluation_rules) {
       const normResult = PropertyKeyNormalizer.normalize(rule.property_key, rule.category);
@@ -215,6 +332,8 @@ export function composeMultiStandardSlices(
         rule,
         standardId: stdId,
         standardName: item.standardName,
+        category: item.category,
+        priority: item.priority,
       });
     }
   }
@@ -242,6 +361,10 @@ export function composeMultiStandardSlices(
         raw_rule: single.rule,
       };
 
+      // 判断是否存在未考核该项的参与标准 (如基础国标 GB/T 13296 未考核晶粒度，而订货标 NB/T 47019.5 独占考核)
+      const otherStandards = sourceStandards.filter(s => s !== single.standardId);
+      const isStructuralTightened = otherStandards.length > 0;
+
       const composed: CompositeEvaluationRule = {
         ...single.rule,
         property_key: canonicalKey, // 统一为规范键名
@@ -251,9 +374,15 @@ export function composeMultiStandardSlices(
           sources: [sourceTrace],
           governing_standard_id: single.standardId,
           governing_standard_name: single.standardName || single.standardId,
-          is_tightened: false,
-          dual_standard_requirement_text: `${reqText} [${stdShort}]`,
-          arbitration_reason: `依据 ${single.standardId} 条款要求执行`,
+          is_tightened: isStructuralTightened,
+          is_structural_tightened: isStructuralTightened,
+          non_participating_standards: isStructuralTightened ? otherStandards : undefined,
+          dual_standard_requirement_text: isStructuralTightened
+            ? `${reqText} [${stdShort} 独占加严]`
+            : `${reqText} [${stdShort}]`,
+          arbitration_reason: isStructuralTightened
+            ? `依据订货加严标准 ${single.standardId} 独占条款要求执行 (基础标准无此强制指标)`
+            : `依据 ${single.standardId} 条款要求执行`,
         },
       };
 
@@ -285,7 +414,13 @@ export function composeMultiStandardSlices(
  */
 function composeCommonRule(
   canonicalKey: string,
-  items: Array<{ rule: EvaluationRule; standardId: string; standardName?: string }>
+  items: Array<{
+    rule: EvaluationRule;
+    standardId: string;
+    standardName?: string;
+    category: StandardCategory;
+    priority: number;
+  }>
 ): CompositeEvaluationRule {
   const baseRule = items[0]!.rule;
 
@@ -318,11 +453,17 @@ function composeCommonRule(
 }
 
 /**
- * 合成数值区间规则 (下限取 max, 上限取 min)
+ * 合成数值区间规则 (下限取 max, 上限取 min，并检测技术协议放宽法标风险)
  */
 function composeNumericRangeRule(
   canonicalKey: string,
-  items: Array<{ rule: EvaluationRule; standardId: string; standardName?: string }>,
+  items: Array<{
+    rule: EvaluationRule;
+    standardId: string;
+    standardName?: string;
+    category: StandardCategory;
+    priority: number;
+  }>,
   highestLevel: RequirementLevel
 ): CompositeEvaluationRule {
   let strictMin: number | null = null;
@@ -369,46 +510,82 @@ function composeNumericRangeRule(
       min: itemMin,
       max: itemMax,
       unit: c['unit'],
+      category: item.category,
+      priority: item.priority,
       is_governing_strict: false, // 稍后标记
       raw_rule: item.rule,
     });
   }
 
-  // 判定是否出现加严剪刀差（各标准要求不一致）
-  const mins = sources.map(s => s.min).filter(v => v !== null && v !== undefined) as number[];
-  const maxs = sources.map(s => s.max).filter(v => v !== null && v !== undefined) as number[];
-  const minDiff = mins.length > 1 && Math.max(...mins) !== Math.min(...mins);
-  const maxDiff = maxs.length > 1 && Math.max(...maxs) !== Math.min(...maxs);
-  const isTightened = minDiff || maxDiff;
+  // 检查是否存在技术协议放宽法定底线的风险 (分级管控)
+  let isStatutoryRelaxationRisk = false;
+  let statutoryBaselineText: string | undefined;
+  let statutoryRelaxationWarning: string | undefined;
 
-  // 确定最终主导标准 ID
-  const governingStdId = minDiff ? minGoverningStdId : (maxDiff ? maxGoverningStdId : items[0]!.standardId);
+  const topItem = items[0]!;
+  const topMin = typeof topItem.rule.criteria['min'] === 'number' ? topItem.rule.criteria['min'] : null;
+  const topMax = typeof topItem.rule.criteria['max'] === 'number' ? topItem.rule.criteria['max'] : null;
 
-  // 标记主导加严标准
+  const statutoryItems = items.slice(1).filter(i => i.category === 'national_standard' || i.category === 'industry_standard');
+  const statutoryMins = statutoryItems.map(i => i.rule.criteria['min']).filter((v): v is number => typeof v === 'number');
+  const statutoryMaxs = statutoryItems.map(i => i.rule.criteria['max']).filter((v): v is number => typeof v === 'number');
+  const statutoryMinBaseline = statutoryMins.length > 0 ? Math.max(...statutoryMins) : null;
+  const statutoryMaxBaseline = statutoryMaxs.length > 0 ? Math.min(...statutoryMaxs) : null;
+
+  const isMinRelaxed = topItem.category === 'technical_agreement' && topMin !== null && statutoryMinBaseline !== null && topMin < statutoryMinBaseline;
+  const isMaxRelaxed = topItem.category === 'technical_agreement' && topMax !== null && statutoryMaxBaseline !== null && topMax > statutoryMaxBaseline;
+
+  let governingStdId = minGoverningStdId;
+  let arbitrationReason = '多标准技术指标一致';
+  let isTightened = false;
+
+  if (isMinRelaxed || isMaxRelaxed) {
+    // 技术协议放宽了法定标准底线：采纳技术协议指标，但标记放宽风险
+    isStatutoryRelaxationRisk = true;
+    strictMin = topMin !== null ? topMin : statutoryMinBaseline;
+    strictMax = topMax !== null ? topMax : statutoryMaxBaseline;
+    governingStdId = topItem.standardId;
+    isTightened = true;
+
+    const minPart = statutoryMinBaseline !== null ? `≥${statutoryMinBaseline}${commonUnit}` : '';
+    const maxPart = statutoryMaxBaseline !== null ? `≤${statutoryMaxBaseline}${commonUnit}` : '';
+    statutoryBaselineText = [minPart, maxPart].filter(Boolean).join(' 且 ');
+    statutoryRelaxationWarning = `高优先级采购技术协议放宽了法定标准底线要求 (${getStandardShortCode(topItem.standardId)} 规定 ${formatRuleRequirementText(topItem.rule)}，宽于法定标准 ${statutoryBaselineText})，请核验特种设备设计合规与风险备案`;
+    arbitrationReason = `技术协议优先采纳 (放宽法标风险)：${statutoryRelaxationWarning}`;
+  } else {
+    // 正常严苛包络线判定
+    const mins = sources.map(s => s.min).filter(v => v !== null && v !== undefined) as number[];
+    const maxs = sources.map(s => s.max).filter(v => v !== null && v !== undefined) as number[];
+    const minDiff = mins.length > 1 && Math.max(...mins) !== Math.min(...mins);
+    const maxDiff = maxs.length > 1 && Math.max(...maxs) !== Math.min(...maxs);
+    isTightened = minDiff || maxDiff;
+
+    governingStdId = minDiff ? minGoverningStdId : (maxDiff ? maxGoverningStdId : items[0]!.standardId);
+
+    if (minDiff) {
+      const govShort = getStandardShortCode(governingStdId);
+      const otherSources = sources.filter(s => s.standard_id !== governingStdId);
+      const otherDesc = otherSources.map(s => `${s.standard_short_code} 的 ${s.requirement_text}`).join('、');
+      arbitrationReason = `取严苛下限值：${govShort} (≥${strictMin}${commonUnit}) 严于 ${otherDesc}`;
+    } else if (maxDiff) {
+      const govShort = getStandardShortCode(governingStdId);
+      const otherSources = sources.filter(s => s.standard_id !== governingStdId);
+      const otherDesc = otherSources.map(s => `${s.standard_short_code} 的 ${s.requirement_text}`).join('、');
+      arbitrationReason = `取严苛上限值：${govShort} (≤${strictMax}${commonUnit}) 严于 ${otherDesc}`;
+    }
+  }
+
+  // 标记主导加严/主导优先标准
   for (const src of sources) {
     if (src.standard_id === governingStdId) {
       src.is_governing_strict = true;
     }
   }
 
-  // 组装双标/多标紧凑展示文本 (如 "≥ 40.0% [NB/T 47019.5] / ≥ 35.0% [GB/T 13296]")
+  // 组装双标/多标紧凑展示文本
   const dualRequirementText = sources
     .map(s => `${s.requirement_text} [${s.standard_short_code}]`)
     .join(' / ');
-
-  // 组装仲裁说明
-  let arbitrationReason = '多标准技术指标一致';
-  if (minDiff) {
-    const govShort = getStandardShortCode(governingStdId);
-    const otherSources = sources.filter(s => s.standard_id !== governingStdId);
-    const otherDesc = otherSources.map(s => `${s.standard_short_code} 的 ${s.requirement_text}`).join('、');
-    arbitrationReason = `取严苛下限值：${govShort} (≥${strictMin}${commonUnit}) 严于 ${otherDesc}`;
-  } else if (maxDiff) {
-    const govShort = getStandardShortCode(governingStdId);
-    const otherSources = sources.filter(s => s.standard_id !== governingStdId);
-    const otherDesc = otherSources.map(s => `${s.standard_short_code} 的 ${s.requirement_text}`).join('、');
-    arbitrationReason = `取严苛上限值：${govShort} (≤${strictMax}${commonUnit}) 严于 ${otherDesc}`;
-  }
 
   const baseRule = items[0]!.rule;
 
@@ -432,6 +609,9 @@ function composeNumericRangeRule(
       is_tightened: isTightened,
       dual_standard_requirement_text: dualRequirementText,
       arbitration_reason: arbitrationReason,
+      is_statutory_relaxation_risk: isStatutoryRelaxationRisk,
+      statutory_baseline: statutoryBaselineText,
+      statutory_relaxation_warning: statutoryRelaxationWarning,
     },
   };
 }

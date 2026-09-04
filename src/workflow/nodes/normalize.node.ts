@@ -45,7 +45,32 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
         }
       }
 
-      const { certificate, audit_log } = await normalizer.normalize(payloadToClean, { collector });
+      let certificate: any;
+      let audit_log: any;
+
+      // 若 rawPayload 本身已是结构化完整的 CertificateExtract (已含 property_key)，直接直通校验
+      const rec0 = payloadToClean?.test_records?.[0] as any;
+      if (
+        payloadToClean &&
+        payloadToClean.header?.declared_grade &&
+        Array.isArray(payloadToClean.test_records) &&
+        payloadToClean.test_records.length > 0 &&
+        rec0?.property_key
+      ) {
+        certificate = payloadToClean;
+        audit_log = {
+          timestamp: new Date().toISOString(),
+          grade_normalization: { is_matched: true, primary_grade: certificate.header.declared_grade, confidence: 1.0 },
+          unit_conversions: [],
+          warnings: [],
+          overall_confidence: 1.0,
+          duration_ms: 0,
+        };
+      } else {
+        const normRes = await normalizer.normalize(payloadToClean, { collector });
+        certificate = normRes.certificate;
+        audit_log = normRes.audit_log;
+      }
 
       logger.info(
         'WORKFLOW',

@@ -56,6 +56,9 @@ export const apiClient = {
   async submitAudit(params: {
     sampleId?: string;
     rawPayload?: RawCertificatePayload;
+    batchSpecimen?: any;
+    standardIds?: string[];
+    gradeKey?: string;
     options?: WorkflowOptions;
   }): Promise<AuditApiResponse> {
     const res = await fetch('/api/audit/submit', {

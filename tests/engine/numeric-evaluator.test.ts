@@ -117,4 +117,18 @@ describe('Numeric Evaluator (数值区间评估器) 边界测试', () => {
     expect(hotRes.status).toBe('PASS');
     expect(hotRes.standard_min).toBe(500);
   });
+
+  it('actual_value_text 必须纯净输出原始实测文本，禁止夹带 (修约: ...)', () => {
+    const record: TestRecord = {
+      category: 'chemical',
+      property_key: 'C',
+      measured_value_num: 0.0484,
+      measured_value_raw: '0.048',
+      unit: '%',
+    };
+    const res = evaluateNumericRange(cRule, record, baseContext);
+    expect(res.actual_value_text).toBe('0.048');
+    expect(res.actual_value_text).not.toContain('修约');
+    expect(res.rounded_value).toBe(0.048);
+  });
 });
