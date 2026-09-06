@@ -494,8 +494,8 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       heatNo: header.heat_number || header.heatNo || '',
       packNo: header.heat_treatment_lot_number || header.packNo || '',
       deliveryState: header.delivery_state || header.deliveryState || '',
-      verdict: 'PASS',
-      verdictSummary: '大模型结构化提取完成',
+      verdict: 'UNAUDITED',
+      verdictSummary: '大模型结构化提取完成，待合规比对',
       ocrConfidence: ConfidenceEvaluator.calculateOcrConfidence({
         certificateNo: header.certificate_no || header.certificateNo || '',
         batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),

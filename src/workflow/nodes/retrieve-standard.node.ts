@@ -3,6 +3,7 @@ import { FileRuleStore } from '../../repository/file-rule-store.ts';
 import { QualityAuditState } from '../state.interface.ts';
 import { getSafeCollector } from '../trace-helper.ts';
 import { logger } from '../../logger/index.ts';
+import { normalizeStandardId } from '../../lib/utils.ts';
 
 /**
  * ============================================================================
@@ -35,6 +36,18 @@ export function createRetrieveStandardNode(ruleStore?: IRuleStore) {
     if (standardIds.length === 0) {
       standardIds = ['GB/T 13296-2023'];
     }
+
+    // 后端防御性去重：基于 normalizeStandardId 去除重复或等价变体，防止同标准被重复加载合成
+    const seenNorm = new Set<string>();
+    const deduplicatedStandardIds: string[] = [];
+    for (const sid of standardIds) {
+      const norm = normalizeStandardId(sid);
+      if (!seenNorm.has(norm)) {
+        seenNorm.add(norm);
+        deduplicatedStandardIds.push(sid);
+      }
+    }
+    standardIds = deduplicatedStandardIds.length > 0 ? deduplicatedStandardIds : ['GB/T 13296-2023'];
 
     const gradeKey = options?.forcedGradeKey || normalizedCert.header.declared_grade;
 

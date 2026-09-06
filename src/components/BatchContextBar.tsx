@@ -120,13 +120,16 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
 
   const isCurrentDocParsing = docParsingTasks?.[currentDoc.docId]?.status === 'parsing' || currentDoc.ocrStatus === 'PENDING';
 
-  // 状态显示标签：Step2 模式使用 SUCCESS/FAIL，Step3/4 模式使用 PASS/FAIL
-  const getVerdictBadgeText = (verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW', isParsing = false) => {
+  // 状态显示标签：Step2 模式使用 SUCCESS/FAIL，Step3/4 模式使用 PASS/FAIL/待核验
+  const getVerdictBadgeText = (verdict: 'UNAUDITED' | 'PASS' | 'FAIL' | 'MANUAL_REVIEW', isParsing = false) => {
     if (isParsing) {
       return '解析中...';
     }
     if (mode === 'extraction') {
-      return verdict === 'PASS' ? 'SUCCESS ✓' : verdict === 'FAIL' ? 'FAIL ✗' : 'HITL';
+      return (verdict === 'PASS' || verdict === 'UNAUDITED') ? 'SUCCESS ✓' : verdict === 'FAIL' ? 'FAIL ✗' : 'HITL';
+    }
+    if (verdict === 'UNAUDITED') {
+      return '待比对';
     }
     return verdict === 'PASS' ? 'PASS ✓' : verdict === 'FAIL' ? 'FAIL ✗' : 'HITL';
   };
@@ -331,14 +334,18 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
               <span className="material-symbols-outlined text-base">label</span>
               <span className="tracking-wide">{currentBatch.batchNo}</span>
 
-              {/* 状态徽章 (Step 2 场景显示 SUCCESS/FAIL/解析中) */}
+              {/* 状态徽章 (Step 2 场景显示 SUCCESS/FAIL/解析中，Step 3 场景显示 PASS/FAIL/待比对) */}
               <span className={`px-2 py-0.5 rounded text-[12px] font-bold shrink-0 ${isCurrentDocParsing
                 ? 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 animate-pulse'
-                : currentBatch.verdict === 'PASS'
-                  ? 'bg-status-pass-bg text-status-pass-text border border-emerald-300 dark:border-emerald-800'
-                  : currentBatch.verdict === 'FAIL'
-                    ? 'bg-status-fail-bg text-status-fail-text border border-red-300 dark:border-red-800'
-                    : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                : currentBatch.verdict === 'UNAUDITED'
+                  ? mode === 'extraction'
+                    ? 'bg-status-pass-bg text-status-pass-text border border-emerald-300 dark:border-emerald-800'
+                    : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant border border-outline-variant/50 dark:border-border-dark'
+                  : currentBatch.verdict === 'PASS'
+                    ? 'bg-status-pass-bg text-status-pass-text border border-emerald-300 dark:border-emerald-800'
+                    : currentBatch.verdict === 'FAIL'
+                      ? 'bg-status-fail-bg text-status-fail-text border border-red-300 dark:border-red-800'
+                      : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
                 }`}>
                 {getVerdictBadgeText(currentBatch.verdict, isCurrentDocParsing)}
               </span>
@@ -377,11 +384,15 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
 
                       <span className={`px-2 py-0.5 rounded text-[12px] font-bold shrink-0 ml-2 ${isCurrentDocParsing
                         ? 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                        : b.verdict === 'PASS'
-                          ? 'bg-status-pass-bg text-status-pass-text'
-                          : b.verdict === 'FAIL'
-                            ? 'bg-status-fail-bg text-status-fail-text'
-                            : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                        : b.verdict === 'UNAUDITED'
+                          ? mode === 'extraction'
+                            ? 'bg-status-pass-bg text-status-pass-text'
+                            : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant border border-outline-variant/40 dark:border-border-dark'
+                          : b.verdict === 'PASS'
+                            ? 'bg-status-pass-bg text-status-pass-text'
+                            : b.verdict === 'FAIL'
+                              ? 'bg-status-fail-bg text-status-fail-text'
+                              : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
                         }`}>
                         {getVerdictBadgeText(b.verdict, isCurrentDocParsing)}
                       </span>
@@ -402,18 +413,31 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
             <span className="font-bold text-on-surface dark:text-surface-bright">
               {currentFlatIndex + 1} / {allFlattenedBatches.length} 炉批
             </span>
-            <span className="px-2 py-0.5 bg-status-pass-bg text-status-pass-text rounded font-bold text-[13px] sm:text-[14px]">
-              {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'PASS').length} {mode === 'extraction' ? 'SUCCESS' : 'PASS'}
-            </span>
-            {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'FAIL').length > 0 && (
-              <span className="px-2 py-0.5 bg-status-fail-bg text-status-fail-text rounded font-bold text-[13px] sm:text-[14px]">
-                {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'FAIL').length} FAIL
+            {mode === 'extraction' ? (
+              <span className="px-2 py-0.5 bg-status-pass-bg text-status-pass-text rounded font-bold text-[13px] sm:text-[14px]">
+                {allFlattenedBatches.filter(item => !item.isParsing && (item.batch.verdict === 'PASS' || item.batch.verdict === 'UNAUDITED')).length} SUCCESS
               </span>
-            )}
-            {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'MANUAL_REVIEW').length > 0 && (
-              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded font-bold text-[13px] sm:text-[14px]">
-                {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'MANUAL_REVIEW').length} HITL
-              </span>
+            ) : (
+              <>
+                <span className="px-2 py-0.5 bg-status-pass-bg text-status-pass-text rounded font-bold text-[13px] sm:text-[14px]">
+                  {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'PASS').length} PASS
+                </span>
+                {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'FAIL').length > 0 && (
+                  <span className="px-2 py-0.5 bg-status-fail-bg text-status-fail-text rounded font-bold text-[13px] sm:text-[14px]">
+                    {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'FAIL').length} FAIL
+                  </span>
+                )}
+                {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'UNAUDITED').length > 0 && (
+                  <span className="px-2 py-0.5 bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant border border-outline-variant/50 dark:border-border-dark rounded font-bold text-[13px] sm:text-[14px]">
+                    {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'UNAUDITED').length} 待比对
+                  </span>
+                )}
+                {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'MANUAL_REVIEW').length > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded font-bold text-[13px] sm:text-[14px]">
+                    {allFlattenedBatches.filter(item => !item.isParsing && item.batch.verdict === 'MANUAL_REVIEW').length} HITL
+                  </span>
+                )}
+              </>
             )}
             {allFlattenedBatches.some(item => item.isParsing) && (
               <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded font-bold text-[13px] sm:text-[14px] animate-pulse">

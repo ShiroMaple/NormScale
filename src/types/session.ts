@@ -35,11 +35,11 @@ export interface BatchSpecimen {
   heatNo: string;              // 冶炼炉号 (Heat No.)
   packNo?: string;             // 钢管热处理炉号 / 装炉号 (Pack No. / Heat Treatment Lot No.)
   deliveryState?: string;      // 交货热处理状态，如 "固溶热处理 (Solution Treated)"
-  verdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
+  verdict: 'UNAUDITED' | 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
   verdictSummary: string;      // 判定依据简述
   hitlReason?: 'UNKNOWN_GRADE' | 'ALTERNATIVE_CLAUSE' | 'MULTI_STANDARD_CONFLICT' | 'QUALITATIVE_AMBIGUITY' | 'MANUAL_REQUEST'; // 触发 HITL 挂起的原因
   // 双轨制判定模型 (Dual-Track Verdict: 系统客观计算与人工复核审批并行，互不抹除)
-  systemVerdict?: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';   // 系统客观算法判定结论
+  systemVerdict?: 'UNAUDITED' | 'PASS' | 'FAIL' | 'MANUAL_REVIEW';   // 系统客观算法判定结论
   systemVerdictSummary?: string;                       // 系统判定规则依据简述
   humanVerdict?: 'PASS' | 'REJECT' | 'WAIVED' | null;  // 质检工程师人工签认结论 (非必须，不覆盖系统结果)
   humanVerdictSummary?: string;                        // 人工审批批注或特批放行依据

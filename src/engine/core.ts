@@ -655,7 +655,7 @@ export class ComplianceEngine {
           ? `基础制造标准 ${passedStds.join('、')} 无此项强制指标，但承压订货标准 ${failedStds.join('、')} 强制要求，按严苛就高原则判定不合格。责任归属于 ${failedStds.join('、')} 订货加严条款。`
           : `满足 ${passedStds.join('、')} 要求，但未满足 ${failedStds.join('、')} 承压订货加严要求，按严苛就高原则判定不合格。责任归属于 ${failedStds.join('、')} 订货加严条款。`;
         result.scissors_attribution = attribution;
-        result.message = `${attribution} (实测值: ${result.actual_value_text})`;
+        result.message = `不合格: 实测值 ${result.actual_value_text}  (${comparisonText})`;
       } else if (result.status === 'PASS' && trace.is_statutory_relaxation_risk) {
         result.message = `合格: 实测值 ${result.actual_value_text}  (${comparisonText})【提示：合同放宽法标底线，需特批/风险备案】`;
       } else if (result.status === 'PASS') {

@@ -104,6 +104,44 @@ describe('Logic & Qualitative Evaluators (多选、替代组与定性豁免评�
       expect(res.status).toBe('PASS');
       expect(res.message).toContain('满足替代检验要求');
     });
+
+    it('提供液压试验实测文本如 "合格 OK" 或 "无渗漏" -> PASS', () => {
+      const ctx: EvaluationContext = {
+        ...baseContext,
+        recordsMap: new Map([
+          ['hydraulic_test', {
+            category: 'ndt',
+            property_key: 'hydraulic_test',
+            measured_value_raw: '合格 OK',
+            conclusion_text: '合格',
+            qualitative_result: 'PASS',
+          }],
+        ]),
+      };
+      const res = evaluateAlternativeGroup(ndtRule, ctx);
+      expect(res.status).toBe('PASS');
+      expect(res.message).toContain('满足替代检验要求');
+      expect(res.message).toContain('达标');
+    });
+
+    it('提供液压试验存在异常如 "有渗漏 不合格" -> FAIL', () => {
+      const ctx: EvaluationContext = {
+        ...baseContext,
+        recordsMap: new Map([
+          ['hydraulic_test', {
+            category: 'ndt',
+            property_key: 'hydraulic_test',
+            measured_value_raw: '有渗漏 不合格',
+            conclusion_text: '不合格',
+            qualitative_result: 'FAIL',
+          }],
+        ]),
+      };
+      const res = evaluateAlternativeGroup(ndtRule, ctx);
+      expect(res.status).toBe('FAIL');
+      expect(res.message).toContain('未通过');
+      expect(res.message).toContain('未达标');
+    });
   });
 
   describe('evaluateQualitativeEnum & evaluateExemption', () => {

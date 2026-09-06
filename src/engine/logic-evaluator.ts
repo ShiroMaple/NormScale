@@ -162,20 +162,25 @@ export function evaluateAlternativeGroup(
     const record = context.recordsMap.get(key) || context.recordsMap.get(propKey);
 
     if (record && (record.property_key === key || record.property_key === propKey)) {
-      // 检查定性结果或等级
-      const isQualified =
-        record.qualitative_result === 'PASS' ||
-        record.qualitative_result === '合格' ||
-        record.qualitative_result === 'QUALIFIED' ||
-        (candidate.required_level && record.measured_level_claimed === candidate.required_level) ||
-        (record.conclusion_text && (record.conclusion_text.includes('合格') || record.conclusion_text.includes('PASS')));
+      // 检查定性结果或等级（使用鲁棒正则，容差支持包含“合格 OK”、“PASS”、“无渗漏”等表达）
+      const rawVerdictText = `${record.qualitative_result || ''} ${record.conclusion_text || ''} ${record.measured_value_raw || ''}`.trim();
+      const hasNeg = /不合格|未达到|未通过|有渗漏|渗水|破裂|开裂|UNQUALIFIED|\bFAIL\b|\bFALSE\b/i.test(rawVerdictText);
+      const hasPos = /合格|PASS|OK|QUALIFIED|无渗漏|完好|NO_LEAK|\bTRUE\b/i.test(rawVerdictText);
 
-      const itemRaw = record.measured_value_raw || record.conclusion_text || record.qualitative_result;
+      const isLevelMatched = Boolean(
+        candidate.required_level &&
+        record.measured_level_claimed &&
+        record.measured_level_claimed.trim().toUpperCase() === candidate.required_level.trim().toUpperCase()
+      );
+
+      const isQualified = (hasPos && !hasNeg) || isLevelMatched;
+
+      const itemRaw = record.measured_value_raw || record.conclusion_text || record.qualitative_result || '已测';
 
       candidateResults.push({
         name: candidate.display_name || key,
         isPass: Boolean(isQualified),
-        text: `${candidate.display_name || key}: ${record.conclusion_text || record.measured_level_claimed || record.qualitative_result || '已测'} (${isQualified ? '合格' : '不合格'})`,
+        text: `${candidate.display_name || key}: ${itemRaw} (${isQualified ? '达标' : '未达标'})`,
         rawText: itemRaw,
       });
     }

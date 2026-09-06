@@ -20,6 +20,7 @@ import { renderPdfAndExtractText } from '@/utils/pdf-renderer.ts';
 import { getCertificateInspectionFieldDefinitions } from '@/schemas/certificate.schema.ts';
 import { ConfidenceEvaluator } from '@/engine/confidence-evaluator.ts';
 import { resolveFinalDisposition, getDispositionBadgeMeta, SystemVerdict, HumanVerdict } from '@/engine/dual-track-verdict.ts';
+import { normalizeStandardId, areStandardCollectionsEquivalent } from '@/lib/utils.ts';
 
 interface WaterfallWorkbenchProps {
   standardsData?: {
@@ -825,9 +826,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     currentDoc?.batches.find(b => b.batchNo === selectedBatchNo) ||
     currentDoc?.batches[0];
 
-  const activeGrade = currentBatch ? (currentBatch.overrideGrade || currentBatch.grade) : '';
-  const activeStandard = currentBatch ? (currentBatch.overrideStandard || currentBatch.standard) : '';
-  const isOverridden = Boolean(currentBatch && (currentBatch.overrideGrade || currentBatch.overrideStandard));
+  const isGradeOverridden = Boolean(
+    currentBatch?.overrideGrade && currentBatch.overrideGrade !== currentBatch.grade
+  );
+  const isStandardOverridden = Boolean(
+    currentBatch?.overrideStandard &&
+    !areStandardCollectionsEquivalent(currentBatch.overrideStandard, currentBatch.standard)
+  );
+  const isOverridden = isGradeOverridden || isStandardOverridden;
+
+  const activeGrade = currentBatch ? (isGradeOverridden ? currentBatch.overrideGrade! : currentBatch.grade) : '';
+  const activeStandard = currentBatch ? (isStandardOverridden ? currentBatch.overrideStandard! : currentBatch.standard) : '';
 
   let computedIsPass = currentBatch?.verdict === 'PASS';
   let computedVerdictSummary = currentBatch?.verdictSummary || '';
@@ -1093,7 +1102,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     return STANDARDS_CATALOG;
   }, [standardsData]);
 
-  // 从 activeStandard 中解析出已选中的标准列表 (严格仅按顿号、逗号、分号切分，绝对不按空格切分，因标准代号内部自带空格如 "GB/T 13296-2023")
+  // 从 activeStandard 中解析出已选中的标准列表 (通过 normalizeStandardId 进行指纹匹配并提升为权威标准 ID)
   const selectedStandardIds = useMemo(() => {
     const rawList = activeStandard
       .split(/[、,，;；\n]+/)
@@ -1104,115 +1113,175 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     let i = 0;
     while (i < rawList.length) {
       const current = rawList[i]!;
-      const exactMatch = dynamicStandardsCatalog.find(s => s.id === current || s.shortCode === current);
-      if (exactMatch) {
-        if (!sanitized.includes(exactMatch.id)) sanitized.push(exactMatch.id);
+      const currentNorm = normalizeStandardId(current);
+
+      // 1. 优先在当前已收录目录中进行指纹匹配（无论质保书提取是否带空格，一律映射为标准目录的官方规范 ID）
+      const matched = dynamicStandardsCatalog.find(s =>
+        normalizeStandardId(s.id) === currentNorm ||
+        normalizeStandardId(s.shortCode) === currentNorm
+      );
+
+      if (matched) {
+        if (!sanitized.some(s => normalizeStandardId(s) === normalizeStandardId(matched.id))) {
+          sanitized.push(matched.id);
+        }
         i++;
         continue;
       }
-      // 容错修复：若历史操作中曾被空格错误拆成了 'NB/T' 和 '47019.5-2021'，自动重新缝合为完整标准 ID
+
+      // 2. 容错修复：若历史操作中曾被空格错误拆成了 'NB/T' 和 '47019.5-2021'，自动重新缝合为完整标准 ID
       if (i + 1 < rawList.length) {
         const combined = `${current} ${rawList[i + 1]}`;
-        const combinedMatch = dynamicStandardsCatalog.find(s => s.id === combined || s.shortCode === combined);
+        const combinedNorm = normalizeStandardId(combined);
+        const combinedMatch = dynamicStandardsCatalog.find(s =>
+          normalizeStandardId(s.id) === combinedNorm ||
+          normalizeStandardId(s.shortCode) === combinedNorm
+        );
         if (combinedMatch) {
-          if (!sanitized.includes(combinedMatch.id)) sanitized.push(combinedMatch.id);
+          if (!sanitized.some(s => normalizeStandardId(s) === normalizeStandardId(combinedMatch.id))) {
+            sanitized.push(combinedMatch.id);
+          }
           i += 2;
           continue;
         }
       }
-      if (!sanitized.includes(current)) sanitized.push(current);
+
+      // 3. 未被收录的扩展非标规范，保持原样加入
+      if (!sanitized.some(s => normalizeStandardId(s) === currentNorm)) {
+        sanitized.push(current);
+      }
       i++;
     }
     return sanitized.length > 0 ? sanitized : ['GB/T 13296-2023'];
   }, [activeStandard, dynamicStandardsCatalog]);
 
   // 核心：调用真实后端核验接口 (直出 AuditReport，带多标尺追溯与剪刀差)
-  const evaluateBatch = useCallback(async (batchToEval?: BatchSpecimen, forcedStdIds?: string[]) => {
-    const targetBatch = batchToEval || currentBatch;
-    if (!targetBatch) return;
+  // 核心：全批次异步并行核验调度器 (直出各批次 AuditReport，带多标尺追溯与剪刀差)
+  const evaluateBatches = useCallback(async (batchesToEval: BatchSpecimen[], forcedStdIds?: string[]) => {
+    if (!batchesToEval || batchesToEval.length === 0) return;
 
-    setIsEvaluatingBatch(true);
+    // 检查是否包含当前激活批次，若包含则开启主界面加载动画
+    const includesCurrent = batchesToEval.some(b => b.batchNo === selectedBatchNo);
+    if (includesCurrent) {
+      setIsEvaluatingBatch(true);
+    }
+
     try {
       const stdIds = forcedStdIds || selectedStandardIds;
-      const res = await apiClient.submitAudit({
-        batchSpecimen: targetBatch,
-        standardIds: stdIds.length > 0 ? stdIds : undefined,
-        gradeKey: targetBatch.overrideGrade || targetBatch.grade,
+
+      // 异步并行并发调用后端合规核验接口
+      const auditTasks = batchesToEval.map(async (batch) => {
+        try {
+          const res = await apiClient.submitAudit({
+            batchSpecimen: batch,
+            standardIds: stdIds.length > 0 ? stdIds : undefined,
+            gradeKey: batch.overrideGrade || batch.grade,
+          });
+          return { batchNo: batch.batchNo, res };
+        } catch (err) {
+          console.error(`[WaterfallWorkbench] 批次 ${batch.batchNo} 核验失败:`, err);
+          return { batchNo: batch.batchNo, error: err };
+        }
       });
 
-      if (res.success && res.finalReport) {
-        const report = res.finalReport;
-        const isReportPass = report.summary.overall_status === 'PASS';
-        const newVerdict: 'PASS' | 'FAIL' = isReportPass ? 'PASS' : 'FAIL';
-        const summaryText = isReportPass
-          ? `全项核验合格 (共评估 ${report.summary.total_rules_evaluated} 项)`
-          : `核验未通过 (不合格 ${report.summary.fail_count} 项，漏检 ${report.summary.missing_count} 项)`;
+      const taskResults = await Promise.all(auditTasks);
 
-        setSession(prev => ({
-          ...prev,
-          documents: prev.documents.map(d => {
-            if (d.docId !== selectedDocId) return d;
+      // 汇总并发结果，原子性更新 Session 数据
+      setSession(prev => ({
+        ...prev,
+        documents: prev.documents.map(d => {
+          if (d.docId !== selectedDocId) return d;
+
+          const updatedBatches = d.batches.map(b => {
+            const taskItem = taskResults.find(t => t.batchNo === b.batchNo);
+            if (!taskItem || !taskItem.res || !taskItem.res.success || !taskItem.res.finalReport) {
+              return b;
+            }
+
+            const report = taskItem.res.finalReport;
+            const isReportPass = report.summary.overall_status === 'PASS';
+            const newVerdict: 'PASS' | 'FAIL' = isReportPass ? 'PASS' : 'FAIL';
+            const summaryText = isReportPass
+              ? `全项核验合格 (共评估 ${report.summary.total_rules_evaluated} 项)`
+              : `核验未通过 (不合格 ${report.summary.fail_count} 项，漏检 ${report.summary.missing_count} 项)`;
+
             return {
-              ...d,
-              batches: d.batches.map(b => {
-                if (b.batchNo !== targetBatch.batchNo) return b;
-                return {
-                  ...b,
-                  auditReport: report,
-                  verdict: newVerdict,
-                  verdictSummary: summaryText,
-                  systemVerdict: newVerdict,
-                  systemVerdictSummary: summaryText,
-                };
-              }),
+              ...b,
+              auditReport: report,
+              verdict: newVerdict,
+              verdictSummary: summaryText,
+              systemVerdict: newVerdict,
+              systemVerdictSummary: summaryText,
             };
-          }),
-        }));
-      } else if (res.status === 'suspended_hitl') {
-        if (res.hitlContext) {
-          setActiveHitlContext(res.hitlContext);
-          setIsHitlDrawerOpen(true);
-        }
-      } else if (res.error) {
-        showToast(`合规核验返回提示: ${res.error}`, 'error');
+          });
+
+          return {
+            ...d,
+            batches: updatedBatches,
+          };
+        }),
+      }));
+
+      // 若当前激活批次触发了 HITL 阻断，呼出侧边抽屉
+      const currentTask = taskResults.find(t => t.batchNo === selectedBatchNo);
+      if (currentTask?.res?.status === 'suspended_hitl' && currentTask.res.hitlContext) {
+        setActiveHitlContext(currentTask.res.hitlContext);
+        setIsHitlDrawerOpen(true);
       }
     } catch (err: unknown) {
-      console.error('[WaterfallWorkbench] 执行批次核验失败:', err);
+      console.error('[WaterfallWorkbench] 执行批次并行核验失败:', err);
       showToast('批次核验网络异常，请稍后重试', 'error');
     } finally {
-      setIsEvaluatingBatch(false);
+      if (includesCurrent) {
+        setIsEvaluatingBatch(false);
+      }
     }
-  }, [currentBatch, selectedDocId, selectedStandardIds]);
+  }, [selectedBatchNo, selectedDocId, selectedStandardIds]);
 
-  // 步骤 3 自动触发核验（带历史台账防重算保护）
+  // 单批次核验封装（兼容已有单批次调用）
+  const evaluateBatch = useCallback(async (batchToEval?: BatchSpecimen, forcedStdIds?: string[]) => {
+    const target = batchToEval || currentBatch;
+    if (!target) return;
+    await evaluateBatches([target], forcedStdIds);
+  }, [currentBatch, evaluateBatches]);
+
+  // 步骤 3 自动触发全批次异步并行核验（带历史台账防重算保护与全批次并发调度）
+  const batchEvaluatingKeyRef = useRef<string>('');
+
   useEffect(() => {
-    if (currentStep !== 2 || !currentBatch) return;
+    if (currentStep !== 2 || !currentDoc || currentDoc.batches.length === 0) return;
 
-    // 台账载入安全机制：如果当前批次已持有保存的历史 auditReport，直接原汁原味渲染，不触发自动重算
-    if (currentBatch.auditReport) {
-      return;
-    }
+    // 筛选当前文档中未生成 auditReport 或处于 UNAUDITED 的所有批次
+    const pendingBatches = currentDoc.batches.filter(b => !b.auditReport || b.verdict === 'UNAUDITED');
+    if (pendingBatches.length === 0) return;
 
-    // 若无历史核验结果，则自动发起一次合规核验
-    evaluateBatch(currentBatch);
-  }, [currentStep, selectedDocId, selectedBatchNo, currentBatch?.auditReport, evaluateBatch]);
+    // 防抖与去重锁：同一批次集合在未完成时不重复发起
+    const batchSignature = `${selectedDocId}:${pendingBatches.map(b => b.batchNo).sort().join(',')}`;
+    if (batchEvaluatingKeyRef.current === batchSignature) return;
+    batchEvaluatingKeyRef.current = batchSignature;
 
-  // 切换/勾选标准并联动触发重新核验
+    // 全批次异步并行核验
+    evaluateBatches(pendingBatches);
+  }, [currentStep, selectedDocId, currentDoc, evaluateBatches]);
+
+  // 切换/勾选标准并联动触发重新核验（当前文档全批次并行重算）
   const handleToggleStandard = (stdId: string) => {
     let newSelected: string[];
-    const isCurrentlySelected = selectedStandardIds.includes(stdId);
+    const targetNorm = normalizeStandardId(stdId);
+    const existingIndex = selectedStandardIds.findIndex(s => normalizeStandardId(s) === targetNorm);
 
-    if (isCurrentlySelected) {
+    if (existingIndex >= 0) {
       if (selectedStandardIds.length <= 1) {
         return; // 至少保留一个标准
       }
-      newSelected = selectedStandardIds.filter(s => s !== stdId);
+      newSelected = selectedStandardIds.filter((_, idx) => idx !== existingIndex);
     } else {
       newSelected = [...selectedStandardIds, stdId];
     }
 
     const newStandardStr = newSelected.join('、');
 
+    // 将新标准同步更新至当前文档的所有批次，若与原件声明标准指纹等价则主动还原 overrideStandard 为 undefined
     setSession(prev => ({
       ...prev,
       documents: prev.documents.map(doc => {
@@ -1220,13 +1289,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           return {
             ...doc,
             batches: doc.batches.map(b => {
-              if (b.batchNo === selectedBatchNo) {
-                return {
-                  ...b,
-                  overrideStandard: newStandardStr,
-                };
-              }
-              return b;
+              const isEquiv = areStandardCollectionsEquivalent(newSelected, b.standard);
+              return {
+                ...b,
+                overrideStandard: isEquiv ? undefined : newStandardStr,
+                auditReport: undefined,
+                verdict: 'UNAUDITED' as const,
+              };
             }),
           };
         }
@@ -1234,8 +1303,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       }),
     }));
 
-    if (currentBatch) {
-      evaluateBatch({ ...currentBatch, overrideStandard: newStandardStr }, newSelected);
+    if (currentDoc && currentDoc.batches.length > 0) {
+      const reevalBatches = currentDoc.batches.map(b => {
+        const isEquiv = areStandardCollectionsEquivalent(newSelected, b.standard);
+        return {
+          ...b,
+          overrideStandard: isEquiv ? undefined : newStandardStr,
+        };
+      });
+      batchEvaluatingKeyRef.current = ''; // 清除防抖锁
+      evaluateBatches(reevalBatches, newSelected);
     }
   };
 
@@ -3775,7 +3852,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               </span>
                               {isOverridden && (
                                 <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
-                                  定制标准
+                                  标准已变更
                                 </span>
                               )}
                             </div>
@@ -3839,7 +3916,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               >
                                 <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
                                   {selectedStandardIds.map(stdId => {
-                                    const catalogItem = dynamicStandardsCatalog.find(s => s.id === stdId || s.shortCode === stdId);
+                                    const catalogItem = dynamicStandardsCatalog.find(s =>
+                                      s.id === stdId ||
+                                      normalizeStandardId(s.id) === normalizeStandardId(stdId) ||
+                                      normalizeStandardId(s.shortCode) === normalizeStandardId(stdId)
+                                    );
                                     return (
                                       <span
                                         key={stdId}
@@ -3897,7 +3978,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                           return s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || s.shortCode.toLowerCase().includes(q);
                                         })
                                         .map(std => {
-                                          const isChecked = selectedStandardIds.some(sel => std.id.includes(sel) || sel.includes(std.shortCode) || std.shortCode.includes(sel));
+                                          const stdNorm = normalizeStandardId(std.id);
+                                          const stdShortNorm = normalizeStandardId(std.shortCode);
+                                          const isChecked = selectedStandardIds.some(sel => {
+                                            const selNorm = normalizeStandardId(sel);
+                                            return selNorm === stdNorm || selNorm === stdShortNorm || selNorm.includes(stdNorm) || stdNorm.includes(selNorm);
+                                          });
                                           return (
                                             <div
                                               key={std.id}
@@ -4145,7 +4231,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               全景合规比对矩阵
                             </h3>
                             <p className="text-[11px] text-on-surface-variant dark:text-outline-variant">
-                              执行标准条款规范与质保书提取测量值同行左右相邻紧凑对照（全项覆盖无冗余）
+                              执行标准条款规范与质保书提取测量值同行左右相邻紧凑对照
                             </p>
                           </div>
                         </div>
@@ -4334,8 +4420,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   <td className="px-3.5 py-2.5 text-[11px] text-on-surface dark:text-surface-bright leading-relaxed">
                                     <div>{row.ruleBasis}</div>
                                     {row.isScissorsDifference && row.scissorsAttribution && (
-                                      <div className="mt-1 text-[10px] text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1">
-                                        <span>剪刀差归因：{row.scissorsAttribution}</span>
+                                      <div className="mt-2 p-2 rounded-md bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-700/50 space-y-1.5 text-left">
+                                        <div className="flex items-start gap-1.5 text-[11px] text-amber-900 dark:text-amber-200">
+                                          <span className="px-1.5 py-0.5 rounded bg-amber-200/80 dark:bg-amber-900/80 text-amber-950 dark:text-amber-100 text-[10px] font-bold tracking-tight shrink-0">责任归属</span>
+                                          <span className="leading-snug">{row.scissorsAttribution}</span>
+                                        </div>
+                                        <div className="pt-1 border-t border-amber-200/60 dark:border-amber-800/50 text-[10px] text-amber-800/80 dark:text-amber-300/80 leading-normal">
+                                          <span className="font-semibold text-amber-900 dark:text-amber-200">术语说明：</span>加严剪刀差指物资实测指标已达到通用制造基础标准（如推荐国标 GB/T），但未能达到特种设备承压标准（如行业标 NB/T）或采购技术协议提出的更严苛指标。系统遵循严苛就高原则裁定全单不合格，责任归属于订货加严条款。
+                                        </div>
                                       </div>
                                     )}
                                   </td>
