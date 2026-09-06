@@ -4182,11 +4182,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <tr>
                               <th className="px-3.5 py-2.5 w-20 min-w-[75px] whitespace-nowrap">类别</th>
                               <th className="px-3.5 py-2.5 min-w-[150px]">检验项目 / 指标</th>
-                              <th className="px-3.5 py-2.5 min-w-[220px]">执行标准要求 / 条款规范</th>
+                              <th className="px-3.5 py-2.5 min-w-[170px] w-48">执行标准要求 / 条款规范</th>
                               <th className="px-3.5 py-2.5 min-w-[160px]">报告测量值 / 实际结果</th>
                               <th className="px-3.5 py-2.5 w-28 min-w-[100px]">偏差量 / 吻合度</th>
                               <th className="px-3.5 py-2.5 w-24 whitespace-nowrap">判定状态</th>
-                              <th className="px-3.5 py-2.5 min-w-[260px]">判定逻辑 / 审核说明</th>
+                              <th className="px-3.5 py-2.5 min-w-[300px]">判定逻辑 / 审核说明</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
@@ -4227,7 +4227,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               displayedComplianceItems.map((row) => (
                                 <tr
                                   key={row.id}
-                                  className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40 transition-colors"
+                                  className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40 transition-colors align-top"
                                 >
                                   <td className="px-3.5 py-2.5 whitespace-nowrap">
                                     <span className={`px-2 py-0.5 rounded text-[12px] font-bold border whitespace-nowrap inline-flex items-center justify-center leading-none ${row.categoryColor}`}>
@@ -4241,58 +4241,69 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     {(() => {
                                       const evals = row.multiStandardEvaluations;
                                       if (!evals || evals.length <= 1) {
-                                        return row.standardRequirement;
-                                      }
-
-                                      // 判断是否所有参与标准指标要求完全一致 (排除无强制指标/独占项)
-                                      const firstReq = evals[0]!.requirement_text.trim();
-                                      const isAllIdentical = evals.every(
-                                        (e) => e.requirement_text.trim() === firstReq && !e.requirement_text.includes('无强制指标')
-                                      );
-
-                                      if (isAllIdentical) {
-                                        // 各标准指标要求完全一致：紧凑折叠为单个复合标签，极大节约垂直空间
-                                        const combinedStdNames = evals.map((e) => e.standard_short).join(' + ');
-                                        const hasGoverning = evals.some((e) => e.is_governing);
-
                                         return (
-                                          <div className="py-0.5">
-                                            <span
-                                              className="px-2 py-0.5 rounded text-[11px] font-mono border whitespace-nowrap inline-flex items-center bg-surface-container-high/80 dark:bg-surface-dark-high/80 text-on-surface dark:text-surface-bright border-outline-variant/40 dark:border-border-dark shadow-2xs"
-                                              title={`各标准要求一致：\n${evals.map((e) => `• ${e.standard_short}: ${e.requirement_text} (单标评定: ${e.status})`).join('\n')}`}
-                                            >
-                                              <span className="font-medium text-on-surface-variant dark:text-outline-variant mr-1">
-                                                {combinedStdNames}:
-                                              </span>
-                                              <span className="font-semibold text-on-surface dark:text-surface-bright">
-                                                {firstReq}
-                                              </span>
-                                              {hasGoverning && (
-                                                <span className="ml-1 text-amber-600 dark:text-amber-400 font-black" title="执行标准基准">
-                                                  ★
-                                                </span>
-                                              )}
-                                            </span>
+                                          <div className="py-0.5 font-bold text-[12px] text-on-surface dark:text-surface-bright">
+                                            {row.standardRequirement}
                                           </div>
                                         );
                                       }
 
-                                      // 标准间指标要求存在剪刀差或独占加严：保持垂直分行展开，清晰凸显剪刀差对比
+                                      // 判断是否所有参与标准指标要求完全一致 (排除无强制指标/独占项)
+                                      const activeEvals = evals.filter((e) => !e.requirement_text.includes('无强制指标'));
+                                      const firstReq = activeEvals[0]?.requirement_text?.trim() || evals[0]!.requirement_text.trim();
+                                      const isAllIdentical = activeEvals.length > 1 && activeEvals.every(
+                                        (e) => e.requirement_text.trim() === firstReq
+                                      );
+
+                                      if (isAllIdentical) {
+                                        // 【场景 A：各标准指标完全一致】
+                                        // 首行突出加粗展示主指标；下方垂直堆叠各标准微型药丸徽章，不重复输出数字
+                                        return (
+                                          <div className="flex flex-col items-start gap-1.5 py-0.5">
+                                            <div className="font-bold text-[12px] text-on-surface dark:text-surface-bright flex items-center gap-1">
+                                              <span>{firstReq}</span>
+                                              {/* <span className="text-amber-600 dark:text-amber-400 font-black text-[11px]" title="执行标准统一要求">★</span> */}
+                                            </div>
+                                            <div className="flex flex-col items-start gap-1 w-full">
+                                              {evals.map((ev) => (
+                                                <span
+                                                  key={ev.standard_id}
+                                                  className="px-1.5 py-0.5 rounded text-[10px] font-mono border whitespace-nowrap inline-flex items-center bg-surface-container-high/70 dark:bg-surface-dark-high/70 text-on-surface-variant dark:text-outline-variant border-outline-variant/30 dark:border-border-dark leading-tight"
+                                                  title={`${ev.standard_id} (单标评定: ${ev.status})`}
+                                                >
+                                                  {ev.standard_short}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+
+                                      // 【场景 B：存在剪刀差差异或独占加严】
+                                      // 首行突出加粗展示当前起主导控制作用的严苛基准指标；下方垂直分行分别展开各标准的具体要求
+                                      const governingEval = evals.find((e) => e.is_governing) || evals[0]!;
+
                                       return (
-                                        <div className="flex flex-col items-start gap-1 py-0.5">
-                                          {evals.map((ev) => (
-                                            <span
-                                              key={ev.standard_id}
-                                              className={`px-1.5 py-0.5 rounded text-[11px] font-mono border whitespace-nowrap inline-flex items-center ${ev.is_governing
-                                                ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold shadow-2xs'
-                                                : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant border-outline-variant/30 dark:border-border-dark'
-                                                }`}
-                                              title={`${ev.standard_id}: ${ev.requirement_text} (单标评定: ${ev.status})`}
-                                            >
-                                              <span>{ev.standard_short}: {ev.requirement_text}</span>
-                                              {ev.is_governing && <span className="ml-1 text-amber-600 dark:text-amber-400 font-black">★</span>}
-                                            </span>
-                                          ))}
+                                        <div className="flex flex-col items-start gap-1.5 py-0.5">
+                                          <div className="font-bold text-[12px] text-on-surface dark:text-surface-bright flex items-center gap-1">
+                                            <span>{governingEval.requirement_text}</span>
+                                            {/* <span className="text-amber-600 dark:text-amber-400 font-black text-[11px]" title="严苛主导控制指标">★</span> */}
+                                          </div>
+                                          <div className="flex flex-col items-start gap-1 w-full">
+                                            {evals.map((ev) => (
+                                              <span
+                                                key={ev.standard_id}
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono border whitespace-nowrap inline-flex items-center leading-tight ${ev.is_governing
+                                                  ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-semibold shadow-2xs'
+                                                  : 'bg-surface-container-high/60 dark:bg-surface-dark-high/60 text-on-surface-variant dark:text-outline-variant border-outline-variant/25 dark:border-border-dark'
+                                                  }`}
+                                                title={`${ev.standard_id}: ${ev.requirement_text} (单标评定: ${ev.status})`}
+                                              >
+                                                <span>{ev.standard_short}: {ev.requirement_text}</span>
+                                                {ev.is_governing && <span className="ml-1 text-amber-600 dark:text-amber-400 font-black text-[9px]">★</span>}
+                                              </span>
+                                            ))}
+                                          </div>
                                         </div>
                                       );
                                     })()}
