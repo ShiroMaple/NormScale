@@ -13,7 +13,7 @@ import { BatchContextBar } from './BatchContextBar.tsx';
 import { EditableValueField } from './EditableValueField.tsx';
 import { FieldBBox } from '@/types/bbox.ts';
 import { HitlDrawer } from './HitlDrawer.tsx';
-import { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.interface.ts';
+import { HitlInterruptContext, HumanCorrectionInput, PropertyResolutionCandidate } from '@/workflow/state.interface.ts';
 import { toPng } from 'html-to-image';
 import { useDocumentParser } from '@/hooks/useDocumentParser.ts';
 import { LlmStreamingTerminal } from './LlmStreamingTerminal.tsx';
@@ -133,6 +133,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [isAgreementSelectorOpen, setIsAgreementSelectorOpen] = useState<boolean>(false);
   const [standardSearchQuery, setStandardSearchQuery] = useState<string>('');
   const [isEvaluatingBatch, setIsEvaluatingBatch] = useState<boolean>(false);
+  // 多批次物理隔离展示状态池 (以 batchNo 为槽位隔离，防串标污染与多阶段跃迁)
+  const [batchPresentationMap, setBatchPresentationMap] = useState<Record<string, {
+    batchNo: string;
+    stage: 'idle' | 'tier1_evaluating' | 'tier1_ready' | 'tier2_resolving' | 'hitl_pending' | 'completed' | 'error';
+    report?: AuditReport;
+    pendingProperties?: PropertyResolutionCandidate[];
+    hitlContext?: HitlInterruptContext;
+    error?: string;
+    taskId?: string;
+  }>>({});
 
   // 创建纯净空会话辅助函数
   const createEmptySession = (): InspectionSession => ({
@@ -1157,87 +1167,280 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   }, [activeStandard, dynamicStandardsCatalog]);
 
   // 核心：调用真实后端核验接口 (直出 AuditReport，带多标尺追溯与剪刀差)
-  // 核心：全批次异步并行核验调度器 (直出各批次 AuditReport，带多标尺追溯与剪刀差)
+  // 核心：全批次异步流式并发核验调度器 (Tier 1 秒级直出 -> Tier 2 增量补丁 -> Tier 3 人机协同)
   const evaluateBatches = useCallback(async (batchesToEval: BatchSpecimen[], forcedStdIds?: string[]) => {
     if (!batchesToEval || batchesToEval.length === 0) return;
 
-    // 检查是否包含当前激活批次，若包含则开启主界面加载动画
+    const stdIds = forcedStdIds || selectedStandardIds;
+
+    // 1. 初始化各批次展示状态为 tier1_evaluating
+    setBatchPresentationMap(prev => {
+      const next = { ...prev };
+      for (const b of batchesToEval) {
+        next[b.batchNo] = {
+          batchNo: b.batchNo,
+          stage: 'tier1_evaluating',
+          pendingProperties: [],
+        };
+      }
+      return next;
+    });
+
     const includesCurrent = batchesToEval.some(b => b.batchNo === selectedBatchNo);
     if (includesCurrent) {
       setIsEvaluatingBatch(true);
     }
 
-    try {
-      const stdIds = forcedStdIds || selectedStandardIds;
-
-      // 异步并行并发调用后端合规核验接口
-      const auditTasks = batchesToEval.map(async (batch) => {
-        try {
-          const res = await apiClient.submitAudit({
+    // 2. 并行调度各个批次独立通过 SSE 流式接口核验 (多批次物理强隔离，thread_id: sessionId::batchNo)
+    const tasks = batchesToEval.map(async (batch) => {
+      try {
+        await apiClient.submitAuditStream(
+          {
             batchSpecimen: batch,
             standardIds: stdIds.length > 0 ? stdIds : undefined,
             gradeKey: batch.overrideGrade || batch.grade,
-          });
-          return { batchNo: batch.batchNo, res };
-        } catch (err) {
-          console.error(`[WaterfallWorkbench] 批次 ${batch.batchNo} 核验失败:`, err);
-          return { batchNo: batch.batchNo, error: err };
+            options: {
+              sessionId: session.sessionId,
+              batchNo: batch.batchNo,
+            },
+          },
+          {
+            // (a) Tier 1 确定性规则大盘毫秒级直出
+            onTier1Ready: (data) => {
+              const isReportPass = data.report.summary.overall_status === 'PASS';
+              const summaryText = isReportPass
+                ? `核心指标核验合格 (共评估 ${data.report.summary.total_rules_evaluated} 项)`
+                : `核验未通过 (不合格 ${data.report.summary.fail_count} 项，漏检 ${data.report.summary.missing_count} 项)`;
+
+              setBatchPresentationMap(prev => ({
+                ...prev,
+                [batch.batchNo]: {
+                  batchNo: batch.batchNo,
+                  stage: data.hasPending ? 'tier1_ready' : 'completed',
+                  report: data.report,
+                  pendingProperties: data.pendingProperties || [],
+                  taskId: data.taskId,
+                },
+              }));
+
+              // 同步持久化写入 Session 数据
+              setSession(prev => ({
+                ...prev,
+                documents: prev.documents.map(d => {
+                  if (d.docId !== selectedDocId) return d;
+                  return {
+                    ...d,
+                    batches: d.batches.map(b => {
+                      if (b.batchNo !== batch.batchNo) return b;
+                      return {
+                        ...b,
+                        auditReport: data.report,
+                        verdict: isReportPass ? 'PASS' : 'FAIL',
+                        verdictSummary: summaryText,
+                        systemVerdict: isReportPass ? 'PASS' : 'FAIL',
+                        systemVerdictSummary: summaryText,
+                      };
+                    }),
+                  };
+                }),
+              }));
+
+              if (batch.batchNo === selectedBatchNo) {
+                setIsEvaluatingBatch(false);
+              }
+            },
+
+            // (b) Tier 2 LLM 长尾语义消歧增量补丁
+            onTier2Patch: (data) => {
+              const isReportPass = data.finalReport.summary.overall_status === 'PASS';
+              const summaryText = isReportPass
+                ? `全项核验合格 (共评估 ${data.finalReport.summary.total_rules_evaluated} 项)`
+                : `核验未通过 (不合格 ${data.finalReport.summary.fail_count} 项，漏检 ${data.finalReport.summary.missing_count} 项)`;
+
+              setBatchPresentationMap(prev => ({
+                ...prev,
+                [batch.batchNo]: {
+                  batchNo: batch.batchNo,
+                  stage: 'completed',
+                  report: data.finalReport,
+                  pendingProperties: [],
+                  taskId: data.taskId,
+                },
+              }));
+
+              setSession(prev => ({
+                ...prev,
+                documents: prev.documents.map(d => {
+                  if (d.docId !== selectedDocId) return d;
+                  return {
+                    ...d,
+                    batches: d.batches.map(b => {
+                      if (b.batchNo !== batch.batchNo) return b;
+                      return {
+                        ...b,
+                        auditReport: data.finalReport,
+                        verdict: isReportPass ? 'PASS' : 'FAIL',
+                        verdictSummary: summaryText,
+                        systemVerdict: isReportPass ? 'PASS' : 'FAIL',
+                        systemVerdictSummary: summaryText,
+                      };
+                    }),
+                  };
+                }),
+              }));
+            },
+
+            // (c) Tier 3 歧义项触发人机协同挂起
+            onHitlInterrupt: (data) => {
+              setBatchPresentationMap(prev => ({
+                ...prev,
+                [batch.batchNo]: {
+                  ...(prev[batch.batchNo] || { batchNo: batch.batchNo }),
+                  stage: 'hitl_pending',
+                  hitlContext: data.hitlContext,
+                  report: data.partialReport || prev[batch.batchNo]?.report,
+                  taskId: data.taskId,
+                },
+              }));
+
+              if (batch.batchNo === selectedBatchNo) {
+                setActiveHitlContext(data.hitlContext);
+                setIsHitlDrawerOpen(true);
+              }
+            },
+
+            // (d) 全流程顺利完成
+            onComplete: (data) => {
+              const isReportPass = data.finalReport.summary.overall_status === 'PASS';
+              const summaryText = isReportPass
+                ? `全项核验合格 (共评估 ${data.finalReport.summary.total_rules_evaluated} 项)`
+                : `核验未通过 (不合格 ${data.finalReport.summary.fail_count} 项，漏检 ${data.finalReport.summary.missing_count} 项)`;
+
+              setBatchPresentationMap(prev => ({
+                ...prev,
+                [batch.batchNo]: {
+                  batchNo: batch.batchNo,
+                  stage: 'completed',
+                  report: data.finalReport,
+                  pendingProperties: [],
+                  taskId: data.taskId,
+                },
+              }));
+
+              setSession(prev => ({
+                ...prev,
+                documents: prev.documents.map(d => {
+                  if (d.docId !== selectedDocId) return d;
+                  return {
+                    ...d,
+                    batches: d.batches.map(b => {
+                      if (b.batchNo !== batch.batchNo) return b;
+                      return {
+                        ...b,
+                        auditReport: data.finalReport,
+                        verdict: isReportPass ? 'PASS' : 'FAIL',
+                        verdictSummary: summaryText,
+                        systemVerdict: isReportPass ? 'PASS' : 'FAIL',
+                        systemVerdictSummary: summaryText,
+                      };
+                    }),
+                  };
+                }),
+              }));
+            },
+
+            // (e) 异常报错
+            onError: (err) => {
+              setBatchPresentationMap(prev => ({
+                ...prev,
+                [batch.batchNo]: {
+                  ...(prev[batch.batchNo] || { batchNo: batch.batchNo }),
+                  stage: 'error',
+                  error: err.error,
+                },
+              }));
+            },
+          }
+        );
+      } catch (taskErr) {
+        console.error(`[WaterfallWorkbench] 批次 ${batch.batchNo} 执行流式核验异常:`, taskErr);
+        setBatchPresentationMap(prev => ({
+          ...prev,
+          [batch.batchNo]: {
+            ...(prev[batch.batchNo] || { batchNo: batch.batchNo }),
+            stage: 'error',
+            error: String(taskErr),
+          },
+        }));
+      } finally {
+        if (batch.batchNo === selectedBatchNo) {
+          setIsEvaluatingBatch(false);
         }
+      }
+    });
+
+    await Promise.allSettled(tasks);
+  }, [selectedBatchNo, selectedDocId, selectedStandardIds, session.sessionId]);
+
+  // 步骤 3: 行内采纳推荐属性并恢复核验
+  const handleInlineAdoptProperty = useCallback(async (batchNo: string, rawKey: string, resolvedKey: string) => {
+    const batchState = batchPresentationMap[batchNo];
+    const taskId = batchState?.taskId || `${session.sessionId}::${batchNo}`;
+
+    try {
+      showToast(`正在采纳推荐: ${rawKey} → ${resolvedKey}...`, 'info');
+      const res = await apiClient.resumeAudit(taskId, {
+        corrected_property_keys: {
+          [rawKey]: resolvedKey,
+        },
       });
 
-      const taskResults = await Promise.all(auditTasks);
+      if (res.success && res.finalReport) {
+        showToast('条款对齐成功，已完成补充合规核验', 'success');
+        setBatchPresentationMap(prev => ({
+          ...prev,
+          [batchNo]: {
+            ...prev[batchNo],
+            batchNo,
+            stage: 'completed',
+            report: res.finalReport,
+            pendingProperties: [],
+            hitlContext: undefined,
+          },
+        }));
 
-      // 汇总并发结果，原子性更新 Session 数据
-      setSession(prev => ({
-        ...prev,
-        documents: prev.documents.map(d => {
-          if (d.docId !== selectedDocId) return d;
-
-          const updatedBatches = d.batches.map(b => {
-            const taskItem = taskResults.find(t => t.batchNo === b.batchNo);
-            if (!taskItem || !taskItem.res || !taskItem.res.success || !taskItem.res.finalReport) {
-              return b;
-            }
-
-            const report = taskItem.res.finalReport;
-            const isReportPass = report.summary.overall_status === 'PASS';
-            const newVerdict: 'PASS' | 'FAIL' = isReportPass ? 'PASS' : 'FAIL';
-            const summaryText = isReportPass
-              ? `全项核验合格 (共评估 ${report.summary.total_rules_evaluated} 项)`
-              : `核验未通过 (不合格 ${report.summary.fail_count} 项，漏检 ${report.summary.missing_count} 项)`;
-
+        setSession(prev => ({
+          ...prev,
+          documents: prev.documents.map(d => {
+            if (d.docId !== selectedDocId) return d;
             return {
-              ...b,
-              auditReport: report,
-              verdict: newVerdict,
-              verdictSummary: summaryText,
-              systemVerdict: newVerdict,
-              systemVerdictSummary: summaryText,
+              ...d,
+              batches: d.batches.map(b => {
+                if (b.batchNo !== batchNo) return b;
+                const isPass = res.finalReport!.summary.overall_status === 'PASS';
+                const summaryText = isPass
+                  ? `全项核验合格 (共评估 ${res.finalReport!.summary.total_rules_evaluated} 项)`
+                  : `核验未通过 (不合格 ${res.finalReport!.summary.fail_count} 项，漏检 ${res.finalReport!.summary.missing_count} 项)`;
+                return {
+                  ...b,
+                  auditReport: res.finalReport,
+                  verdict: isPass ? 'PASS' : 'FAIL',
+                  verdictSummary: summaryText,
+                  systemVerdict: isPass ? 'PASS' : 'FAIL',
+                  systemVerdictSummary: summaryText,
+                };
+              }),
             };
-          });
-
-          return {
-            ...d,
-            batches: updatedBatches,
-          };
-        }),
-      }));
-
-      // 若当前激活批次触发了 HITL 阻断，呼出侧边抽屉
-      const currentTask = taskResults.find(t => t.batchNo === selectedBatchNo);
-      if (currentTask?.res?.status === 'suspended_hitl' && currentTask.res.hitlContext) {
-        setActiveHitlContext(currentTask.res.hitlContext);
-        setIsHitlDrawerOpen(true);
+          }),
+        }));
+      } else {
+        showToast(`核验恢复失败: ${res.error || '未知错误'}`, 'error');
       }
     } catch (err: unknown) {
-      console.error('[WaterfallWorkbench] 执行批次并行核验失败:', err);
-      showToast('批次核验网络异常，请稍后重试', 'error');
-    } finally {
-      if (includesCurrent) {
-        setIsEvaluatingBatch(false);
-      }
+      const errMsg = err instanceof Error ? err.message : String(err);
+      showToast(`提交异常: ${errMsg}`, 'error');
     }
-  }, [selectedBatchNo, selectedDocId, selectedStandardIds]);
+  }, [batchPresentationMap, selectedDocId, session.sessionId]);
 
   // 单批次核验封装（兼容已有单批次调用）
   const evaluateBatch = useCallback(async (batchToEval?: BatchSpecimen, forcedStdIds?: string[]) => {
@@ -3641,6 +3844,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   </button>
                 </div>
               ) : (() => {
+                const currentBatchState = batchPresentationMap[currentBatch.batchNo];
+
                 interface ComplianceMatrixRow {
                   id: string;
                   category: 'chemical' | 'mechanical' | 'process' | 'metallographic' | 'corrosion' | 'ndt' | 'dimensions' | 'additional';
@@ -4218,8 +4423,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                         {/* 下部：综合判定看板 (双轨制：系统客观计算 55% vs 人工复核判定 45%，独立分栏背景色，吸纳垂直空隙) */}
                         {(() => {
+                          const currentBatchState = batchPresentationMap[currentBatch.batchNo];
+                          const isResolving = currentBatchState?.stage === 'tier1_ready' && (currentBatchState?.pendingProperties?.length || 0) > 0;
+                          const isBatchHitl = isHitl || currentBatchState?.stage === 'hitl_pending';
                           const hasScissors = complianceMatrixItems.some(i => i.isScissorsDifference);
-                          const sysVerdict: SystemVerdict = isHitl
+                          const sysVerdict: SystemVerdict = isBatchHitl
                             ? 'MANUAL_REVIEW'
                             : (!computedIsPass || hasScissors)
                               ? 'FAIL'
@@ -4232,33 +4440,50 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark shadow-xs flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden items-stretch">
 
                               {/* 1. 左侧约 55% (md:col-span-7)：系统客观判定 */}
-                              <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1.5 ${isHitl
-                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
-                                : sysVerdict === 'FAIL'
-                                  ? 'bg-status-fail-bg text-status-fail-text'
-                                  : 'bg-status-pass-bg text-status-pass-text'
+                              <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1.5 ${
+                                isResolving
+                                  ? 'bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200'
+                                  : isBatchHitl
+                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
+                                    : sysVerdict === 'FAIL'
+                                      ? 'bg-status-fail-bg text-status-fail-text'
+                                      : 'bg-status-pass-bg text-status-pass-text'
                                 }`}>
                                 <div className="flex items-center gap-2 flex-wrap justify-between">
                                   <div className="flex items-center gap-2">
-                                    <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${isHitl ? 'text-amber-600 dark:text-amber-400' : ''}`}>
-                                      {isHitl ? 'pending_actions' : sysVerdict === 'FAIL' ? 'cancel' : 'check_circle'}
+                                    <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${
+                                      isResolving
+                                        ? 'text-indigo-600 dark:text-indigo-400 animate-spin'
+                                        : isBatchHitl
+                                          ? 'text-amber-600 dark:text-amber-400'
+                                          : ''
+                                    }`}>
+                                      {isResolving ? 'sync' : isBatchHitl ? 'pending_actions' : sysVerdict === 'FAIL' ? 'cancel' : 'check_circle'}
                                     </span>
                                     <h3 className="text-sm sm:text-base font-bold font-headline whitespace-nowrap">
-                                      {isHitl
-                                        ? 'HITL 系统判定:待人工介入'
-                                        : sysVerdict === 'FAIL'
-                                          ? '系统判定: FAIL 一票否决'
-                                          : '系统判定: PASS 全项合规'}
+                                      {isResolving
+                                        ? `系统判定: 核心指标就绪 · ${currentBatchState.pendingProperties!.length}项条款对齐中`
+                                        : isBatchHitl
+                                          ? 'HITL 系统判定: 待人工复核确认'
+                                          : sysVerdict === 'FAIL'
+                                            ? '系统判定: FAIL 一票否决'
+                                            : '系统判定: PASS 全项合规'}
                                     </h3>
                                   </div>
-                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap shadow-2xs ${badgeMeta.badgeClass}`}>
-                                    流转: {arbitration.statusLabel}
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap shadow-2xs ${
+                                    isResolving
+                                      ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700'
+                                      : badgeMeta.badgeClass
+                                  }`}>
+                                    {isResolving ? '流转: 语义消歧中' : `流转: ${arbitration.statusLabel}`}
                                   </span>
                                 </div>
                                 <p className="text-[12px] opacity-90 font-sans pl-7 line-clamp-2 leading-relaxed" title={hasScissors ? '包含加严剪刀差失效' : computedVerdictSummary}>
-                                  {hasScissors
-                                    ? `【加严剪刀差】存在指标满足通用国标但未达承压订货加严标，按就高严苛原则判定不合格`
-                                    : (arbitration.auditExplanation || computedVerdictSummary)}
+                                  {isResolving
+                                    ? `已完成全部确定性化学、力学与常规工艺规则比对；正在进行长尾条款受限语义推断`
+                                    : hasScissors
+                                      ? `【加严剪刀差】存在指标满足通用国标但未达承压订货加严标，按就高严苛原则判定不合格`
+                                      : (arbitration.auditExplanation || computedVerdictSummary)}
                                 </p>
                               </div>
 
@@ -4613,6 +4838,119 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   </td>
                                 </tr>
                               ))
+                            )}
+
+                            {/* 态 2：语义对齐中微光呼吸行 (Tier 2 Smart-Path 异步推断中) */}
+                            {currentBatchState?.pendingProperties && currentBatchState.pendingProperties.length > 0 && currentBatchState.stage !== 'completed' && (
+                              currentBatchState.pendingProperties.map((prop: PropertyResolutionCandidate, pIdx: number) => (
+                                <tr
+                                  key={`resolving_prop_${pIdx}`}
+                                  className="bg-indigo-50/50 dark:bg-indigo-950/20 border-l-4 border-l-indigo-500 animate-pulse transition-all align-top"
+                                >
+                                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap inline-flex items-center justify-center text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800">
+                                      长尾待决
+                                    </span>
+                                  </td>
+                                  <td className="px-3.5 py-2.5">
+                                    <div className="flex items-center gap-1.5 font-bold text-indigo-900 dark:text-indigo-200 text-xs">
+                                      <span className="material-symbols-outlined text-sm animate-spin text-indigo-600 dark:text-indigo-400">sync</span>
+                                      <span>{prop.raw_name}</span>
+                                    </div>
+                                    <div className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-0.5">
+                                      原始提取项目 · Tier 2 语义条款对齐中
+                                    </div>
+                                  </td>
+                                  <td className="px-3.5 py-2.5">
+                                    <div className="flex items-center gap-1.5 text-xs text-on-surface-variant dark:text-outline-variant">
+                                      <span className="inline-block w-24 h-3 rounded bg-indigo-200/60 dark:bg-indigo-800/40 animate-pulse" />
+                                      <span className="text-[11px]">匹配切片条款中...</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3.5 py-2.5 font-mono font-bold text-xs text-on-surface dark:text-surface-bright">
+                                    {String(prop.raw_value ?? '')} {prop.unit || ''}
+                                  </td>
+                                  <td className="px-3.5 py-2.5 font-mono text-[11px] text-outline-variant">
+                                    --
+                                  </td>
+                                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 inline-flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping" />
+                                      <span>对齐中</span>
+                                    </span>
+                                  </td>
+                                  <td className="px-3.5 py-2.5 text-xs text-indigo-800 dark:text-indigo-300">
+                                    <div className="flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-sm text-indigo-600">psychology</span>
+                                      <span>受限候选集语义推断中，置信度达标将自动合入合规报告</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+
+                            {/* 态 3：行内人机协同 (HITL) 待核实确认交互卡片 */}
+                            {currentBatchState?.stage === 'hitl_pending' && currentBatchState.hitlContext && (
+                              <tr className="bg-amber-50/70 dark:bg-amber-950/40 border-l-4 border-l-amber-500 transition-all">
+                                <td colSpan={7} className="p-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/60 shadow-xs">
+                                    <div className="flex items-start gap-2.5">
+                                      <span className="material-symbols-outlined text-xl text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
+                                        handshake
+                                      </span>
+                                      <div>
+                                        <div className="text-xs font-bold text-amber-900 dark:text-amber-100 flex items-center gap-2">
+                                          <span>人机协同 (HITL) 待核实确认</span>
+                                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 font-mono">
+                                            {currentBatchState.hitlContext.reason}
+                                          </span>
+                                        </div>
+                                        <p className="text-[12px] text-amber-800 dark:text-amber-200 mt-1 leading-relaxed">
+                                          {currentBatchState.hitlContext.prompt_message}
+                                        </p>
+                                        {currentBatchState.hitlContext.suggestions && Object.keys(currentBatchState.hitlContext.suggestions).length > 0 && (
+                                          <div className="mt-2 flex items-center gap-2 text-[11px] text-amber-800 dark:text-amber-300 font-sans">
+                                            <span className="font-semibold">AI 候选推荐:</span>
+                                            {Object.entries(currentBatchState.hitlContext.suggestions).map(([raw, target]) => (
+                                              <span key={raw} className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/80 border border-amber-300 dark:border-amber-700 font-mono font-bold">
+                                                {raw} → {String(target)}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* 行内快捷采纳与展开复核操作 */}
+                                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                      {currentBatchState.hitlContext.suggestions && Object.keys(currentBatchState.hitlContext.suggestions).length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const entries = Object.entries(currentBatchState.hitlContext?.suggestions || {});
+                                            if (entries.length > 0 && entries[0]) {
+                                              const [rawKey, targetKey] = entries[0];
+                                              handleInlineAdoptProperty(currentBatch.batchNo, rawKey, String(targetKey));
+                                            }
+                                          }}
+                                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                        >
+                                          <span className="material-symbols-outlined text-sm">done_all</span>
+                                          <span>采纳推荐项</span>
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={handleTriggerHitl}
+                                        className="px-3 py-1.5 rounded-lg border border-amber-400 dark:border-amber-600 text-amber-900 dark:text-amber-200 bg-surface-container-lowest dark:bg-surface-dark hover:bg-amber-100/50 dark:hover:bg-amber-900/30 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-sm">tune</span>
+                                        <span>人工细化复核</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
                             )}
                           </tbody>
                         </table>

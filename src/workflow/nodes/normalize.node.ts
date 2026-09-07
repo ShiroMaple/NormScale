@@ -1,6 +1,7 @@
 import { CertificateNormalizer } from '../../normalizer/certificate-normalizer.ts';
+import { PropertyKeyNormalizer } from '../../normalizer/property-key-normalizer.ts';
 import { IRuleStore } from '../../repository/rule-store.interface.ts';
-import { QualityAuditState, HitlInterruptContext } from '../state.interface.ts';
+import { QualityAuditState, HitlInterruptContext, PropertyResolutionCandidate } from '../state.interface.ts';
 import { getSafeCollector } from '../trace-helper.ts';
 import { logger } from '../../logger/index.ts';
 
@@ -40,6 +41,17 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
             if (rec.raw_property_name && humanCorrection.corrected_test_records[rec.raw_property_name] !== undefined) {
               rec.raw_value = humanCorrection.corrected_test_records[rec.raw_property_name];
               logger.info('WORKFLOW', `[Node 2: Normalize] 应用人工修正字段 [${rec.raw_property_name}] = ${String(rec.raw_value)}`);
+            }
+          }
+        }
+        if (humanCorrection.corrected_property_keys && payloadToClean.test_records) {
+          for (const rec of payloadToClean.test_records) {
+            const rawKey = rec.raw_property_name;
+            if (rawKey && humanCorrection.corrected_property_keys[rawKey]) {
+              const newKey = humanCorrection.corrected_property_keys[rawKey];
+              rec.raw_property_name = newKey;
+              logger.info('WORKFLOW', `[Node 2: Normalize] 应用人工修正属性 [${rawKey}] -> [${newKey}]`);
+              collector.addTrace('WORKFLOW', 'info', `[人工修正属性] ${rawKey} -> ${newKey}`);
             }
           }
         }
@@ -95,10 +107,39 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
         };
       }
 
+      // 扫描未命中已知标准规则、标记为沙箱或大类为 other 的长尾属性
+      const unresolved: PropertyResolutionCandidate[] = [];
+      if (certificate && Array.isArray(certificate.test_records) && !humanCorrection?.corrected_property_keys) {
+        for (const rec of certificate.test_records) {
+          const rawName = rec.raw_property_name || rec.property_key;
+          const norm = PropertyKeyNormalizer.normalize(rawName, rec.category, {
+            measuredRaw: rec.measured_value_raw ?? rec.measured_value_num,
+            unit: rec.unit,
+          });
+
+          // 如果不属于已知标准项，或属于沙箱非标项，或大类为 other
+          if (!norm.is_known || norm.is_sandbox || rec.category === 'other') {
+            unresolved.push({
+              raw_name: rawName,
+              raw_value: rec.measured_value_raw ?? rec.measured_value_num,
+              raw_category: rec.category,
+              unit: rec.unit,
+              source_tier: 'tier1',
+              resolved_key: norm.property_key,
+              resolved_category: norm.category,
+              confidence: 0.5,
+              reasoning: 'Tier 1 确定性规则未完全收录该长尾项，转入 Tier 2 语义裁决',
+              is_standard_rule: false,
+            });
+          }
+        }
+      }
+
       return {
         normalizedCert: certificate,
         normalizationAudit: audit_log,
         hitlContext,
+        unresolvedProperties: unresolved.length > 0 ? unresolved : undefined,
         traces: collector.getTraces(),
         workflowStatus: hitlContext ? 'awaiting_human_review' : 'retrieving_standard',
       };

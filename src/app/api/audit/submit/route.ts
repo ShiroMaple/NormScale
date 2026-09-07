@@ -14,6 +14,8 @@ const SubmitAuditRequestSchema = z.object({
   standardIds: z.array(z.string()).optional(),
   /** 材料牌号路由键 (如 'S32168') */
   gradeKey: z.string().optional(),
+  /** 是否启用 SSE 流式渐进响应 */
+  stream: z.boolean().optional(),
   /** 运行期核验配置选项 */
   options: z
     .object({
@@ -22,6 +24,8 @@ const SubmitAuditRequestSchema = z.object({
       forcedStandardIds: z.array(z.string()).optional(),
       forcedGradeKey: z.string().optional(),
       skipSemanticReview: z.boolean().optional(),
+      sessionId: z.string().optional(),
+      batchNo: z.string().optional(),
       contextId: z.string().optional(),
     })
     .optional(),
@@ -327,7 +331,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { sampleId, rawPayload, batchSpecimen, standardIds, gradeKey, options } = parseResult.data;
+    const { sampleId, rawPayload, batchSpecimen, standardIds, gradeKey, options, stream } = parseResult.data;
 
     let inputData: any;
     let effectiveOptions = options || {};
@@ -338,6 +342,7 @@ export async function POST(request: Request) {
         ...effectiveOptions,
         forcedStandardIds: standardIds || effectiveOptions.forcedStandardIds,
         forcedGradeKey: gradeKey || effectiveOptions.forcedGradeKey,
+        batchNo: effectiveOptions.batchNo || (batchSpecimen.batchNo ? String(batchSpecimen.batchNo) : undefined),
       };
     } else if (sampleId) {
       inputData = sampleId;
@@ -348,6 +353,37 @@ export async function POST(request: Request) {
         { success: false, error: '请求必须提供 batchSpecimen、rawPayload 结构化数据或 sampleId' },
         { status: 400 }
       );
+    }
+
+    // 若客户端要求启用 SSE 流式通信 (渐进式返回 Tier 1 大盘与后续增量/HITL)
+    if (stream) {
+      const encoder = new TextEncoder();
+      const streamGenerator = serverWorkflowEngine.streamAudit(inputData, effectiveOptions);
+
+      const customReadable = new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const event of streamGenerator) {
+              const payload = `data: ${JSON.stringify(event)}\n\n`;
+              controller.enqueue(encoder.encode(payload));
+            }
+            controller.close();
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const errPayload = `data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`;
+            controller.enqueue(encoder.encode(errPayload));
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(customReadable, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+        },
+      });
     }
 
     const result = await serverWorkflowEngine.submitAudit(inputData, effectiveOptions);

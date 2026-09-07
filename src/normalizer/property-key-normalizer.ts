@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { RuleCategory } from '../schemas/standard.schema';
 
 export interface NormalizedPropertyResult {
@@ -15,6 +17,8 @@ export interface NormalizedPropertyResult {
   is_known: boolean;
   /** 是否属于非标安全沙箱项 (未命中已知规则，需隔离不参与判废) */
   is_sandbox?: boolean;
+  /** 是否由质检员人工确认沉淀的动态自学习别名 */
+  is_learned?: boolean;
 }
 
 export interface NormalizationContext {
@@ -22,6 +26,16 @@ export interface NormalizationContext {
   measuredRaw?: unknown;
   /** 量纲单位 (如 'μm', 'MPa', '%', 'J') */
   unit?: string | null;
+}
+
+/** 动态自学习别名字典条目 */
+export interface LearnedAliasEntry {
+  raw_alias: string;
+  property_key: string;
+  category: RuleCategory;
+  display_name?: string;
+  learned_at?: string;
+  source?: 'human_confirmed' | 'llm_auto_promoted';
 }
 
 /**
@@ -33,10 +47,15 @@ export interface NormalizationContext {
  * 例如力学拉伸项目可能写作 '抗拉强度'、'Rm'、'TS'、'Tensile Strength'、'抗张力'；
  * 屈服强度可能写作 '屈服点'、'ReH'、'ReL'、'Rp0.2'、'YS'、'0.2% Yield'。
  * 
- * 本类利用规则匹配与智能模式识别，将所有异构名称映射为系统统一的 property_key 与 category。
+ * 本类利用规则匹配、智能模式识别与质检员经验自学习机制，将所有异构名称映射为系统统一的 property_key 与 category。
  * ============================================================================
  */
 export class PropertyKeyNormalizer {
+  /** 动态自学习别名内存倒排索引表 (键为大写清洗后的别名) */
+  private static learnedAliasesMap: Map<string, LearnedAliasEntry> = new Map();
+  private static isInitialized: boolean = false;
+  private static customStoragePath?: string;
+
   /** 常见化学元素符号集合 */
   private static readonly CHEMICAL_ELEMENTS: Record<string, string> = {
     'C': '碳', 'SI': '硅', 'MN': '锰', 'P': '磷', 'S': '硫',
@@ -44,6 +63,125 @@ export class PropertyKeyNormalizer {
     'TI': '钛', 'NB': '铌', 'AL': '铝', 'V': '钒', 'W': '钨',
     'B': '硼', 'CO': '钴', 'FE': '铁', 'PB': '铅', 'SN': '锡',
   };
+
+  /**
+   * 初始化加载本地已学习的别名规则库
+   */
+  public static initLearnedAliases(customPath?: string): void {
+    if (customPath) {
+      this.customStoragePath = customPath;
+    } else {
+      this.customStoragePath = undefined;
+    }
+    this.learnedAliasesMap.clear();
+    const filePath = this.customStoragePath || path.resolve(process.cwd(), 'data/standards/user_learned_aliases.json');
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (item.raw_alias && item.property_key) {
+              const cleanKey = item.raw_alias.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '');
+              this.learnedAliasesMap.set(cleanKey, item);
+            }
+          }
+        }
+      }
+    } catch {
+      // 防御性静默，确保文件异常不崩溃主核验链路
+    }
+    this.isInitialized = true;
+  }
+
+  /**
+   * 注册并持久化新的自学习别名映射 (质检员经验沉淀回流)
+   */
+  public static registerLearnedAlias(
+    rawAlias: string,
+    targetPropertyKey: string,
+    category?: RuleCategory,
+    displayName?: string,
+    persist: boolean = true
+  ): void {
+    if (!this.isInitialized) {
+      this.initLearnedAliases();
+    }
+
+    const cleanKey = rawAlias.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '');
+    const inferredCategory = category || this.inferCategoryFromPropertyKey(targetPropertyKey);
+    const entry: LearnedAliasEntry = {
+      raw_alias: rawAlias,
+      property_key: targetPropertyKey,
+      category: inferredCategory,
+      display_name: displayName || targetPropertyKey,
+      learned_at: new Date().toISOString(),
+      source: 'human_confirmed',
+    };
+
+    this.learnedAliasesMap.set(cleanKey, entry);
+
+    if (persist) {
+      this.saveLearnedAliasesToFile();
+    }
+  }
+
+  /**
+   * 清空当前学习到的别名 (用于单元测试隔离)
+   */
+  public static clearLearnedAliases(): void {
+    this.learnedAliasesMap.clear();
+    this.isInitialized = true;
+  }
+
+  /**
+   * 将自学习别名异步/安全写入本地持久化文件
+   */
+  private static saveLearnedAliasesToFile(): void {
+    const filePath = this.customStoragePath || path.resolve(process.cwd(), 'data/standards/user_learned_aliases.json');
+    try {
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const list = Array.from(this.learnedAliasesMap.values());
+      fs.writeFileSync(filePath, JSON.stringify(list, null, 2), 'utf8');
+    } catch {
+      // 防御性异常处理
+    }
+  }
+
+  /**
+   * 根据目标 property_key 智能推断检验大类 (RuleCategory)
+   */
+  private static inferCategoryFromPropertyKey(key: string): RuleCategory {
+    const k = key.toLowerCase();
+    if (this.CHEMICAL_ELEMENTS[key.toUpperCase()] || ['c', 'si', 'mn', 'p', 's', 'ni', 'cr', 'mo', 'ti', 'nb', 'n', 'cu'].includes(k)) {
+      return 'chemical';
+    }
+    if (k.includes('tensile') || k.includes('yield') || k.includes('elongation') || k.includes('hardness') || k.includes('impact')) {
+      return 'mechanical';
+    }
+    if (k.includes('roughness') || k.includes('surface')) {
+      return 'surface';
+    }
+    if (k.includes('corrosion') || k.includes('intergranular')) {
+      return 'corrosion';
+    }
+    if (k.includes('flattening') || k.includes('flaring') || k.includes('bending')) {
+      return 'process';
+    }
+    if (k.includes('eddy') || k.includes('ultrasonic') || k.includes('ndt') || k.includes('pressure')) {
+      return 'ndt';
+    }
+    if (k.includes('grain') || k.includes('metallographic')) {
+      return 'metallographic';
+    }
+    if (k.includes('dimension') || k.includes('diameter') || k.includes('thickness')) {
+      return 'geometric';
+    }
+    return 'other';
+  }
 
   /** 化学中文名称到化学元素符号映射 */
   private static readonly CHEMICAL_CHINESE_MAP: Record<string, string> = {
@@ -78,6 +216,22 @@ export class PropertyKeyNormalizer {
     // 自动剥离常见工程与视觉标记前缀 (如 geo_surface_quality -> surface_quality, proc_flaring -> flaring)
     const strippedStr = str.replace(/^(geo|proc|ndt|mech|metallo|chem)_/i, '');
     const upperStr = strippedStr.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '');
+
+    // 0. 优先命中质检员确认沉淀的动态自学习别名字典 (Tier 1 Fast-Path 经验直通)
+    if (!this.isInitialized) {
+      this.initLearnedAliases();
+    }
+    const learned = this.learnedAliasesMap.get(upperStr);
+    if (learned) {
+      return {
+        raw_property_name: rawName,
+        property_key: learned.property_key,
+        category: learned.category,
+        display_name: learned.display_name || learned.property_key,
+        is_known: true,
+        is_learned: true,
+      };
+    }
 
     // 1. 优先化学成分判定
     // (a) 纯化学符号 (如 'C', 'SI', 'NI', 'CR', 'MO', 'TI')

@@ -4,6 +4,43 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-07 · 知识经验闭环反哺与端到端全量验收落地 (Phase 4)
+
+- 质检经验自学习与动态别名沉淀 (`src/normalizer/property-key-normalizer.ts`, `human-review.node.ts`):
+  1. `PropertyKeyNormalizer` 实现 `LearnedAliasEntry` 内存索引与本地 JSON 持久化，优先以 O(1) 命中已学习别名；
+  2. HITL 恢复与 API 端点 (`api/audit/resume/[taskId]`) 自动提取质检员确认的映射关系并沉淀入库，实现同类项下次直通 Tier 1 Fast-Path。
+- 引擎鲁棒性与测试隔离加固 (`src/repository/file-rule-store.ts`, `dynamic-alias-learning.test.ts`):
+  1. `FileRuleStore` 强化文件扫描与类型防护，严密隔离规则文件与自学习字典，杜绝并发解析异常；
+  2. 重置机制与临时存储路径彻底解耦，保障多测试用例与生产环境的高并发稳定性。
+- 全量质量门禁达成:
+  1. 单元测试: 44 个测试套件，209 个测试用例 100% 绿色通过 (新增动态别名自学习端到端闭环单测)；
+  2. 类型安全: `tsc --noEmit` 0 错误 (严格模式)；
+  3. 生产构建: Next.js 15 `pnpm build` 全量 12 路由打包成功。
+
+## 2026-09-07 · 渐进式流式通信与前端无状态展示容器升级落地 (Phase 3)
+
+- 后端 SSE 渐进式事件流调度 (`src/workflow/workflow-engine.ts`, `audit/submit/route.ts`):
+  1. 拓扑优化为 Tier 1 确定性规则优先出具完整大盘结果 (`tier1_ready`)，长尾项异步流转 Tier 2/3 (`tier2_patch`, `hitl_interrupt`, `complete`)；
+  2. 接口支持 SSE 流式传输，兼容传统 JSON 请求，线程标识 `thread_id: ${sessionId}::${batchNo}` 严格物理隔离。
+- 前端无状态展示容器升级 (`src/lib/api-client.ts`, `src/components/WaterfallWorkbench.tsx`):
+  1. 建立 `batchPresentationMap: Record<string, BatchPresentationState>` 独立状态池，切换批次零重算、零混淆；
+  2. 落地比对矩阵三态渲染：态 1（已定型行）、态 2（长尾对齐中微光呼吸行）、态 3（行内人机协同确认卡片）；
+  3. 结果旗帜平滑演进：支持“核心指标就绪·扩展条款对齐中”过渡态与“待人工复核”HITL 状态展示。
+- 质量门禁: 43 个测试套件 206 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 `pnpm build` 全量 12 路由构建成功。
+
+
+## 2026-09-07 · LangGraph 多批次并发线程隔离与三层工作流编排落地 (Phase 2)
+
+- 多批次并发物理线程隔离 (`src/workflow/workflow-engine.ts`, `state.interface.ts`):
+  1. 调度层统一生成 `thread_id: ${sessionId}::${batchNo}`，通过 Checkpoint 机制保证 N 批次并发状态完全独立，单批次挂起不阻塞其余批次。
+- Tier 2 受限候选集长尾消歧节点 (`src/workflow/nodes/llm-property-resolver.node.ts`):
+  1. 从标准切片规则池提取封闭候选集，执行长尾非标属性（如表面光洁度）与标准指标（粗糙度）的意图对齐；
+  2. 置信度 >= 0.85 自动升级规范指标；置信度不足时触发 `PROPERTY_AMBIGUITY` 人机协同挂起。
+- 状态图拓扑与人机协同增强 (`src/workflow/audit-graph.ts`, `human-review.node.ts`):
+  1. 拓扑连线支持 `normalize -> llm_property_resolver -> human_review -> retrieve_standard` 双条件分流；
+  2. 人机修正支持 `corrected_property_keys` 动态注入并恢复流转。
+- 质量门禁: 42 个测试套件 203 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 `pnpm build` 编译打包 0 错误。
+
 ## 2026-09-07 · 钛公式修约对齐与表面质量/粗糙度原子化解耦落地 (Phase 1)
 
 - 钛含量公式修约精度对齐 (`data/standards/NB_T_47019_5_2021/slices/S32168_06Cr18Ni11Ti.json`):

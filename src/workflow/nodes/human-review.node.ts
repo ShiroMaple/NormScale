@@ -1,5 +1,6 @@
 import { interrupt } from '@langchain/langgraph';
 import { QualityAuditState, HitlInterruptContext, HumanCorrectionInput } from '../state.interface.ts';
+import { PropertyKeyNormalizer } from '../../normalizer/property-key-normalizer.ts';
 import { getSafeCollector } from '../trace-helper.ts';
 import { logger } from '../../logger/index.ts';
 
@@ -33,16 +34,31 @@ export function createHumanReviewNode() {
       );
     }
 
+    const correctedDetails = userResponse?.corrected_grade
+      ? `修正牌号 [${userResponse.corrected_grade}]`
+      : (userResponse?.corrected_property_keys ? `修正属性 [${Object.keys(userResponse.corrected_property_keys).join(', ')}]` : '未修改');
+
     logger.info(
       'WORKFLOW',
-      `[Node 6: Human Review] 接收到质检员人工修正恢复提交 (修正牌号: [${userResponse?.corrected_grade || '未修改'}])`
+      `[Node 6: Human Review] 接收到质检员人工修正恢复提交 (${correctedDetails})`
     );
     if (userResponse) {
       collector.addTrace(
         'WORKFLOW',
         'info',
-        `[人工审核恢复] 质检员提交修正: 牌号 [${userResponse.corrected_grade || '保持原样'}]`
+        `[人工审核恢复] 质检员提交修正: ${correctedDetails}`
       );
+
+      // 知识经验闭环反哺: 质检员确认的别名映射自动异步沉淀至本地规则库，下次直通 Tier 1 Fast-Path
+      if (userResponse.corrected_property_keys) {
+        for (const [rawKey, targetKey] of Object.entries(userResponse.corrected_property_keys)) {
+          if (rawKey && targetKey) {
+            PropertyKeyNormalizer.registerLearnedAlias(rawKey, targetKey, undefined, undefined, true);
+            logger.info('WORKFLOW', `[知识沉淀] 质检员确认别名 [${rawKey} -> ${targetKey}] 已沉淀至规则库`);
+            collector.addTrace('WORKFLOW', 'info', `[知识沉淀] 别名 [${rawKey} -> ${targetKey}] 已沉淀至规则库`);
+          }
+        }
+      }
     }
 
     return {

@@ -1,5 +1,5 @@
 import { AuditReport } from '@/schemas/report.schema.ts';
-import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions } from '@/workflow/state.interface.ts';
+import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions, PropertyResolutionCandidate } from '@/workflow/state.interface.ts';
 import { RawCertificatePayload } from '@/extractor/extractor.interface.ts';
 
 export interface StandardOverviewDto {
@@ -30,6 +30,44 @@ export interface AuditApiResponse {
   error?: string;
 }
 
+/** 渐进式流式回调监听契约 */
+export interface AuditStreamCallbacks {
+  /** Tier 1 确定性规则大盘结果就绪 */
+  onTier1Ready?: (data: {
+    taskId: string;
+    batchNo?: string;
+    report: AuditReport;
+    pendingProperties?: PropertyResolutionCandidate[];
+    hasPending: boolean;
+  }) => void;
+  /** Tier 2 LLM 长尾消歧补丁就绪 */
+  onTier2Patch?: (data: {
+    taskId: string;
+    batchNo?: string;
+    finalReport: AuditReport;
+    resolvedProperties?: PropertyResolutionCandidate[];
+  }) => void;
+  /** Tier 3 触发人机协同挂起 */
+  onHitlInterrupt?: (data: {
+    taskId: string;
+    batchNo?: string;
+    hitlContext: HitlInterruptContext;
+    partialReport?: AuditReport;
+  }) => void;
+  /** 全流程核验完成 */
+  onComplete?: (data: {
+    taskId: string;
+    batchNo?: string;
+    finalReport: AuditReport;
+  }) => void;
+  /** 异常失败 */
+  onError?: (err: {
+    taskId: string;
+    batchNo?: string;
+    error: string;
+  }) => void;
+}
+
 /**
  * ============================================================================
  * 前端 API 交互客户端 (Type-Safe Frontend API Client)
@@ -52,7 +90,7 @@ export const apiClient = {
     return json.data;
   },
 
-  /** 提交质保书核验任务 */
+  /** 提交质保书核验任务 (常规同步/等待模式) */
   async submitAudit(params: {
     sampleId?: string;
     rawPayload?: RawCertificatePayload;
@@ -69,6 +107,106 @@ export const apiClient = {
     });
     const json = await res.json();
     return json;
+  },
+
+  /** 提交质保书流式渐进核验任务 (SSE 渐进式流式模式) */
+  async submitAuditStream(
+    params: {
+      sampleId?: string;
+      rawPayload?: RawCertificatePayload;
+      batchSpecimen?: any;
+      standardIds?: string[];
+      gradeKey?: string;
+      options?: WorkflowOptions;
+    },
+    callbacks?: AuditStreamCallbacks,
+    signal?: AbortSignal
+  ): Promise<AuditApiResponse> {
+    try {
+      const res = await fetch('/api/audit/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...params, stream: true }),
+        cache: 'no-store',
+        signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        const errMsg = `请求失败 [${res.status}]: ${errText}`;
+        callbacks?.onError?.({ taskId: '', error: errMsg });
+        return { success: false, taskId: '', status: 'failed', error: errMsg };
+      }
+
+      if (!res.body) {
+        const errMsg = '响应体为空，无法建立流式传输';
+        callbacks?.onError?.({ taskId: '', error: errMsg });
+        return { success: false, taskId: '', status: 'failed', error: errMsg };
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const finalResult: AuditApiResponse = {
+        success: true,
+        taskId: '',
+        status: 'completed',
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+
+        for (const block of parts) {
+          const trimmed = block.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const jsonStr = trimmed.replace(/^data:\s*/, '');
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.taskId) finalResult.taskId = event.taskId;
+
+            if (event.type === 'tier1_ready') {
+              callbacks?.onTier1Ready?.(event);
+              finalResult.finalReport = event.report;
+            } else if (event.type === 'tier2_patch') {
+              callbacks?.onTier2Patch?.(event);
+              finalResult.finalReport = event.finalReport;
+            } else if (event.type === 'hitl_interrupt') {
+              callbacks?.onHitlInterrupt?.(event);
+              finalResult.status = 'suspended_hitl';
+              finalResult.hitlContext = event.hitlContext;
+              if (event.partialReport && !finalResult.finalReport) {
+                finalResult.finalReport = event.partialReport;
+              }
+            } else if (event.type === 'complete') {
+              callbacks?.onComplete?.(event);
+              finalResult.status = 'completed';
+              finalResult.finalReport = event.finalReport;
+            } else if (event.type === 'error') {
+              callbacks?.onError?.(event);
+              finalResult.status = 'failed';
+              finalResult.error = event.error;
+              finalResult.success = false;
+            }
+          } catch (parseErr) {
+            console.error('[submitAuditStream] JSON 解析异常:', parseErr, jsonStr);
+          }
+        }
+      }
+
+      return finalResult;
+    } catch (streamErr: unknown) {
+      if (signal?.aborted) {
+        return { success: false, taskId: '', status: 'failed', error: '请求已取消' };
+      }
+      const errMsg = streamErr instanceof Error ? streamErr.message : String(streamErr);
+      callbacks?.onError?.({ taskId: '', error: errMsg });
+      return { success: false, taskId: '', status: 'failed', error: errMsg };
+    }
   },
 
   /** 恢复挂起的任务 (质检员提交人工修正) */

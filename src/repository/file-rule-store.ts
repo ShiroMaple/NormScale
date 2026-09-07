@@ -75,7 +75,12 @@ export class FileRuleStore implements IRuleStore {
         if (entry.isDirectory()) {
           // 模块化切片目录结构 (data/standards/GB_T_13296_2023/)
           await this.loadModularStandard(fullPath);
-        } else if (entry.isFile() && entry.name.endsWith('.json')) {
+        } else if (
+          entry.isFile() &&
+          entry.name.endsWith('.json') &&
+          !entry.name.includes('alias') &&
+          !entry.name.startsWith('test_')
+        ) {
           // 单体 JSON 兼容模式 (data/standards/GB_T_13296_2023.json)
           await this.loadMonolithicStandard(fullPath);
         }
@@ -128,7 +133,11 @@ export class FileRuleStore implements IRuleStore {
 
   private async loadMonolithicStandard(filePath: string): Promise<void> {
     try {
-      const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const fileText = fs.readFileSync(filePath, 'utf8');
+      const content = JSON.parse(fileText);
+      if (!content || typeof content !== 'object' || Array.isArray(content) || !content.standard_meta) {
+        return;
+      }
       const ruleSet = StandardRuleSetSchema.parse(content);
       const meta = ruleSet.standard_meta;
       const normStdId = this.normalizeStandardId(meta.standard_id);
@@ -175,8 +184,9 @@ export class FileRuleStore implements IRuleStore {
         slices: slicesMap,
         uniqueSlices,
       });
-    } catch (err) {
-      console.error(`[FileRuleStore] 加载单体标准失败: ${filePath}`, err);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.warn('REPOSITORY', `[FileRuleStore] 跳过非标准文件或解析异常: ${filePath} (${errMsg})`);
     }
   }
 

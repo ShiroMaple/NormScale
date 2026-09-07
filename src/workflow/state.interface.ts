@@ -61,11 +61,27 @@ export interface QualitativeAmbiguityDetails {
   model_confidence: string;
 }
 
+/** 检验属性语义解析候选对象 (用于 Tier 1 -> Tier 2 -> Tier 3 追踪) */
+export interface PropertyResolutionCandidate {
+  raw_name: string;
+  raw_value: unknown;
+  raw_category?: string;
+  unit?: string;
+  source_tier: 'tier1' | 'tier2' | 'tier3';
+  resolved_key?: string;
+  resolved_category?: string;
+  confidence: number;
+  reasoning?: string;
+  is_standard_rule?: boolean;
+}
+
 /** 人机协同 (HITL) 中断挂起上下文 */
 export interface HitlInterruptContext {
   /** 挂起触发原因 */
   reason:
     | 'UNKNOWN_GRADE'
+    | 'PROPERTY_AMBIGUITY'
+    | 'SHEARS_ANOMALY'
     | 'ALTERNATIVE_CLAUSE'
     | 'MULTI_STANDARD_CONFLICT'
     | 'QUALITATIVE_AMBIGUITY'
@@ -88,6 +104,8 @@ export interface HitlInterruptContext {
   conflict_details?: MultiStandardConflictDetails;
   /** 定性语义争议详情 (针对 QUALITATIVE_AMBIGUITY 场景) */
   qualitative_details?: QualitativeAmbiguityDetails;
+  /** 长尾属性语义歧义详情 (针对 PROPERTY_AMBIGUITY 场景) */
+  property_ambiguity_details?: PropertyResolutionCandidate;
 }
 
 /** 人工修正与恢复提交数据 */
@@ -96,6 +114,8 @@ export interface HumanCorrectionInput {
   corrected_grade?: string;
   /** 质检员修正后的实测数据项覆盖映射 (property_key -> value) */
   corrected_test_records?: Record<string, unknown>;
+  /** 质检员确认/修正后的属性键名映射 (raw_property_name -> property_key) */
+  corrected_property_keys?: Record<string, string>;
   /** 是否认可替代条款 (针对 ALTERNATIVE_CLAUSE 场景) */
   accepted_alternative_clause?: boolean;
   /** 仲裁选定的主裁决标准代号 (针对 MULTI_STANDARD_CONFLICT 场景) */
@@ -120,6 +140,10 @@ export interface WorkflowOptions {
   forcedGradeKey?: string;
   /** 是否跳过语义条款复核 (仅执行确定性规则比对) */
   skipSemanticReview?: boolean;
+  /** 会话标识 (用于多批次线程物理隔离) */
+  sessionId?: string;
+  /** 批次编号 (用于多批次线程物理隔离) */
+  batchNo?: string;
   /** 质检任务上下文标识 */
   contextId?: string;
 }
@@ -129,6 +153,7 @@ export type WorkflowStatus =
   | 'initialized'
   | 'extracting'
   | 'normalizing'
+  | 'resolving_properties'
   | 'retrieving_standard'
   | 'evaluating'
   | 'reviewing_clauses'
@@ -175,6 +200,10 @@ export const QualityAuditStateAnnotation = Annotation.Root({
     reducer: (curr, update) => (curr || []).concat(update || []),
     default: () => [],
   }),
+  /** 待决/长尾属性池 (进入 Tier 2/Tier 3 裁决) */
+  unresolvedProperties: Annotation<PropertyResolutionCandidate[] | undefined>(),
+  /** 已完成语义消歧裁决的属性列表 */
+  resolvedProperties: Annotation<PropertyResolutionCandidate[] | undefined>(),
   /** 最终完整质检核验报告 (包含决策汇总、单项明细与审计轨迹) */
   finalReport: Annotation<AuditReport | undefined>(),
   /** 错误异常信息 */
