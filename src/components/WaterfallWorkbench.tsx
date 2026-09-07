@@ -10,6 +10,7 @@ import {
   generateSessionId,
 } from '@/types/session.ts';
 import { BatchContextBar } from './BatchContextBar.tsx';
+import { EditableValueField } from './EditableValueField.tsx';
 import { FieldBBox } from '@/types/bbox.ts';
 import { HitlDrawer } from './HitlDrawer.tsx';
 import { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.interface.ts';
@@ -119,7 +120,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 }) => {
   // 当前激活的步骤索引：0 (Step 1), 1 (Step 2), 2 (Step 3), 3 (Step 4)
   const [currentStep, setCurrentStep] = useState<number>(initialStep);
-  const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [zoomLevel, setZoomLevel] = useState<number>(150);
   const [rotation, setRotation] = useState<number>(0); // 顺时针旋转角度 (0, 90, 180, 270)
   const [pageOrientationOverride, setPageOrientationOverride] = useState<'auto' | 'portrait' | 'landscape'>('auto'); // 用户版式覆盖 (auto自适应, portrait强制竖版, landscape强制横版)
   const [pageAspectRatios, setPageAspectRatios] = useState<Record<number, number>>({}); // 页面自适应宽高比缓存
@@ -2003,8 +2004,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                   {/* 底部信息标注 */}
                   <div className="text-[10px] text-on-surface-variant dark:text-outline-variant pt-2 border-t border-outline-variant/30 dark:border-border-dark flex items-center justify-between mt-3">
-                    <span>单会话限 1 份</span>
-                    <span className="font-mono">限定 PDF</span>
+                    <span>限 1 份</span>
+                    <span>限定 PDF</span>
                   </div>
                 </div>
               </div>
@@ -2224,9 +2225,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => setZoomLevel(100)}
+                            onClick={() => setZoomLevel(150)}
                             className="px-1.5 py-0.5 rounded text-xs font-bold hover:bg-surface-container-high dark:hover:bg-surface-dark-high text-on-surface dark:text-surface-bright transition-colors cursor-pointer"
-                            title="点击一键还原为 100%"
+                            title="点击一键还原为 150%"
                           >
                             {zoomLevel}%
                           </button>
@@ -2663,13 +2664,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               <span className="material-symbols-outlined text-sm text-primary dark:text-primary-fixed-dim">label</span>
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant  font-bold">批次号:</span>
                             </div>
-                            <input
-                              type="text"
+                            <EditableValueField
                               value={currentBatch.batchNo}
-                              onChange={(e) => handleUpdateBatchNo(e.target.value)}
-                              onFocus={() => handleFieldHover('meta_batchNo')}
-                              className="text-xs  font-bold text-primary dark:text-primary-fixed-dim bg-transparent focus:outline-none flex-1 text-left px-1 border-b border-dashed border-primary/40 focus:border-primary min-w-0"
+                              onChange={(val) => handleUpdateBatchNo(val)}
                               title="修改当前批次号，将自动同步至上方选择器"
+                              className="flex-1"
                             />
                           </div>
 
@@ -2689,7 +2688,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <span>当前批次 OCR 置信度: {currentBatch.ocrConfidence}%</span>
                           </div>
 
-                          {/* 第 2 行：质保书编号 | 施工号 | 供货厂家 */}
+                          {/* 第 2 行：质保书编号 | 冶炼炉号 | 热处理炉号 */}
                           <div
                             id="right-field-meta_certificateNo"
                             onMouseEnter={() => handleFieldHover('meta_certificateNo')}
@@ -2697,56 +2696,45 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             className="transition-all cursor-pointer"
                           >
                             <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
-                            <input
-                              type="text"
+                            <EditableValueField
                               value={currentBatch.certificateNo || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_certificateNo', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_certificateNo')}
-                              placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_certificateNo'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              onChange={(val) => handleUpdateExtractValue('meta_certificateNo', val)}
+                              isHighlighted={highlightedFieldId === 'meta_certificateNo'}
+                              className="mt-1"
                             />
                           </div>
 
                           <div
-                            id="right-field-meta_constructionNo"
-                            onMouseEnter={() => handleFieldHover('meta_constructionNo')}
+                            id="right-field-meta_heatNo"
+                            onMouseEnter={() => handleFieldHover('meta_heatNo')}
                             onMouseLeave={() => handleFieldHover(null)}
                             className="transition-all cursor-pointer"
                           >
-                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">施工号 (Construction No)</span>
-                            <input
-                              type="text"
-                              value={currentBatch.constructionNo || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_constructionNo', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_constructionNo')}
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">冶炼炉号 (Heat No.)</span>
+                            <EditableValueField
+                              value={currentBatch.heatNo || ''}
+                              onChange={(val) => handleUpdateExtractValue('meta_heatNo', val)}
                               placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_constructionNo'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              title="原材料冶炼炉号 (Heat No.)"
+                              isHighlighted={highlightedFieldId === 'meta_heatNo'}
+                              className="mt-1"
                             />
                           </div>
 
                           <div
-                            id="right-field-meta_supplier"
-                            onMouseEnter={() => handleFieldHover('meta_supplier')}
+                            id="right-field-meta_packNo"
+                            onMouseEnter={() => handleFieldHover('meta_packNo')}
                             onMouseLeave={() => handleFieldHover(null)}
                             className="transition-all cursor-pointer"
                           >
-                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂家 (Supplier)</span>
-                            <input
-                              type="text"
-                              value={currentBatch.supplier || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_supplier', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_supplier')}
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理炉号 (Pack No.)</span>
+                            <EditableValueField
+                              value={currentBatch.packNo || ''}
+                              onChange={(val) => handleUpdateExtractValue('meta_packNo', val)}
                               placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_supplier'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              title="钢管热处理炉号 (Pack No.)"
+                              isHighlighted={highlightedFieldId === 'meta_packNo'}
+                              className="mt-1"
                             />
                           </div>
 
@@ -2758,16 +2746,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             className="transition-all cursor-pointer"
                           >
                             <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品品名 (Product Name)</span>
-                            <input
-                              type="text"
+                            <EditableValueField
                               value={currentBatch.productName || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_productName', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_productName')}
-                              placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 truncate transition-all ${highlightedFieldId === 'meta_productName'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              onChange={(val) => handleUpdateExtractValue('meta_productName', val)}
+                              isHighlighted={highlightedFieldId === 'meta_productName'}
+                              className="mt-1"
                             />
                           </div>
 
@@ -2779,34 +2762,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           >
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] text-on-surface-variant dark:text-outline-variant">材料牌号 (Material Grade)</span>
-                              {/* 暂不展示牌号匹配度
-                              <span
-                                className={`px-1.5 py-0.2 text-[10px] font-bold rounded shrink-0 border transition-colors ${currentBatch.gradeMatchConfidence === 100
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                                  : currentBatch.gradeMatchConfidence >= 90
-                                    ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
-                                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                                  }`}
-                                title={currentBatch.gradeMatchConfidence === 100
-                                  ? '标准规格切片库精确命中 (100%)'
-                                  : currentBatch.gradeMatchConfidence >= 90
-                                    ? '工业通用别名消歧映射成功 (98%)'
-                                    : '未收录未知牌号，建议人工复核 (50%)'
-                                }
-                              >
-                                匹配度 {currentBatch.gradeMatchConfidence}%
-                              </span> */}
                             </div>
-                            <input
-                              type="text"
+                            <EditableValueField
                               value={currentBatch.grade || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_grade', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_grade')}
-                              placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_grade'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              onChange={(val) => handleUpdateExtractValue('meta_grade', val)}
+                              isHighlighted={highlightedFieldId === 'meta_grade'}
+                              className="mt-1"
                             />
                           </div>
 
@@ -2817,61 +2778,15 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             className="transition-all cursor-pointer"
                           >
                             <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声称执行标准 (Declared Standard)</span>
-                            <input
-                              type="text"
+                            <EditableValueField
                               value={currentBatch.standard || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_standard', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_standard')}
-                              placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_standard'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              onChange={(val) => handleUpdateExtractValue('meta_standard', val)}
+                              isHighlighted={highlightedFieldId === 'meta_standard'}
+                              className="mt-1"
                             />
                           </div>
 
-                          {/* 第 4 行：双炉号追溯 (冶炼炉号 / 热处理装炉号) | 交货几何规格 | 热处理状态 */}
-                          <div className="transition-all">
-                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">
-                              冶炼炉号/热处理炉号(Heat/Pack No.)
-                            </span>
-                            <div className="grid grid-cols-2 gap-1.5 mt-1">
-                              {/* 1. 冶炼炉号 (Heat No.) */}
-                              <input
-                                id="right-field-meta_heatNo"
-                                type="text"
-                                value={currentBatch.heatNo || ''}
-                                onChange={(e) => handleUpdateExtractValue('meta_heatNo', e.target.value)}
-                                onFocus={() => handleFieldHover('meta_heatNo')}
-                                onMouseEnter={() => handleFieldHover('meta_heatNo')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                placeholder="--"
-                                title="原材料冶炼炉号 (Heat No.)"
-                                className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_heatNo'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                  : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                  }`}
-                              />
-
-                              {/* 2. 热处理炉号 (Pack No.) */}
-                              <input
-                                id="right-field-meta_packNo"
-                                type="text"
-                                value={currentBatch.packNo || ''}
-                                onChange={(e) => handleUpdateExtractValue('meta_packNo', e.target.value)}
-                                onFocus={() => handleFieldHover('meta_packNo')}
-                                onMouseEnter={() => handleFieldHover('meta_packNo')}
-                                onMouseLeave={() => handleFieldHover(null)}
-                                placeholder="--"
-                                title="钢管热处理炉号 (Pack No.)"
-                                className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer truncate ${highlightedFieldId === 'meta_packNo'
-                                  ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                  : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                  }`}
-                              />
-                            </div>
-                          </div>
-
+                          {/* 第 4 行：交货几何规格 | 热处理状态 | 供货厂家 */}
                           <div
                             id="right-field-meta_dimensions"
                             onMouseEnter={() => handleFieldHover('meta_dimensions')}
@@ -2879,16 +2794,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             className="transition-all cursor-pointer"
                           >
                             <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货几何规格 (Dimensions)</span>
-                            <input
-                              type="text"
+                            <EditableValueField
                               value={currentBatch.dimensions || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_dimensions', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_dimensions')}
+                              onChange={(val) => handleUpdateExtractValue('meta_dimensions', val)}
                               placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_dimensions'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              isHighlighted={highlightedFieldId === 'meta_dimensions'}
+                              className="mt-1"
                             />
                           </div>
 
@@ -2899,16 +2810,28 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             className="transition-all cursor-pointer"
                           >
                             <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理状态 (Delivery State)</span>
-                            <input
-                              type="text"
+                            <EditableValueField
                               value={currentBatch.deliveryState || ''}
-                              onChange={(e) => handleUpdateExtractValue('meta_deliveryState', e.target.value)}
-                              onFocus={() => handleFieldHover('meta_deliveryState')}
+                              onChange={(val) => handleUpdateExtractValue('meta_deliveryState', val)}
                               placeholder="--"
-                              className={`w-full text-xs font-bold mt-1 rounded border px-2.5 py-1 transition-all ${highlightedFieldId === 'meta_deliveryState'
-                                ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                : 'border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim'
-                                }`}
+                              isHighlighted={highlightedFieldId === 'meta_deliveryState'}
+                              className="mt-1"
+                            />
+                          </div>
+
+                          <div
+                            id="right-field-meta_supplier"
+                            onMouseEnter={() => handleFieldHover('meta_supplier')}
+                            onMouseLeave={() => handleFieldHover(null)}
+                            className="transition-all cursor-pointer"
+                          >
+                            <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂家 (Supplier)</span>
+                            <EditableValueField
+                              value={currentBatch.supplier || ''}
+                              onChange={(val) => handleUpdateExtractValue('meta_supplier', val)}
+                              placeholder="--"
+                              isHighlighted={highlightedFieldId === 'meta_supplier'}
+                              className="mt-1"
                             />
                           </div>
                         </div>
@@ -3264,28 +3187,20 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                           </td>
                                           <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
 
-                                          {/* 1. 提取测得值 / 试验结果（常态处于可编辑状态，置信度预警仅保留⚠️，hover浮层出详情） */}
+                                          {/* 1. 提取测得值 / 试验结果（常态处于常规Text展示，hover浮现编辑按钮，点击可编辑，置信度预警保留⚠️） */}
                                           <td className="px-3.5 py-1.5">
                                             <div className="flex items-center gap-1.5">
                                               <div className="relative flex-1 flex items-center max-w-[240px]">
-                                                <input
-                                                  type="text"
+                                                <EditableValueField
                                                   value={row.value}
-                                                  onChange={(e) => handleUpdateExtractValue(row.fieldId, e.target.value)}
-                                                  onFocus={() => handleFieldHover(row.fieldId)}
-                                                  onMouseEnter={() => handleFieldHover(row.fieldId)}
-                                                  onMouseLeave={() => handleFieldHover(null)}
-                                                  title="常态处于可编辑状态；点击聚焦或悬浮可联动查看原件切图"
-                                                  className={`w-full text-xs font-bold rounded border px-2.5 py-1 transition-all cursor-pointer ${isValueHighlighted
-                                                    ? 'border-primary ring-2 ring-primary/40 bg-primary/5 text-primary'
-                                                    : 'border-outline-variant/30 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark text-primary dark:text-primary-fixed-dim hover:border-primary/50'
-                                                    } ${row.unit ? 'pr-9' : ''}`}
+                                                  unit={row.unit}
+                                                  onChange={(val) => handleUpdateExtractValue(row.fieldId, val)}
+                                                  onHover={() => handleFieldHover(row.fieldId)}
+                                                  onLeave={() => handleFieldHover(null)}
+                                                  isHighlighted={isValueHighlighted}
+                                                  title="悬浮可联动查看原件切图，点击右侧编辑按钮修改"
+                                                  className="w-full"
                                                 />
-                                                {row.unit && (
-                                                  <span className="absolute right-2 text-xs font-normal text-outline-variant dark:text-outline-dark select-none pointer-events-none">
-                                                    {row.unit}
-                                                  </span>
-                                                )}
                                               </div>
 
                                               {/* 置信度⚠️气泡：仅对 warn / <85% 置信度展示，悬浮展开完整工业说明 */}
@@ -3369,16 +3284,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                           <td className="px-3.5 py-1.5">
                                             <div className="flex items-center gap-1.5">
                                               <div className="relative flex-1 flex items-center max-w-[150px]">
-                                                <input
-                                                  type="text"
+                                                <EditableValueField
                                                   value={row.value}
-                                                  onChange={(e) => handleUpdateExtractValue(fieldId, e.target.value)}
-                                                  onFocus={() => handleFieldHover(fieldId)}
-                                                  className="w-full text-xs font-bold rounded border pr-9 px-2.5 py-1 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark border-outline-variant/30 dark:border-border-dark hover:border-primary/50 transition-all"
+                                                  unit="wt%"
+                                                  onChange={(val) => handleUpdateExtractValue(fieldId, val)}
+                                                  onHover={() => handleFieldHover(fieldId)}
+                                                  onLeave={() => handleFieldHover(null)}
+                                                  isHighlighted={isHighlighted}
+                                                  title="悬浮可联动查看原件切图，点击右侧编辑按钮修改"
+                                                  className="w-full"
                                                 />
-                                                <span className="absolute right-2 text-xs font-normal text-outline-variant dark:text-outline-dark select-none pointer-events-none">
-                                                  wt%
-                                                </span>
                                               </div>
                                               {isLowConfidence && (
                                                 <div className="relative group flex items-center shrink-0">
@@ -3470,13 +3385,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                             )}
                                           </div>
                                           <div className="flex-1 flex justify-end max-w-[360px] sm:max-w-[480px]">
-                                            <input
-                                              type="text"
+                                            <EditableValueField
                                               value={item.value}
                                               placeholder="--"
-                                              onChange={(e) => handleUpdateExtractValue(item.fieldId, e.target.value)}
-                                              onFocus={() => handleFieldHover(item.fieldId)}
-                                              className="w-full text-right text-xs font-bold rounded border border-outline-variant/30 dark:border-border-dark px-2.5 py-1.5 text-primary dark:text-primary-fixed-dim bg-surface-container-lowest dark:bg-surface-dark hover:border-primary/50 focus:border-primary focus:outline-none transition-all"
+                                              align="right"
+                                              onChange={(val) => handleUpdateExtractValue(item.fieldId, val)}
+                                              onHover={() => handleFieldHover(item.fieldId)}
+                                              onLeave={() => handleFieldHover(null)}
+                                              isHighlighted={isHighlighted}
+                                              title="悬浮可联动查看原件切图，点击右侧编辑按钮修改"
+                                              className="w-full"
                                             />
                                           </div>
                                         </div>
@@ -3790,49 +3708,56 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             </h3>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs ">
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品名称 (Product Name)</span>
-                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.productName || '待提取'}>
-                                {currentBatch.productName || '待提取'}
-                              </strong>
-                            </div>
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
-                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.certificateNo || '待提取'}>
-                                {currentBatch.certificateNo || '待提取'}
-                              </strong>
-                            </div>
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声明标准 (Declared Standard)</span>
-                              <strong className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.standard || '待提取'}>
-                                {currentBatch.standard || '待提取'}
-                              </strong>
-                            </div>
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">材料牌号</span>
-                              <strong className="text-primary dark:text-primary-fixed-dim block truncate" title={currentBatch.grade || '待提取'}>
-                                {currentBatch.grade || '待提取'}
-                              </strong>
-                            </div>
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">冶炼炉号 (Heat No.)</span>
-                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.heatNo || '待提取'}</span>
-                            </div>
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理装炉号 (Pack No.)</span>
-                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.packNo || '待提取'}</span>
-                            </div>
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货规格</span>
-                              <span className="text-on-surface dark:text-surface-bright block">{currentBatch.dimensions || '待提取'}</span>
-                            </div>
-                            <div>
-                              <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂商</span>
-                              <span className="text-on-surface dark:text-surface-bright block truncate" title={currentBatch.supplier || '待提取'}>
-                                {currentBatch.supplier || '待提取'}
-                              </span>
-                            </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
+                            {(() => {
+                              const renderExtractedValue = (val?: string) => {
+                                if (!val || val.trim() === '') {
+                                  return <span className="text-xs text-outline-variant italic font-normal block select-none">--</span>;
+                                }
+                                return (
+                                  <strong className="text-xs font-bold text-primary dark:text-primary-fixed-dim block truncate" title={val}>
+                                    {val}
+                                  </strong>
+                                );
+                              };
+
+                              return (
+                                <>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品名称 (Product Name)</span>
+                                    {renderExtractedValue(currentBatch.productName)}
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
+                                    {renderExtractedValue(currentBatch.certificateNo)}
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声明标准 (Declared Standard)</span>
+                                    {renderExtractedValue(currentBatch.standard)}
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">材料牌号</span>
+                                    {renderExtractedValue(currentBatch.grade)}
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">冶炼炉号 (Heat No.)</span>
+                                    {renderExtractedValue(currentBatch.heatNo)}
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理装炉号 (Pack No.)</span>
+                                    {renderExtractedValue(currentBatch.packNo)}
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货规格</span>
+                                    {renderExtractedValue(currentBatch.dimensions)}
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂商</span>
+                                    {renderExtractedValue(currentBatch.supplier)}
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -4029,7 +3954,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   <span>应用技术协议</span>
                                 </span>
                                 <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant border border-outline-variant/30">
-                                  留空待完善
+                                  占位待完善
                                 </span>
                               </div>
 
@@ -4048,7 +3973,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
                                   <span className="material-symbols-outlined text-base text-outline-variant">assignment_late</span>
                                   <span className="text-xs text-on-surface-variant dark:text-outline-variant truncate">
-                                    暂无挂接技术协议 (选项留空)
+                                    暂无技术协议
                                   </span>
                                 </div>
                                 <span className={`material-symbols-outlined text-base transition-transform text-on-surface-variant shrink-0 ${isAgreementSelectorOpen ? 'rotate-180 text-primary' : ''}`}>
@@ -4056,7 +3981,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 </span>
                               </button>
 
-                              {/* 技术协议下拉 Popover (选项留空) */}
+                              {/* 技术协议下拉 Popover */}
                               {isAgreementSelectorOpen && (
                                 <>
                                   <div
@@ -4134,16 +4059,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 </p>
                               </div>
 
-                              {/* 2. 右侧约 45% (md:col-span-5)：人工复核判定 (独立分栏背景色，按钮占满横幅高度) */}
-                              <div className={`md:col-span-5 min-w-0 p-2.5 md:border-l md:border-current/20 flex items-center justify-between gap-3 ${isHitl
-                                ? 'bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200'
+                              {/* 2. 右侧约 45% (md:col-span-5)：人工复核判定 */}
+                              <div className={`md:col-span-5 min-w-0 p-3 md:border-l flex items-center justify-between gap-3 ${isHitl
+                                ? 'bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 md:border-amber-200/60 dark:md:border-amber-900/40'
                                 : currentBatch.humanVerdict === 'REJECT'
-                                  ? 'bg-status-fail-bg text-status-fail-text'
+                                  ? 'bg-status-fail-bg text-status-fail-text md:border-red-200/60 dark:md:border-red-900/40'
                                   : currentBatch.humanVerdict === 'PASS'
-                                    ? 'bg-status-pass-bg text-status-pass-text'
-                                    : sysVerdict === 'FAIL'
-                                      ? 'bg-status-fail-bg text-status-fail-text'
-                                      : 'bg-status-pass-bg text-status-pass-text'
+                                    ? 'bg-status-pass-bg text-status-pass-text md:border-emerald-200/60 dark:md:border-emerald-900/40'
+                                    : 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface dark:text-surface-bright md:border-outline-variant/50 dark:md:border-border-dark'
                                 }`}>
                                 {/* 左侧上下排布：上方人工复核标头，下方状态标签 */}
                                 <div className="flex flex-col justify-center gap-1 shrink-0">
@@ -4153,19 +4076,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   </div>
                                   <div>
                                     {isHitl ? (
-                                      <span className="px-2 py-1 rounded text-[12px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs whitespace-nowrap">
+                                      <span className="px-2 py-0.5 rounded text-[12px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs whitespace-nowrap">
                                         待介入
                                       </span>
                                     ) : currentBatch.humanVerdict === 'PASS' ? (
-                                      <span className="px-2 py-1 rounded text-[12px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/90 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shadow-2xs whitespace-nowrap">
+                                      <span className="px-2 py-0.5 rounded text-[12px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/90 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shadow-2xs whitespace-nowrap">
                                         ✓ APPROVE
                                       </span>
                                     ) : currentBatch.humanVerdict === 'REJECT' ? (
-                                      <span className="px-2 py-1 rounded text-[12px] font-bold bg-red-100 text-red-800 dark:bg-red-950/90 dark:text-red-200 border border-red-300 dark:border-red-700 shadow-2xs whitespace-nowrap">
+                                      <span className="px-2 py-0.5 rounded text-[12px] font-bold bg-red-100 text-red-800 dark:bg-red-950/90 dark:text-red-200 border border-red-300 dark:border-red-700 shadow-2xs whitespace-nowrap">
                                         ✗ REJECT
                                       </span>
                                     ) : (
-                                      <span className="px-2 py-1 rounded text-[12px] font-medium bg-surface-container-high/70 dark:bg-surface-dark-high/70 border border-outline-variant/30 dark:border-border-dark opacity-80 whitespace-nowrap">
+                                      <span className="px-2 py-0.5 rounded text-[12px] font-medium bg-surface-container-high/70 dark:bg-surface-dark-high/70 border border-outline-variant/30 dark:border-border-dark opacity-80 whitespace-nowrap">
                                         未复核
                                       </span>
                                     )}
@@ -4173,12 +4096,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 </div>
 
                                 {/* 右侧：操作按钮组 (HITL 状态下先只提供高饱和琥珀黄处理按钮，流转后再显示拒收与审批) */}
-                                <div className="flex items-stretch gap-2 self-stretch py-0.5 shrink-0">
+                                <div className="flex items-center gap-2 shrink-0">
                                   {isHitl ? (
                                     <button
                                       type="button"
                                       onClick={handleTriggerHitl}
-                                      className="px-6 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-md border border-amber-600/40 flex items-center justify-center gap-1.5 transition-all cursor-pointer ring-2 ring-amber-400/30 whitespace-nowrap self-stretch"
+                                      className="h-8 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-xs border border-amber-600/40 flex items-center justify-center gap-1.5 transition-all cursor-pointer ring-2 ring-amber-400/30 whitespace-nowrap"
                                     >
                                       <span className="material-symbols-outlined text-base">emergency_home</span>
                                       <span>处理</span>
@@ -4189,9 +4112,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                         type="button"
                                         onClick={() => handleSetHumanVerdict(currentBatch?.humanVerdict === 'REJECT' ? null : 'REJECT')}
                                         title={currentBatch?.humanVerdict === 'REJECT' ? '当前已标记拒收，再次点击可撤销' : '标记为人工拒收'}
-                                        className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch?.humanVerdict === 'REJECT'
+                                        className={`h-8 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch?.humanVerdict === 'REJECT'
                                           ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs ring-2 ring-red-400/50'
-                                          : 'border border-current bg-surface-container-lowest/80 dark:bg-surface-dark/80 hover:bg-red-500/10'
+                                          : 'border border-red-300 dark:border-red-800/60 text-red-700 dark:text-red-400 bg-surface-container-lowest dark:bg-surface-dark hover:bg-red-50 dark:hover:bg-red-950/40'
                                           }`}
                                       >
                                         <span>拒收</span>
@@ -4200,7 +4123,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                         type="button"
                                         onClick={() => handleSetHumanVerdict(currentBatch?.humanVerdict === 'PASS' ? null : 'PASS')}
                                         title={currentBatch?.humanVerdict === 'PASS' ? '当前已核准通过，再次点击可撤销' : '核准为人工通过'}
-                                        className={`px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch?.humanVerdict === 'PASS'
+                                        className={`h-8 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center whitespace-nowrap shadow-2xs ${currentBatch?.humanVerdict === 'PASS'
                                           ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-400/50'
                                           : 'bg-primary hover:bg-primary-container text-on-primary shadow-xs'
                                           }`}
@@ -4354,7 +4277,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                               {evals.map((ev) => (
                                                 <span
                                                   key={ev.standard_id}
-                                                  className="px-1.5 py-0.5 rounded text-[10px] font-mono border whitespace-nowrap inline-flex items-center bg-surface-container-high/70 dark:bg-surface-dark-high/70 text-on-surface-variant dark:text-outline-variant border-outline-variant/30 dark:border-border-dark leading-tight"
+                                                  className="px-1.5 py-0.5 rounded text-[10px] border whitespace-nowrap inline-flex items-center bg-surface-container-high/70 dark:bg-surface-dark-high/70 text-on-surface-variant dark:text-outline-variant border-outline-variant/30 dark:border-border-dark leading-tight"
                                                   title={`${ev.standard_id} (单标评定: ${ev.status})`}
                                                 >
                                                   {ev.standard_short}
@@ -4379,7 +4302,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                             {evals.map((ev) => (
                                               <span
                                                 key={ev.standard_id}
-                                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono border whitespace-nowrap inline-flex items-center leading-tight ${ev.is_governing
+                                                className={`px-1.5 py-0.5 rounded text-[10px] border whitespace-nowrap inline-flex items-center leading-tight ${ev.is_governing
                                                   ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-semibold shadow-2xs'
                                                   : 'bg-surface-container-high/60 dark:bg-surface-dark-high/60 text-on-surface-variant dark:text-outline-variant border-outline-variant/25 dark:border-border-dark'
                                                   }`}
@@ -4420,13 +4343,34 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   <td className="px-3.5 py-2.5 text-[11px] text-on-surface dark:text-surface-bright leading-relaxed">
                                     <div>{row.ruleBasis}</div>
                                     {row.isScissorsDifference && row.scissorsAttribution && (
-                                      <div className="mt-2 p-2 rounded-md bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-700/50 space-y-1.5 text-left">
+                                      <div className="mt-2 p-2 rounded-md bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-700/50 text-left">
                                         <div className="flex items-start gap-1.5 text-[11px] text-amber-900 dark:text-amber-200">
-                                          <span className="px-1.5 py-0.5 rounded bg-amber-200/80 dark:bg-amber-900/80 text-amber-950 dark:text-amber-100 text-[10px] font-bold tracking-tight shrink-0">责任归属</span>
+                                          <div className="relative group/tooltip inline-flex items-center shrink-0 mt-0.5">
+                                            <span
+                                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-200/90 dark:bg-amber-900/90 text-amber-950 dark:text-amber-100 text-[10px] font-bold tracking-tight cursor-help shadow-2xs select-none hover:bg-amber-300 dark:hover:bg-amber-800 transition-colors"
+                                            >
+                                              <span>剪刀差</span>
+                                              <span
+                                                className="material-symbols-outlined !text-[12px] text-amber-800 dark:text-amber-200 leading-none"
+                                                style={{ fontSize: '12px' }}
+                                              >
+                                                info
+                                              </span>
+                                            </span>
+
+                                            {/* 鼠标 hover 在 ℹ️ 图标/标签上时浮现的术语说明气泡卡片 */}
+                                            <div className="absolute left-0 top-full mt-1.5 hidden group-hover/tooltip:flex flex-col items-start w-72 sm:w-80 p-2.5 bg-inverse-surface text-inverse-on-surface text-[11px] rounded-lg shadow-xl z-50 pointer-events-none transition-all border border-outline-variant/30 leading-relaxed">
+                                              <div className="font-bold flex items-center gap-1.5 text-amber-300 mb-1">
+                                                <span className="material-symbols-outlined text-sm">info</span>
+                                                <span>加严剪刀差 · 术语说明</span>
+                                              </div>
+                                              <p className="text-inverse-on-surface/90 text-[10.5px] leading-normal">
+                                                加严剪刀差指物资实测指标已达到通用制造基础标准（如推荐国标 GB/T），但未能达到特种设备承压标准（如行业标 NB/T）或采购技术协议提出的更严苛指标。系统遵循严苛就高原则裁定全单不合格，责任归属于订货加严条款。
+                                              </p>
+                                              <div className="absolute bottom-full left-4 border-4 border-transparent border-b-inverse-surface" />
+                                            </div>
+                                          </div>
                                           <span className="leading-snug">{row.scissorsAttribution}</span>
-                                        </div>
-                                        <div className="pt-1 border-t border-amber-200/60 dark:border-amber-800/50 text-[10px] text-amber-800/80 dark:text-amber-300/80 leading-normal">
-                                          <span className="font-semibold text-amber-900 dark:text-amber-200">术语说明：</span>加严剪刀差指物资实测指标已达到通用制造基础标准（如推荐国标 GB/T），但未能达到特种设备承压标准（如行业标 NB/T）或采购技术协议提出的更严苛指标。系统遵循严苛就高原则裁定全单不合格，责任归属于订货加严条款。
                                         </div>
                                       </div>
                                     )}

@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
             style={{ width: 32, height: 32 }}
             xmlns="http://www.w3.org/2000/svg"
           >
-            <rect x="0" y="0" width="100" height="100" rx="8" fill="#0F4C81" />
+            <rect x="0" y="0" width="100" height="100" rx="8" fill="#006194" />
             <text
               x="50"
               y="73"
