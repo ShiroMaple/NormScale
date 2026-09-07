@@ -3653,6 +3653,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   isDeviationWarning?: boolean;
                   status: 'PASS' | 'FAIL' | 'HITL' | 'INFO';
                   statusLabel: string;
+                  detailTag?: { label: string; color: string };
                   ruleBasis: string;
                   note?: string;
                   isScissorsDifference?: boolean;
@@ -3696,21 +3697,39 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                     let statusLabel = '✓ PASS';
                     let rowStatus: 'PASS' | 'FAIL' | 'HITL' | 'INFO' = 'PASS';
+                    let detailTag: { label: string; color: string } | undefined = undefined;
+
                     if (isScissors) {
                       rowStatus = 'FAIL';
-                      statusLabel = '✗ 剪刀差未达标';
+                      statusLabel = '✗ FAIL';
+                      detailTag = {
+                        label: '剪刀差未达标',
+                        color: 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700',
+                      };
                     } else if (isMissing) {
                       rowStatus = 'FAIL';
-                      statusLabel = '✗ 漏检/未检验';
+                      statusLabel = '✗ FAIL';
+                      detailTag = {
+                        label: '缺项漏检',
+                        color: 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700',
+                      };
                     } else if (!isPass && !isSkipped && !isExempt) {
                       rowStatus = 'FAIL';
                       statusLabel = '✗ FAIL';
                     } else if (isSkipped) {
                       rowStatus = 'INFO';
-                      statusLabel = '不适用';
+                      statusLabel = '- N/A';
+                      detailTag = {
+                        label: '不适用',
+                        color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700',
+                      };
                     } else if (isExempt) {
                       rowStatus = 'PASS';
-                      statusLabel = '免检通过';
+                      statusLabel = '✓ PASS';
+                      detailTag = {
+                        label: '免检',
+                        color: 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700',
+                      };
                     }
 
                     const measuredDisplay = item.actual_value_text
@@ -3806,6 +3825,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       isDeviationWarning,
                       status: rowStatus,
                       statusLabel,
+                      detailTag,
                       ruleBasis: logicExplanation,
                       isScissorsDifference: isScissors,
                       strictStandardId: item.strict_standard_id,
@@ -3826,7 +3846,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       standardRequirement: '采购合同追溯标识',
                       deviation: '-',
                       status: 'INFO',
-                      statusLabel: 'ℹ️ 供参考',
+                      statusLabel: '- N/A',
+                      detailTag: {
+                        label: '供参考',
+                        color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700',
+                      },
                       ruleBasis: '按采购合同工程图纸核对追溯号',
                     });
                   }
@@ -3841,14 +3865,21 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       standardRequirement: '炉批次追踪标识',
                       deviation: '-',
                       status: 'INFO',
-                      statusLabel: 'ℹ️ 供参考',
+                      statusLabel: '- N/A',
+                      detailTag: {
+                        label: '供参考',
+                        color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700',
+                      },
                       ruleBasis: '按原材料冶炼炉号与批次追溯系统核对',
                     });
                   }
                 }
 
+                const issueItems = complianceMatrixItems.filter(i => i.status === 'FAIL' || i.status === 'HITL');
+
                 const STEP3_TABS = [
                   { key: 'all', label: '全部比对项', count: complianceMatrixItems.length },
+                  { key: 'issues', label: '问题项', count: issueItems.length },
                   { key: 'chemical', label: '化学成分', count: complianceMatrixItems.filter(i => i.category === 'chemical').length },
                   { key: 'mechanical', label: '力学性能', count: complianceMatrixItems.filter(i => i.category === 'mechanical').length },
                   { key: 'process', label: '工艺成型', count: complianceMatrixItems.filter(i => i.category === 'process').length },
@@ -3861,7 +3892,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                 const displayedComplianceItems = step3Category === 'all'
                   ? complianceMatrixItems
-                  : complianceMatrixItems.filter(item => item.category === step3Category);
+                  : step3Category === 'issues'
+                    ? issueItems
+                    : complianceMatrixItems.filter(item => item.category === step3Category);
 
                 return (
                   <div className="space-y-4">
@@ -3990,7 +4023,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               <div className="flex items-center justify-between text-[11px] mb-1">
                                 <span className="text-on-surface-variant dark:text-outline-variant font-medium flex items-center gap-1">
                                   <span className="material-symbols-outlined text-[12px] text-primary">menu_book</span>
-                                  <span>执行标准 (可多选)</span>
+                                  <span>执行标准</span>
                                 </span>
                                 <span className="text-[12px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold">
                                   已选 {selectedStandardIds.length} 部
@@ -4333,18 +4366,27 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full custom-scrollbar">
                           {STEP3_TABS.map(tab => {
                             const isActive = step3Category === tab.key;
+                            const isIssueTabWithProblems = tab.key === 'issues' && tab.count > 0;
                             return (
                               <button
                                 key={tab.key}
                                 type="button"
                                 onClick={() => setStep3Category(tab.key)}
                                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${isActive
-                                  ? 'bg-primary text-on-primary shadow-xs'
-                                  : 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high'
+                                  ? (isIssueTabWithProblems
+                                    ? 'bg-red-600 text-white shadow-xs'
+                                    : 'bg-primary text-on-primary shadow-xs')
+                                  : (isIssueTabWithProblems
+                                    ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900/60 hover:bg-red-100 dark:hover:bg-red-900/40'
+                                    : 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high')
                                   }`}
                               >
                                 <span>{tab.label}</span>
-                                <span className={`px-1.5 py-0.2 rounded-full text-[10px]  font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isActive
+                                  ? 'bg-white/20 text-white'
+                                  : (isIssueTabWithProblems
+                                    ? 'bg-red-200/80 dark:bg-red-900/80 text-red-900 dark:text-red-100'
+                                    : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant')
                                   }`}>
                                   {tab.count}
                                 </span>
@@ -4398,8 +4440,27 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             ) : displayedComplianceItems.length === 0 ? (
                               <tr>
                                 <td colSpan={7} className="px-3.5 py-8 text-center text-on-surface-variant dark:text-outline-variant">
-                                  <span className="material-symbols-outlined text-2xl mb-1 block">rule</span>
-                                  <span>{isEvaluatingBatch ? '合规检验计算中...' : '暂无对应分类的核验数据'}</span>
+                                  {isEvaluatingBatch ? (
+                                    <>
+                                      <span className="material-symbols-outlined text-2xl mb-1 block">rule</span>
+                                      <span>合规检验计算中...</span>
+                                    </>
+                                  ) : step3Category === 'issues' ? (
+                                    <div className="flex flex-col items-center justify-center space-y-1 py-3">
+                                      <span className="material-symbols-outlined text-3xl text-emerald-600 dark:text-emerald-400 mb-1 block">check_circle</span>
+                                      <p className="text-xs font-bold text-on-surface dark:text-surface-bright">
+                                        本批次所有指标均达标，未发现不合格或待复核问题项
+                                      </p>
+                                      <p className="text-[11px] text-on-surface-variant dark:text-outline-variant">
+                                        当前批次全部 {complianceMatrixItems.length} 项检验指标均满足执行标准规范要求
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <span className="material-symbols-outlined text-2xl mb-1 block">rule</span>
+                                      <span>暂无对应分类的核验数据</span>
+                                    </>
+                                  )}
                                 </td>
                               </tr>
                             ) : (
@@ -4497,21 +4558,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     {row.deviation}
                                   </td>
                                   <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                    <span className={`px-2.5 py-0.5 rounded text-[12px] font-bold inline-flex items-center justify-center leading-none ${row.isScissorsDifference
-                                      ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-400 dark:border-amber-600 font-black'
-                                      : row.status === 'PASS'
-                                        ? 'bg-status-pass-bg text-status-pass-text'
-                                        : row.status === 'FAIL'
-                                          ? 'bg-status-fail-bg text-status-fail-text font-black'
-                                          : row.status === 'HITL'
-                                            ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs'
-                                            : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                    <span className={`px-2.5 py-0.5 rounded text-[12px] font-bold inline-flex items-center justify-center leading-none ${row.status === 'PASS'
+                                      ? 'bg-status-pass-bg text-status-pass-text'
+                                      : row.status === 'FAIL'
+                                        ? 'bg-status-fail-bg text-status-fail-text font-black'
+                                        : row.status === 'HITL'
+                                          ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs'
+                                          : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant dark:text-outline-variant'
                                       }`}>
                                       {row.statusLabel}
                                     </span>
                                   </td>
                                   <td className="px-3.5 py-2.5 text-[11px] text-on-surface dark:text-surface-bright leading-relaxed">
-                                    <div>{row.ruleBasis}</div>
+                                    <div className="flex items-start gap-1.5">
+                                      {row.detailTag && (
+                                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight shrink-0 select-none ${row.detailTag.color}`}>
+                                          {row.detailTag.label}
+                                        </span>
+                                      )}
+                                      <span className="flex-1">{row.ruleBasis}</span>
+                                    </div>
                                     {row.isScissorsDifference && row.scissorsAttribution && (
                                       <div className="mt-2 p-2 rounded-md bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-700/50 text-left">
                                         <div className="flex items-start gap-1.5 text-[11px] text-amber-900 dark:text-amber-200">
@@ -4519,7 +4585,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                             <span
                                               className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-200/90 dark:bg-amber-900/90 text-amber-950 dark:text-amber-100 text-[10px] font-bold tracking-tight cursor-help shadow-2xs select-none hover:bg-amber-300 dark:hover:bg-amber-800 transition-colors"
                                             >
-                                              <span>剪刀差</span>
+                                              {/* <span>剪刀差</span> */}
                                               <span
                                                 className="material-symbols-outlined !text-[12px] text-amber-800 dark:text-amber-200 leading-none"
                                                 style={{ fontSize: '12px' }}
