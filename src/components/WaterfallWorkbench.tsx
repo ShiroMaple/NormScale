@@ -1527,8 +1527,36 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
   };
 
-  // 截图导出加载状态
+  // 截图导出加载状态与上拉菜单状态
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
+  const [isScreenshotMenuOpen, setIsScreenshotMenuOpen] = useState<boolean>(false);
+  const screenshotMenuRef = useRef<HTMLDivElement>(null);
+
+  // 计算当前会话所有文档包含的总批次数
+  const totalBatchesCount = useMemo(() => {
+    return session.documents.reduce((acc, d) => acc + (d.batches?.length || 0), 0);
+  }, [session.documents]);
+
+  // 监听点击外部或按下 Escape 键自动收起截图上拉菜单
+  useEffect(() => {
+    if (!isScreenshotMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (screenshotMenuRef.current && !screenshotMenuRef.current.contains(e.target as Node)) {
+        setIsScreenshotMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsScreenshotMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isScreenshotMenuOpen]);
 
   // 全局轻量 Toast 状态通知
   const [toastInfo, setToastInfo] = useState<{
@@ -1649,7 +1677,47 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   }, [isMouseDownDragging]);
 
   // 2. 基于 html-to-image (调用浏览器底层原生渲染管线) 生成 100% 像素级对齐的无损 PNG 截图
-  const handleSaveStep3Screenshot = useCallback(async () => {
+  const capturePanelToPng = useCallback(async (batchNo: string, docName?: string): Promise<boolean> => {
+    const targetElement = document.getElementById('step-3-workbench-panel');
+    if (!targetElement) return false;
+
+    if (document.fonts) {
+      await document.fonts.ready;
+    }
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const targetWidth = targetElement.scrollWidth || targetElement.offsetWidth;
+    const targetHeight = targetElement.scrollHeight || targetElement.offsetHeight;
+
+    const pngData = await toPng(targetElement, {
+      quality: 1,
+      pixelRatio: 2, // 2x 视网膜级高清输出
+      backgroundColor: isDark ? '#141218' : '#ffffff',
+      cacheBust: true,
+      width: targetWidth,
+      height: targetHeight,
+      style: {
+        margin: '0',
+        transform: 'none',
+        left: '0',
+        top: '0',
+        maxWidth: 'none',
+        width: `${targetWidth}px`,
+        height: `${targetHeight}px`,
+      },
+    });
+
+    const downloadAnchor = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const cleanDocPrefix = docName ? `${docName.replace(/\.[^/.]+$/, '')}_` : '';
+    downloadAnchor.download = `NormScale_合规比对结果_${cleanDocPrefix}${batchNo || 'REPORT'}_${dateStr}.png`;
+    downloadAnchor.href = pngData;
+    downloadAnchor.click();
+    return true;
+  }, []);
+
+  // 选项 1：保存当前页面截图（仅当前选中的单批次）
+  const handleSaveCurrentBatchScreenshot = useCallback(async () => {
     const targetElement = document.getElementById('step-3-workbench-panel');
     if (!targetElement) {
       showToast('无法定位步骤 3 结果视窗', 'error');
@@ -1657,49 +1725,151 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
 
     setIsCapturing(true);
+    setIsScreenshotMenuOpen(false);
+
+    const scrollContainer = targetElement.closest('section');
+    const originalScrollTop = scrollContainer?.scrollTop ?? 0;
 
     try {
-      // 确保字体全部加载度量就绪
-      if (document.fonts) {
-        await document.fonts.ready;
+      if (scrollContainer && originalScrollTop > 0) {
+        scrollContainer.scrollTop = 0;
+        await new Promise(resolve => requestAnimationFrame(resolve));
       }
 
-      const isDark = document.documentElement.classList.contains('dark');
-      const targetWidth = targetElement.scrollWidth || targetElement.offsetWidth;
-      const targetHeight = targetElement.scrollHeight || targetElement.offsetHeight;
-
-      const pngData = await toPng(targetElement, {
-        quality: 1,
-        pixelRatio: 2, // 2x 视网膜级高清输出
-        backgroundColor: isDark ? '#141218' : '#ffffff',
-        cacheBust: true,
-        width: targetWidth,
-        height: targetHeight,
-        style: {
-          margin: '0',
-          transform: 'none',
-          left: '0',
-          top: '0',
-          maxWidth: 'none',
-          width: `${targetWidth}px`,
-          height: `${targetHeight}px`,
-        },
-      });
-
-      const downloadAnchor = document.createElement('a');
-      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      downloadAnchor.download = `NormScale_合规比对结果_${currentBatch?.batchNo || 'REPORT'}_${dateStr}.png`;
-      downloadAnchor.href = pngData;
-      downloadAnchor.click();
-
-      showToast('步骤 3 结果 PNG 截图已成功导出', 'success');
+      await capturePanelToPng(currentBatch?.batchNo || 'REPORT', currentDoc?.filename);
+      showToast(`批次 [${currentBatch?.batchNo || '当前批次'}] 截图已成功导出`, 'success');
     } catch (err) {
       console.error('html-to-image screenshot failed:', err);
       showToast('截图生成失败，请重试', 'error');
     } finally {
+      if (scrollContainer && originalScrollTop > 0) {
+        scrollContainer.scrollTop = originalScrollTop;
+      }
       setIsCapturing(false);
     }
-  }, [currentBatch?.batchNo, showToast]);
+  }, [currentBatch?.batchNo, currentDoc?.filename, capturePanelToPng, showToast]);
+
+  // 选项 2：保存当前文档所有批次截图（顺序切换各批次并下载）
+  const handleSaveCurrentDocAllBatchesScreenshot = useCallback(async () => {
+    if (!currentDoc || !currentDoc.batches || currentDoc.batches.length === 0) {
+      showToast('当前文档暂无可导出的检验批次', 'info');
+      return;
+    }
+
+    const targetElement = document.getElementById('step-3-workbench-panel');
+    if (!targetElement) {
+      showToast('无法定位步骤 3 结果视窗', 'error');
+      return;
+    }
+
+    setIsCapturing(true);
+    setIsScreenshotMenuOpen(false);
+
+    const scrollContainer = targetElement.closest('section');
+    const originalScrollTop = scrollContainer?.scrollTop ?? 0;
+    const originalBatchNo = selectedBatchNo;
+    const batches = currentDoc.batches;
+
+    try {
+      if (scrollContainer && originalScrollTop > 0) {
+        scrollContainer.scrollTop = 0;
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+
+      showToast(`开始导出当前文档全部 ${batches.length} 个批次截图...`, 'info');
+
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        if (!batch) continue;
+        showToast(`正在截取批次 (${i + 1}/${batches.length}): ${batch.batchNo}...`, 'info');
+        setSelectedBatchNo(batch.batchNo);
+        // 等待 React 渲染 DOM
+        await new Promise(resolve => setTimeout(resolve, 250));
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        await capturePanelToPng(batch.batchNo, currentDoc.filename);
+        // 下载间隔防限流
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+
+      showToast(`当前文档全部 ${batches.length} 个批次截图导出完成`, 'success');
+    } catch (err) {
+      console.error('Batch screenshots export failed:', err);
+      showToast('批量截图生成过程中断，请重试', 'error');
+    } finally {
+      setSelectedBatchNo(originalBatchNo);
+      if (scrollContainer && originalScrollTop > 0) {
+        scrollContainer.scrollTop = originalScrollTop;
+      }
+      setIsCapturing(false);
+    }
+  }, [currentDoc, selectedBatchNo, capturePanelToPng, showToast]);
+
+  // 选项 3：保存当前会话所有批次截图（遍历所有文档与批次）
+  const handleSaveSessionAllBatchesScreenshot = useCallback(async () => {
+    const allBatchesList: Array<{ docId: string; docName: string; batchNo: string }> = [];
+    session.documents.forEach(d => {
+      (d.batches || []).forEach(b => {
+        allBatchesList.push({
+          docId: d.docId,
+          docName: d.filename || d.docId,
+          batchNo: b.batchNo,
+        });
+      });
+    });
+
+    if (allBatchesList.length === 0) {
+      showToast('当前会话暂无可导出的检验批次', 'info');
+      return;
+    }
+
+    const targetElement = document.getElementById('step-3-workbench-panel');
+    if (!targetElement) {
+      showToast('无法定位步骤 3 结果视窗', 'error');
+      return;
+    }
+
+    setIsCapturing(true);
+    setIsScreenshotMenuOpen(false);
+
+    const scrollContainer = targetElement.closest('section');
+    const originalScrollTop = scrollContainer?.scrollTop ?? 0;
+    const originalDocId = selectedDocId;
+    const originalBatchNo = selectedBatchNo;
+
+    try {
+      if (scrollContainer && originalScrollTop > 0) {
+        scrollContainer.scrollTop = 0;
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+
+      showToast(`开始导出当前会话全部 ${allBatchesList.length} 个批次截图...`, 'info');
+
+      for (let i = 0; i < allBatchesList.length; i++) {
+        const item = allBatchesList[i];
+        if (!item) continue;
+        showToast(`正在截取 (${i + 1}/${allBatchesList.length}): ${item.batchNo}...`, 'info');
+        setSelectedDocId(item.docId);
+        setSelectedBatchNo(item.batchNo);
+        // 跨文档切换预留稍微充足的重渲染时间
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        await capturePanelToPng(item.batchNo, item.docName);
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+
+      showToast(`当前会话全部 ${allBatchesList.length} 个批次截图导出完成`, 'success');
+    } catch (err) {
+      console.error('Session all batches export failed:', err);
+      showToast('会话批量截图生成中断，请重试', 'error');
+    } finally {
+      setSelectedDocId(originalDocId);
+      setSelectedBatchNo(originalBatchNo);
+      if (scrollContainer && originalScrollTop > 0) {
+        scrollContainer.scrollTop = originalScrollTop;
+      }
+      setIsCapturing(false);
+    }
+  }, [session.documents, selectedDocId, selectedBatchNo, capturePanelToPng, showToast]);
 
   const goToStep = (stepIdx: number) => {
     if (stepIdx > 0 && (!session.documents || session.documents.length === 0)) {
@@ -3426,8 +3596,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           {/* ========================================================================= */}
           {/* 步骤 3: 质检工作台 - 比对标准 (挂载统一标题与批次选择条) */}
           {/* ========================================================================= */}
-          <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar p-6 space-y-4">
-            <div id="step-3-workbench-panel" className="max-w-[1440px] mx-auto w-full space-y-4">
+          <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar px-6 pb-6 pt-0">
+            <div id="step-3-workbench-panel" className="max-w-[1440px] mx-auto w-full space-y-4 pt-6">
 
               {/* 顶部统一标题与两层树状批次选择条 (固定在顶部，设置 z-40 确保下拉菜单浮于上方) */}
               <div className="relative z-40">
@@ -4184,18 +4354,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         </div>
                       </div>
 
-                      {/* 全景比对大表 */}
-                      <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl overflow-hidden shadow-2xs">
-                        <table className="w-full text-left text-xs ">
-                          <thead className="bg-surface-container-low dark:bg-surface-dark-low text-[11px] text-on-surface-variant dark:text-outline-variant border-b dark:border-border-dark">
-                            <tr>
-                              <th className="px-3.5 py-2.5 w-20 min-w-[75px] whitespace-nowrap">类别</th>
-                              <th className="px-3.5 py-2.5 min-w-[150px]">检验项目 / 指标</th>
-                              <th className="px-3.5 py-2.5 min-w-[170px] w-48">执行标准要求 / 条款规范</th>
-                              <th className="px-3.5 py-2.5 min-w-[160px]">报告测量值 / 实际结果</th>
-                              <th className="px-3.5 py-2.5 w-28 min-w-[100px]">偏差量 / 吻合度</th>
-                              <th className="px-3.5 py-2.5 w-24 whitespace-nowrap">判定状态</th>
-                              <th className="px-3.5 py-2.5 min-w-[300px]">判定逻辑 / 审核说明</th>
+                      {/* 全景比对大表 (支持外层视口平滑吸顶冻结表头) */}
+                      <div className="border border-outline-variant/40 dark:border-border-dark rounded-xl shadow-2xs relative">
+                        <table className="w-full text-left text-xs">
+                          <thead className={`text-[11px] text-on-surface-variant dark:text-outline-variant ${isCapturing ? '' : 'sticky top-0 z-20'}`}>
+                            <tr className="bg-surface-container-low dark:bg-surface-dark-low">
+                              <th className={`px-3.5 py-2.5 w-20 min-w-[75px] whitespace-nowrap bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/60 dark:border-border-dark shadow-2xs first:rounded-tl-xl ${isCapturing ? '' : 'sticky top-0 z-20'}`}>类别</th>
+                              <th className={`px-3.5 py-2.5 min-w-[150px] bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/60 dark:border-border-dark shadow-2xs ${isCapturing ? '' : 'sticky top-0 z-20'}`}>检验项目 / 指标</th>
+                              <th className={`px-3.5 py-2.5 min-w-[170px] w-48 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/60 dark:border-border-dark shadow-2xs ${isCapturing ? '' : 'sticky top-0 z-20'}`}>执行标准要求 / 条款规范</th>
+                              <th className={`px-3.5 py-2.5 min-w-[160px] bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/60 dark:border-border-dark shadow-2xs ${isCapturing ? '' : 'sticky top-0 z-20'}`}>报告测量值 / 实际结果</th>
+                              <th className={`px-3.5 py-2.5 w-28 min-w-[100px] bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/60 dark:border-border-dark shadow-2xs ${isCapturing ? '' : 'sticky top-0 z-20'}`}>偏差量 / 吻合度</th>
+                              <th className={`px-3.5 py-2.5 w-24 whitespace-nowrap bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/60 dark:border-border-dark shadow-2xs ${isCapturing ? '' : 'sticky top-0 z-20'}`}>判定状态</th>
+                              <th className={`px-3.5 py-2.5 min-w-[300px] bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/60 dark:border-border-dark shadow-2xs last:rounded-tr-xl ${isCapturing ? '' : 'sticky top-0 z-20'}`}>判定逻辑 / 审核说明</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
@@ -4710,19 +4880,116 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
             {currentStep === 2 && (
               <>
-                {/* 次要按钮 1：保存截图 */}
-                <button
-                  type="button"
-                  onClick={handleSaveStep3Screenshot}
-                  disabled={isCapturing}
-                  className="px-4 py-2 rounded-lg border border-outline-variant dark:border-border-dark text-xs font-bold text-on-surface dark:text-surface-bright hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-2xs"
-                  title="生成当前步骤 3 比对结果的高清图片快照并下载"
-                >
-                  <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">
-                    {isCapturing ? 'hourglass_top' : 'photo_camera'}
-                  </span>
-                  <span>{isCapturing ? '生成截图中...' : '保存当前页面截图'}</span>
-                </button>
+                {/* 次要按钮 1：保存截图（分体式上拉选择菜单 Split Button） */}
+                <div ref={screenshotMenuRef} className="relative inline-flex items-stretch rounded-lg shadow-2xs border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark">
+                  {/* 左侧主触发按钮：默认直接截取当前页面 */}
+                  <button
+                    type="button"
+                    onClick={handleSaveCurrentBatchScreenshot}
+                    disabled={isCapturing}
+                    className="px-3.5 py-2 rounded-l-lg text-xs font-bold text-on-surface dark:text-surface-bright hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    title="快捷导出当前选中批次的比对结果高清快照"
+                  >
+                    <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">
+                      {isCapturing ? 'hourglass_top' : 'photo_camera'}
+                    </span>
+                    <span>{isCapturing ? '生成截图中...' : '保存当前页面截图'}</span>
+                  </button>
+
+                  {/* 中间细分割线 */}
+                  <div className="w-px bg-outline-variant/60 dark:bg-border-dark self-stretch my-1.5" />
+
+                  {/* 右侧上拉选择触发器小箭头按钮 */}
+                  <button
+                    type="button"
+                    onClick={() => setIsScreenshotMenuOpen(prev => !prev)}
+                    disabled={isCapturing}
+                    className="px-2 py-2 rounded-r-lg text-on-surface-variant hover:text-on-surface dark:text-outline-variant dark:hover:text-surface-bright hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-center justify-center disabled:opacity-50 cursor-pointer"
+                    title="选择截图保存范围（单批次/当前文档/全会话）"
+                  >
+                    <span
+                      className={`material-symbols-outlined text-base text-on-surface-variant dark:text-outline-variant transition-transform duration-200 ${isScreenshotMenuOpen ? 'rotate-180' : ''
+                        }`}
+                    >
+                      keyboard_arrow_up
+                    </span>
+                  </button>
+
+                  {/* 向上展开的浮层选择菜单 */}
+                  {isScreenshotMenuOpen && (
+                    <div className="absolute bottom-full left-0 mb-2 w-72 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant dark:border-border-dark rounded-xl shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                      <div className="px-2.5 py-1.5 text-[11px] font-semibold text-on-surface-variant/80 dark:text-outline-variant border-b border-outline-variant/40 dark:border-border-dark/60 mb-1 flex items-center justify-between">
+                        <span>选择截图范围</span>
+                      </div>
+
+                      {/* 选项 1：保存当前页面截图 */}
+                      <button
+                        type="button"
+                        onClick={handleSaveCurrentBatchScreenshot}
+                        className="w-full text-left p-2 rounded-lg hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-start gap-2.5 cursor-pointer group"
+                      >
+                        <span className="material-symbols-outlined text-lg text-primary dark:text-primary-fixed-dim shrink-0 mt-0.5">
+                          photo_camera
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-on-surface dark:text-surface-bright flex items-center justify-between">
+                            <span>保存当前页面截图</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-container dark:bg-surface-dark-high text-on-surface-variant">
+                              单批次
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-on-surface-variant dark:text-outline-variant truncate mt-0.5">
+                            仅当前选中的批次 ({currentBatch?.batchNo || '当前批次'})
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* 选项 2：保存当前文档所有批次截图 */}
+                      <button
+                        type="button"
+                        onClick={handleSaveCurrentDocAllBatchesScreenshot}
+                        className="w-full text-left p-2 rounded-lg hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-start gap-2.5 cursor-pointer group"
+                      >
+                        <span className="material-symbols-outlined text-lg text-primary dark:text-primary-fixed-dim shrink-0 mt-0.5">
+                          tab
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-on-surface dark:text-surface-bright flex items-center justify-between">
+                            <span>保存当前文档所有批次截图</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary dark:text-primary-fixed-dim font-bold">
+                              {currentDoc?.batches?.length || 0} 个批次
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-on-surface-variant dark:text-outline-variant truncate mt-0.5">
+                            当前文档共 {currentDoc?.batches?.length || 0} 个批次，顺序导出
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* 选项 3：保存当前会话所有批次截图 */}
+                      <button
+                        type="button"
+                        onClick={handleSaveSessionAllBatchesScreenshot}
+                        className="w-full text-left p-2 rounded-lg hover:bg-surface-container-low dark:hover:bg-surface-dark-low transition-colors flex items-start gap-2.5 cursor-pointer group"
+                      >
+                        <span className="material-symbols-outlined text-lg text-primary dark:text-primary-fixed-dim shrink-0 mt-0.5">
+                          folder_zip
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-on-surface dark:text-surface-bright flex items-center justify-between">
+                            <span>保存当前会话所有批次截图</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary-container/60 text-secondary font-bold">
+                              {totalBatchesCount} 个批次
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-on-surface-variant dark:text-outline-variant truncate mt-0.5">
+                            涵盖 {session.documents?.length || 0} 份文档，共 {totalBatchesCount} 个批次
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {/* 次要按钮 2：开启新任务 */}
                 <button

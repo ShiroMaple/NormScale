@@ -101,3 +101,22 @@
 
 #### (2) 悬浮交互：仅展示单一暗色精致术语说明气泡（无白底原生提示干扰）
 ![鼠标悬浮展开单一暗色气泡](C:/Users/gaoft/.gemini/antigravity-ide/brain/56cb3a62-c99a-436a-b451-b82f4bb2f10a/scissor_gap_badge_hover_dark_tooltip_1788746931865.png)
+
+---
+
+## 6. 全景合规比对矩阵表头冻结与长截图无损兼容
+
+### 6.1 调整要点
+1. **视口平滑冻结吸顶（Sticky Header）**：
+   - 全景矩阵 7 列表头（类别、检验项目/指标、执行标准要求、报告测量值、偏差量、判定状态、判定逻辑）应用 `sticky top-0 z-20`；
+   - 采用高对比实体底色（`bg-surface-container-low dark:bg-surface-dark-low`）与清晰细底边框、微投影，向下滚动浏览时数据行穿行其下，层次分明不透字。
+2. **严丝合缝贴合顶部导航栏**：
+   - 将外层滚动容器的顶部 padding 下沉至内层面板（`px-6 pb-6 pt-0` + `pt-6`），使表格表头在吸顶时严密贴合全局顶栏下沿，彻底解决上沿漏光和滚动行从上方露出的瑕疵。
+3. **截图生成 100% 无损兼容**：
+   - 在触发「保存当前页面截图」时，先自动将视窗滚动偏移归零（`scrollTop = 0`），待离屏绘制完成后无缝还原用户原有的滚动位置；
+   - 截图生成期间（`isCapturing`）动态卸载 sticky 吸顶属性，保证 `html-to-image` 100% 像素级完整渲染全展开长截图。
+
+### 6.2 验证截图
+
+#### 页面滚动时表头严丝合缝冻结吸顶
+![全景矩阵表头平滑吸顶贴合顶部导航栏](C:/Users/gaoft/.gemini/antigravity-ide/brain/56cb3a62-c99a-436a-b451-b82f4bb2f10a/sticky_header_scroll_check_1788748490755.png)
