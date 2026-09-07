@@ -206,4 +206,82 @@ describe('POST /api/audit/submit 批次对象与多标准直通核验测试', ()
     expect(hardnessItem.message).toContain('法定');
     expect(hardnessItem.message).toContain('主动报送');
   });
+
+  it('测试质保书2场景：钛含量3位统一修约对齐与表面质量/表面粗糙度原子化解耦', async () => {
+    const mtc2Batch = {
+      batchNo: 'MTC2-BATCH-001',
+      heatNo: 'H20240901',
+      grade: '06Cr18Ni11Ti',
+      dimensions: 'OD 15.0mm × WT 0.8mm',
+      chemical: {
+        C: 0.024,
+        Si: 0.52,
+        Mn: 1.15,
+        P: 0.028,
+        S: 0.002,
+        Ni: 10.25,
+        Cr: 18.20,
+        Ti: 0.22, // 实测 0.22%
+        N: 0.007,
+      },
+      mechanical: {
+        rm: 585,
+        rp02: 245,
+        a: 48.0,
+      },
+      process: {
+        surfaceQuality: '合格 OK', // 定性表面外观
+        ndt_et: '合格 OK',
+        ndt_ut: '合格 OK',
+        flattening: '合格 OK',
+        flaring: '合格 OK',
+      },
+      additionalTests: [
+        {
+          key: 'surface_roughness',
+          name: '表面粗糙度',
+          category: 'surface',
+          value_num: 0.33, // 实测 0.33 μm
+          unit: 'μm',
+          conclusion: 'PASS',
+        },
+      ],
+    };
+
+    const req = new Request('http://localhost:3000/api/audit/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        batchSpecimen: mtc2Batch,
+        standardIds: ['NB/T 47019.5-2021', 'GB/T 13296-2023'],
+        gradeKey: 'S32168',
+      }),
+    });
+
+    const res = await submitAudit(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    const items = json.finalReport.item_results;
+
+    // 1. 钛含量公式：5*(C+N) = 5*(0.024+0.007) = 0.155%
+    // NB 与 GB 均按 3 位修约，两部标准要求一致 (>= 0.155%)，实测 0.22% 均达标，且无虚假加严剪刀差
+    const tiItem = items.find((r: any) => r.property_key === 'Ti');
+    expect(tiItem).toBeDefined();
+    expect(tiItem.status).toBe('PASS');
+    expect(tiItem.is_scissors_difference).toBe(false);
+    expect(tiItem.standard_requirement_text).toContain('0.155');
+
+    // 2. 表面外观质量：定性合格，不会被粗糙度的 0.33 覆盖或导致文本不匹配
+    const surfItem = items.find((r: any) => r.property_key === 'surface_quality');
+    expect(surfItem).toBeDefined();
+    expect(surfItem.status).toBe('PASS');
+    expect(surfItem.actual_value_text).toContain('合格');
+
+    // 3. 表面粗糙度：定量 0.33 μm <= 0.8 μm，判定为 PASS
+    const roughItem = items.find((r: any) => r.property_key === 'surface_roughness');
+    expect(roughItem).toBeDefined();
+    expect(roughItem.status).toBe('PASS');
+    expect(roughItem.actual_value_text).toContain('0.33');
+  });
 });

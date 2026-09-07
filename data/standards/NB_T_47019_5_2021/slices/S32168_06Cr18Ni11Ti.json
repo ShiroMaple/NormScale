@@ -132,7 +132,7 @@
         "min": null,
         "max": 0.7,
         "unit": "%",
-        "rounding_decimals": 2,
+        "rounding_decimals": 3,
         "note": "Ti: 5(C+N) ~ 0.70%"
       }
     },
@@ -324,12 +324,27 @@
       "rule_id": "SURFACE_NB_S32168_QUALITY",
       "category": "surface",
       "property_key": "surface_quality",
-      "display_name": "表面质量与粗糙度",
-      "description": "依据 NB/T 47019.5-2021 第6.11及6.12条，内外表面光洁平整，无裂缝、折叠与重皮，粗糙度 Ra 符合通则规定",
+      "display_name": "表面外观质量",
+      "description": "依据 NB/T 47019.5-2021 第6.11条，内外表面光洁平整，无裂缝、折叠与重皮",
       "rule_type": "qualitative_pass",
       "requirement_level": "MANDATORY",
       "criteria": {
         "expected": "CLEAN_PASS"
+      }
+    },
+    {
+      "rule_id": "SURFACE_NB_S32168_ROUGHNESS",
+      "category": "surface",
+      "property_key": "surface_roughness",
+      "display_name": "表面粗糙度 (Ra)",
+      "description": "依据 NB/T 47019.5-2021 第6.12条，内外表面粗糙度 Ra 应符合标准及订货技术要求",
+      "rule_type": "numeric_range",
+      "requirement_level": "OPTIONAL_AGREED",
+      "criteria": {
+        "min": null,
+        "max": 0.8,
+        "unit": "μm",
+        "rounding_decimals": 2
       }
     }
   ]

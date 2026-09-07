@@ -335,14 +335,46 @@ export class ComplianceEngine {
 
     // 2. 建立实测记录索引映射表并提取理化数值快照
     for (const record of certificate.test_records) {
-      const normResult = PropertyKeyNormalizer.normalize(record.property_key, record.category);
+      const normResult = PropertyKeyNormalizer.normalize(
+        record.property_key,
+        record.category,
+        { measuredRaw: record.measured_value_raw ?? record.measured_value_num, unit: record.unit }
+      );
       const canonicalKey = normResult.property_key || record.property_key;
+      const isNumeric = record.measured_value_num !== undefined && record.measured_value_num !== null;
+      const isQualitative = Boolean(record.qualitative_result || record.conclusion_text);
 
-      // 支持按原始属性名、归一化属性名、类别前缀组合等多维度索引检索
-      recordsMap.set(record.property_key, record);
-      recordsMap.set(canonicalKey, record);
-      recordsMap.set(`${record.category}_${record.property_key}`, record);
-      recordsMap.set(`${record.category}_${canonicalKey}`, record);
+      const keysToIndex = [
+        record.property_key,
+        canonicalKey,
+        `${record.category}_${record.property_key}`,
+        `${record.category}_${canonicalKey}`,
+      ];
+
+      for (const k of keysToIndex) {
+        // 防冲毁机制：若槽位已存在定性/定量异构记录，优先保留两者在类型专用槽位，主槽位不发生静默抹杀
+        if (recordsMap.has(k)) {
+          const existing = recordsMap.get(k)!;
+          const existingIsNumeric = existing.measured_value_num !== undefined && existing.measured_value_num !== null;
+          const existingIsQual = Boolean(existing.qualitative_result || existing.conclusion_text);
+
+          if (existingIsQual && !existingIsNumeric && isNumeric) {
+            recordsMap.set(`${k}#qual`, existing);
+            recordsMap.set(`${k}#num`, record);
+          } else if (existingIsNumeric && !existingIsQual && isQualitative) {
+            recordsMap.set(`${k}#num`, existing);
+            recordsMap.set(`${k}#qual`, record);
+          } else {
+            recordsMap.set(k, record);
+          }
+        } else {
+          recordsMap.set(k, record);
+        }
+
+        if (isNumeric) recordsMap.set(`${k}#num`, record);
+        if (isQualitative) recordsMap.set(`${k}#qual`, record);
+      }
+
       if (record.sub_property) {
         recordsMap.set(`${record.property_key}_${record.sub_property}`, record);
         recordsMap.set(`${canonicalKey}_${record.sub_property}`, record);
@@ -387,9 +419,13 @@ export class ComplianceEngine {
     context: EvaluationContext
   ): boolean {
     const normKey = PropertyKeyNormalizer.normalize(rule.property_key, rule.category).property_key;
+    const isRuleNumeric = rule.rule_type === 'numeric_range' || rule.rule_type === 'dynamic_expression';
+    const isRuleQualitative = rule.rule_type === 'qualitative_pass' || rule.rule_type === 'qualitative_enum';
 
-    // 1. 检查直接命中的 record
+    // 1. 检查直接命中的 record (含类型专用槽位)
     const directKeys = [
+      ...(isRuleNumeric ? [`${rule.property_key}#num`, `${normKey}#num`] : []),
+      ...(isRuleQualitative ? [`${rule.property_key}#qual`, `${normKey}#qual`] : []),
       rule.property_key,
       normKey,
       `${rule.category}_${rule.property_key}`,
@@ -479,7 +515,12 @@ export class ComplianceEngine {
     // --------------------------------------------------------------------------
     // 步骤 2：根据规则类型分发至对应的专用原子评估器
     const normKey = PropertyKeyNormalizer.normalize(rule.property_key, rule.category).property_key;
+    const isRuleNumeric = rule.rule_type === 'numeric_range' || rule.rule_type === 'dynamic_expression';
+    const isRuleQualitative = rule.rule_type === 'qualitative_pass' || rule.rule_type === 'qualitative_enum';
+
     const record =
+      (isRuleNumeric ? (context.recordsMap.get(`${rule.property_key}#num`) || context.recordsMap.get(`${normKey}#num`)) : undefined) ||
+      (isRuleQualitative ? (context.recordsMap.get(`${rule.property_key}#qual`) || context.recordsMap.get(`${normKey}#qual`)) : undefined) ||
       context.recordsMap.get(rule.property_key) ||
       context.recordsMap.get(normKey) ||
       context.recordsMap.get(`${rule.category}_${rule.property_key}`) ||

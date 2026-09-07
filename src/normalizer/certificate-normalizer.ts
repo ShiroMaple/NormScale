@@ -177,7 +177,10 @@ export class CertificateNormalizer {
     if (!item.raw_property_name) return undefined;
 
     // (a) 属性名与检验类别归一化
-    const propRes = PropertyKeyNormalizer.normalize(item.raw_property_name, item.raw_category);
+    const propRes = PropertyKeyNormalizer.normalize(item.raw_property_name, item.raw_category, {
+      measuredRaw: item.raw_value,
+      unit: item.raw_unit,
+    });
     if (!propRes.is_known) {
       warnings.push('未识别的标准检验项目: ' + item.raw_property_name);
     }
@@ -240,8 +243,17 @@ export class CertificateNormalizer {
         record.measured_value_num = norm.value;
         record.unit = '级';
       } catch {}
+    } else if (propRes.property_key === 'surface_roughness') {
+      // 表面粗糙度 -> 定量微米 (μm) 数值清洗
+      const numVal = typeof item.raw_value === 'number' ? item.raw_value : parseFloat(String(item.raw_value));
+      if (!isNaN(numVal)) {
+        record.measured_value_num = numVal;
+        record.unit = item.raw_unit || 'μm';
+      }
+      const qualRes = QualitativeNormalizer.normalize(item.raw_value);
+      record.qualitative_result = qualRes.qualitative_result;
     } else {
-      // 工艺、无损、腐蚀等定性项目 -> PASS / FAIL / NOT_TESTED 归一化
+      // 工艺、无损、腐蚀、表面外观等定性项目 -> PASS / FAIL / NOT_TESTED 归一化
       const qualRes = QualitativeNormalizer.normalize(item.raw_value);
       record.qualitative_result = qualRes.qualitative_result;
       if (qualRes.claimed_level) {

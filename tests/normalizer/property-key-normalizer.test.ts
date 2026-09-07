@@ -53,4 +53,46 @@ describe('PropertyKeyNormalizer 检验项目名称与类别映射测试', () => 
     expect(PropertyKeyNormalizer.normalize('涡流探伤 ET').property_key).toBe('eddy_current_test');
     expect(PropertyKeyNormalizer.normalize('超声波探伤 (UT)').property_key).toBe('ultrasonic_test');
   });
+
+  it('原则一（特异性优先）：粗糙度优先于宏观表面外观质量', () => {
+    const rRough = PropertyKeyNormalizer.normalize('表面粗糙度');
+    expect(rRough.property_key).toBe('surface_roughness');
+    expect(rRough.category).toBe('surface');
+
+    const rRa = PropertyKeyNormalizer.normalize('Ra');
+    expect(rRa.property_key).toBe('surface_roughness');
+    expect(rRa.sub_property).toBe('Ra');
+
+    const rRz = PropertyKeyNormalizer.normalize('表面Rz粗糙度');
+    expect(rRz.property_key).toBe('surface_roughness');
+    expect(rRz.sub_property).toBe('Rz');
+
+    const rSurface = PropertyKeyNormalizer.normalize('表面质量与外观');
+    expect(rSurface.property_key).toBe('surface_quality');
+    expect(rSurface.category).toBe('surface');
+  });
+
+  it('原则二（量纲与类型感知）：实测纯数值与微米单位触发粗糙度反向纠偏', () => {
+    // 虽然传入名称仅为模糊的 '表面'，但 context 携带微米单位与浮点数值
+    const rInferred = PropertyKeyNormalizer.normalize('表面', undefined, {
+      measuredRaw: 0.33,
+      unit: 'μm',
+    });
+    expect(rInferred.property_key).toBe('surface_roughness');
+    expect(rInferred.sub_property).toBe('μm');
+
+    // 模糊的 '表面'，若实测为纯定性文本 '合格'，保持为定性外观质量
+    const rQual = PropertyKeyNormalizer.normalize('表面', undefined, {
+      measuredRaw: '合格 OK',
+      unit: '',
+    });
+    expect(rQual.property_key).toBe('surface_quality');
+  });
+
+  it('原则四（安全沙箱隔离）：未收录的非标检验项标记 is_sandbox = true', () => {
+    const rUnknown = PropertyKeyNormalizer.normalize('超低残余应力中子衍射测定');
+    expect(rUnknown.is_known).toBe(false);
+    expect(rUnknown.is_sandbox).toBe(true);
+    expect(rUnknown.category).toBe('other');
+  });
 });

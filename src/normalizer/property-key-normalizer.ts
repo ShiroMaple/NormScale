@@ -13,6 +13,15 @@ export interface NormalizedPropertyResult {
   sub_property?: string;
   /** 是否成功匹配到已知标准检验项 */
   is_known: boolean;
+  /** 是否属于非标安全沙箱项 (未命中已知规则，需隔离不参与判废) */
+  is_sandbox?: boolean;
+}
+
+export interface NormalizationContext {
+  /** 实测原始值或文本 (如 '0.33', 0.33, '合格') */
+  measuredRaw?: unknown;
+  /** 量纲单位 (如 'μm', 'MPa', '%', 'J') */
+  unit?: string | null;
 }
 
 /**
@@ -55,8 +64,16 @@ export class PropertyKeyNormalizer {
 
   /**
    * 核心归一化方法
+   * 
+   * @param rawName 原始检验项名称
+   * @param rawCategoryHint 可选的大类提示
+   * @param context 可选的实测值与量纲上下文 (用于数据类型与量纲感知消歧)
    */
-  public static normalize(rawName: string, rawCategoryHint?: string): NormalizedPropertyResult {
+  public static normalize(
+    rawName: string,
+    rawCategoryHint?: string,
+    context?: NormalizationContext
+  ): NormalizedPropertyResult {
     const str = rawName.trim();
     // 自动剥离常见工程与视觉标记前缀 (如 geo_surface_quality -> surface_quality, proc_flaring -> flaring)
     const strippedStr = str.replace(/^(geo|proc|ndt|mech|metallo|chem)_/i, '');
@@ -262,12 +279,51 @@ export class PropertyKeyNormalizer {
     }
 
     // 7. 表面质量与几何尺寸
+    // (a) 表面粗糙度 (特异性优先，定量属性)
+    if (
+      /^(ROUGHNESS|RA|RZ|RQ|表面粗糙度|粗糙度|光洁度)/i.test(upperStr) ||
+      upperStr.includes('粗糙度') ||
+      upperStr.includes('ROUGHNESS') ||
+      upperStr.includes('光洁度') ||
+      upperStr === 'RA' ||
+      upperStr === 'RZ'
+    ) {
+      return {
+        raw_property_name: rawName,
+        property_key: 'surface_roughness',
+        category: 'surface',
+        display_name: '表面粗糙度 (Ra/Rz)',
+        sub_property: upperStr.includes('RZ') ? 'Rz' : 'Ra',
+        is_known: true,
+      };
+    }
+
+    // (b) 表面外观质量 (定性属性)
     if (upperStr.includes('表面') || upperStr.includes('SURFACE') || upperStr.includes('外观')) {
+      // 若伴随量纲或实测纯数值上下文，进行量纲感知纠偏
+      if (context) {
+        const cleanUnit = (context.unit || '').trim().toLowerCase();
+        const isMicroMeter = cleanUnit === 'μm' || cleanUnit === 'um' || cleanUnit === 'nm';
+        const isNumericFloat = typeof context.measuredRaw === 'number' ||
+          (typeof context.measuredRaw === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(context.measuredRaw.trim()));
+
+        if (isMicroMeter || (isNumericFloat && cleanUnit !== '')) {
+          return {
+            raw_property_name: rawName,
+            property_key: 'surface_roughness',
+            category: 'surface',
+            display_name: '表面粗糙度 (量纲推断)',
+            sub_property: cleanUnit || 'μm',
+            is_known: true,
+          };
+        }
+      }
+
       return {
         raw_property_name: rawName,
         property_key: 'surface_quality',
         category: 'surface',
-        display_name: '表面质量与粗糙度',
+        display_name: '表面外观质量',
         is_known: true,
       };
     }
@@ -292,7 +348,7 @@ export class PropertyKeyNormalizer {
       };
     }
 
-    // 9. 兜底为其他类别
+    // 9. 兜底为其他类别 / 安全沙箱
     const fallbackCat: RuleCategory = (rawCategoryHint as RuleCategory) || 'other';
     return {
       raw_property_name: rawName,
@@ -300,6 +356,7 @@ export class PropertyKeyNormalizer {
       category: fallbackCat,
       display_name: rawName,
       is_known: false,
+      is_sandbox: true,
     };
   }
 }

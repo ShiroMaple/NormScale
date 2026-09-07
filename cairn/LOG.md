@@ -4,6 +4,16 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-07 · 钛公式修约对齐与表面质量/粗糙度原子化解耦落地 (Phase 1)
+
+- 钛含量公式修约精度对齐 (`data/standards/NB_T_47019_5_2021/slices/S32168_06Cr18Ni11Ti.json`):
+  1. NB 切片中 Ti 动态公式 `rounding_decimals` 从 2 位修正为 3 位，与 GB 统一，预算均为 0.155% 并消除虚假加严。
+- 表面外观质量与表面粗糙度原子化解耦 (`data/standards/`, `src/normalizer/`, `src/engine/core.ts`):
+  1. 切片中解耦为定性 `surface_quality`（表面外观质量）与定量 `surface_roughness`（表面粗糙度 Ra <= 0.8 μm）；
+  2. `PropertyKeyNormalizer` 落实特异性优先（粗糙度优先于外观）与量纲感知（浮点数与 μm 自动纠偏至粗糙度）；
+  3. `core.ts` 与 `submit/route.ts` 建立类型专用槽位（`#num` 与 `#qual`），杜绝粗糙度浮点数值冲毁外观合格记录。
+- 质量门禁: 40 个测试套件 200 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 `pnpm build` 编译打包 0 错误。
+
 ## 2026-09-07 · 步骤3矩阵“判定状态”三态规范化与审核说明列中文标签重构
 
 - 判定状态列极简三态化 (`src/components/WaterfallWorkbench.tsx`):

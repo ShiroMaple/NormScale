@@ -33,21 +33,35 @@ function batchSpecimenToCertificateExtract(batch: any, standardIds?: string[], g
     : (batch.overrideStandard || batch.standard || 'GB/T 13296-2023');
   const grade = gradeKey || batch.overrideGrade || batch.grade || '06Cr18Ni11Ti (S32168)';
 
-  // chemical: 支持提取 "<0.01", "≤0.005", "0.018" 等不等式数值以供动态公式保守计算
-  const chemicalRecords = Array.isArray(batch.chemical)
-    ? batch.chemical.map((c: any) => {
+  // chemical: 支持 Array [{ element: 'C', value: '0.018' }] 或 Object { C: 0.018, ... }，以及 "<0.01", "≤0.005", "0.018" 等数值
+  const chemicalRecords: any[] = [];
+  if (Array.isArray(batch.chemical)) {
+    for (const c of batch.chemical) {
       const rawStr = String(c.value ?? '').trim();
       const numMatch = rawStr.match(/([0-9]+(?:\.[0-9]+)?)/);
       const parsedNum = numMatch && numMatch[1] ? parseFloat(numMatch[1]) : undefined;
-      return {
+      chemicalRecords.push({
         category: 'chemical' as const,
         property_key: c.element,
         measured_value_raw: rawStr,
         measured_value_num: parsedNum,
         unit: '%',
-      };
-    })
-    : [];
+      });
+    }
+  } else if (batch.chemical && typeof batch.chemical === 'object') {
+    for (const [el, val] of Object.entries(batch.chemical)) {
+      const rawStr = String(val ?? '').trim();
+      const numMatch = rawStr.match(/([0-9]+(?:\.[0-9]+)?)/);
+      const parsedNum = numMatch && numMatch[1] ? parseFloat(numMatch[1]) : undefined;
+      chemicalRecords.push({
+        category: 'chemical' as const,
+        property_key: el,
+        measured_value_raw: rawStr,
+        measured_value_num: parsedNum,
+        unit: '%',
+      });
+    }
+  }
 
   // mechanical
   const mechanicalRecords: any[] = [];
@@ -203,7 +217,7 @@ function batchSpecimenToCertificateExtract(batch: any, standardIds?: string[], g
       processRecords.push({
         category: 'surface' as const,
         property_key: 'surface_quality',
-        display_name: '表面质量与粗糙度',
+        display_name: '表面外观质量',
         measured_value_raw: String(surfaceVal),
         qualitative_result: String(surfaceVal),
       });
@@ -244,13 +258,23 @@ function batchSpecimenToCertificateExtract(batch: any, standardIds?: string[], g
   // additional tests: 统一通过 PropertyKeyNormalizer 进行属性键名与分类规范化，彻底消除长尾项键名脱节
   const additionalRecords = Array.isArray(batch.additionalTests)
     ? batch.additionalTests.map((t: any) => {
-      const norm = PropertyKeyNormalizer.normalize(t.key || t.name, t.category);
+      const rawVal = t.result ?? t.value_num;
+      const parsedNum = typeof t.value_num === 'number'
+        ? t.value_num
+        : (typeof t.result === 'number' ? t.result : (!isNaN(Number(t.result)) ? Number(t.result) : undefined));
+
+      const norm = PropertyKeyNormalizer.normalize(
+        t.key || t.name,
+        t.category,
+        { measuredRaw: rawVal, unit: t.unit }
+      );
+
       return {
         category: (norm.is_known ? norm.category : (t.category || 'process')) as any,
         property_key: norm.property_key,
         display_name: norm.display_name || t.name || norm.property_key,
         measured_value_raw: t.result || String(t.value_num ?? ''),
-        measured_value_num: typeof t.value_num === 'number' ? t.value_num : undefined,
+        measured_value_num: parsedNum,
         unit: t.unit,
         qualitative_result: t.result || t.conclusion,
       };
