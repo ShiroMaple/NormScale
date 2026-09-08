@@ -32,3 +32,6 @@ pnpm-debug.log*
 
 # LangGraph API
 .langgraph_api
+
+# Runtime learned data
+data/standards/user_learned_aliases.json
