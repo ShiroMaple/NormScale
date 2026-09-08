@@ -192,5 +192,67 @@ describe('OpenAiCompatibleExtractor', () => {
       global.fetch = originalFetch;
     }
   });
+
+  it('extractStream 应该从包含 usage 的 SSE chunk 中捕获官方真实 Token 开销', async () => {
+    const extractor = new OpenAiCompatibleExtractor({ apiKey: 'sk-test-mock-key' });
+    const originalFetch = global.fetch;
+
+    const makeChunk = (content: string) =>
+      `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
+    const usageChunk = `data: ${JSON.stringify({
+      choices: [],
+      usage: {
+        prompt_tokens: 1250,
+        completion_tokens: 380,
+        total_tokens: 1630,
+      },
+    })}\n\n`;
+
+    const sseChunks = [
+      makeChunk('{"header":{"certificateNo":"TEST-USAGE-01"}}'),
+      usageChunk,
+      'data: [DONE]\n\n',
+    ];
+
+    let chunkIndex = 0;
+    const mockStream = new ReadableStream({
+      pull(controller) {
+        if (chunkIndex < sseChunks.length) {
+          const encoder = new TextEncoder();
+          controller.enqueue(encoder.encode(sseChunks[chunkIndex]!));
+          chunkIndex++;
+        } else {
+          controller.close();
+        }
+      },
+    });
+
+    global.fetch = async (_url: any, init: any) => {
+      // 验证请求体中携带了 stream_options: { include_usage: true }
+      const body = JSON.parse(init.body);
+      expect(body.stream_options).toEqual({ include_usage: true });
+
+      return {
+        ok: true,
+        status: 200,
+        body: mockStream,
+      } as any;
+    };
+
+    try {
+      const payload = await extractor.extractStream(
+        'sample text with usage',
+        { filename: 'usage_test.pdf' },
+        () => {}
+      );
+
+      expect((payload as any).tokens).toBeDefined();
+      expect((payload as any).tokens.inputTokens).toBe(1250);
+      expect((payload as any).tokens.outputTokens).toBe(380);
+      expect((payload as any).tokens.totalTokens).toBe(1630);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
 

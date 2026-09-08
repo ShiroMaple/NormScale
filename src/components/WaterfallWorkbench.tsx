@@ -373,6 +373,51 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     startParsingSession,
     reparseDocument,
   } = useDocumentParser(handleDocumentParsed);
+
+  // 步骤 3 比对阶段开销累加器（各批次 LangGraph 真实耗时与 Token，单调递增不回缩）
+  const [auditMetrics, setAuditMetrics] = useState<{
+    batchRecords: Record<string, { durationMs: number; inputTokens: number; outputTokens: number }>;
+    historical: { durationMs: number; inputTokens: number; outputTokens: number };
+  }>({
+    batchRecords: {},
+    historical: { durationMs: 0, inputTokens: 0, outputTokens: 0 },
+  });
+
+  // 综合 Session 计量大盘 (步骤 2 抽取真实 Token/耗时 + 步骤 3 比对各批次 LangGraph 真实 Token/耗时，单调递增)
+  const totalCombinedMetrics = useMemo(() => {
+    let auditDurMs = auditMetrics.historical.durationMs;
+    let auditInTokens = auditMetrics.historical.inputTokens;
+    let auditOutTokens = auditMetrics.historical.outputTokens;
+
+    Object.values(auditMetrics.batchRecords).forEach(rec => {
+      auditDurMs += rec.durationMs || 0;
+      auditInTokens += rec.inputTokens || 0;
+      auditOutTokens += rec.outputTokens || 0;
+    });
+
+    const auditDurationSec = auditDurMs / 1000;
+    const parseDurationSec = sessionMetrics.totalDurationSeconds;
+    const totalDurationSec = parseFloat((parseDurationSec + auditDurationSec).toFixed(1));
+
+    const totalInputTokens = sessionMetrics.totalInputTokens + auditInTokens;
+    const totalOutputTokens = sessionMetrics.totalOutputTokens + auditOutTokens;
+
+    return {
+      totalInputTokens,
+      totalOutputTokens,
+      totalDurationSeconds: totalDurationSec,
+      parseInputTokens: sessionMetrics.totalInputTokens,
+      parseOutputTokens: sessionMetrics.totalOutputTokens,
+      parseDurationSeconds: parseDurationSec,
+      auditInputTokens: auditInTokens,
+      auditOutputTokens: auditOutTokens,
+      auditDurationSeconds: parseFloat(auditDurationSec.toFixed(1)),
+      activeConcurrency: sessionMetrics.activeConcurrency,
+      readyDocsCount: sessionMetrics.readyDocsCount,
+      totalDocsCount: sessionMetrics.totalDocsCount,
+    };
+  }, [sessionMetrics, auditMetrics]);
+
   const [isStreamingTerminalExpanded, setIsStreamingTerminalExpanded] = useState<boolean>(true);
   const prevDocStatusMap = useRef<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -969,6 +1014,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
     // 启动多文档异步并发解析工作池 (传入真实文件流映射)
     startParsingSession(activeDocs, uploadedFilesMap);
+    setAuditMetrics({
+      batchRecords: {},
+      historical: { durationMs: 0, inputTokens: 0, outputTokens: 0 },
+    });
     setIsStreamingTerminalExpanded(true);
     setCurrentStep(1);
   };
@@ -1261,7 +1310,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
     const stdIds = forcedStdIds || selectedStandardIds;
 
-    // 1. 初始化各批次展示状态为 tier1_evaluating
+    // 1. 初始化各批次展示状态为 tier1_evaluating，并将旧批次的核验开销归档至 historical 保证单调递增
     setBatchPresentationMap(prev => {
       const next = { ...prev };
       for (const b of batchesToEval) {
@@ -1273,6 +1322,47 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       }
       return next;
     });
+
+    setAuditMetrics(prev => {
+      let addDurMs = 0;
+      let addIn = 0;
+      let addOut = 0;
+      const nextBatchRecords = { ...prev.batchRecords };
+
+      for (const b of batchesToEval) {
+        const oldRec = nextBatchRecords[b.batchNo];
+        if (oldRec) {
+          addDurMs += oldRec.durationMs || 0;
+          addIn += oldRec.inputTokens || 0;
+          addOut += oldRec.outputTokens || 0;
+          delete nextBatchRecords[b.batchNo];
+        }
+      }
+
+      return {
+        batchRecords: nextBatchRecords,
+        historical: {
+          durationMs: prev.historical.durationMs + addDurMs,
+          inputTokens: prev.historical.inputTokens + addIn,
+          outputTokens: prev.historical.outputTokens + addOut,
+        },
+      };
+    });
+
+    const updateBatchAuditMetrics = (bNo: string, durMs?: number, tokUsage?: any) => {
+      if (durMs === undefined && !tokUsage) return;
+      setAuditMetrics(prev => ({
+        ...prev,
+        batchRecords: {
+          ...prev.batchRecords,
+          [bNo]: {
+            durationMs: durMs ?? prev.batchRecords[bNo]?.durationMs ?? 0,
+            inputTokens: tokUsage?.promptTokens ?? prev.batchRecords[bNo]?.inputTokens ?? 0,
+            outputTokens: tokUsage?.completionTokens ?? prev.batchRecords[bNo]?.outputTokens ?? 0,
+          },
+        },
+      }));
+    };
 
     const includesCurrent = batchesToEval.some(b => b.batchNo === selectedBatchNo);
     if (includesCurrent) {
@@ -1307,6 +1397,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             onTier1Ready: (data) => {
               // 版本令牌校验：若收到的不是当前最新 runId 的事件包，直接静默丢弃，杜绝幽灵覆写
               if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
+
+              updateBatchAuditMetrics(batch.batchNo, data.durationMs, data.tokenUsage);
 
               const isReportPass = data.report.summary.overall_status === 'PASS';
               const summaryText = isReportPass
@@ -1355,6 +1447,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             onTier2Patch: (data) => {
               if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
 
+              updateBatchAuditMetrics(batch.batchNo, data.durationMs, data.tokenUsage);
+
               const isReportPass = data.finalReport.summary.overall_status === 'PASS';
               const summaryText = isReportPass
                 ? `全项核验合格 (共评估 ${data.finalReport.summary.total_rules_evaluated} 项)`
@@ -1396,6 +1490,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             // (c) Tier 3 歧义项触发人机协同挂起
             onHitlInterrupt: (data) => {
               if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
+
+              updateBatchAuditMetrics(batch.batchNo, data.durationMs, data.tokenUsage);
 
               setBatchPresentationMap(prev => ({
                 ...prev,
@@ -1440,6 +1536,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             // (d) 全流程顺利完成
             onComplete: (data) => {
               if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
+
+              updateBatchAuditMetrics(batch.batchNo, data.durationMs, data.tokenUsage);
 
               const isReportPass = data.finalReport.summary.overall_status === 'PASS';
               const summaryText = isReportPass
@@ -2369,6 +2467,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     batchRunCountersRef.current = {};
     Object.values(batchAbortControllersRef.current).forEach(c => c.abort('NEW_TASK_STARTED'));
     batchAbortControllersRef.current = {};
+    setAuditMetrics({
+      batchRecords: {},
+      historical: { durationMs: 0, inputTokens: 0, outputTokens: 0 },
+    });
 
     // 自动刷新服务端最新的历史已缓存文档列表
     refreshCachedDocs();
@@ -2855,7 +2957,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   }}
                   mode="extraction"
                   docParsingTasks={parsingTasks}
-                  sessionMetrics={sessionMetrics}
+                  sessionMetrics={totalCombinedMetrics}
                   isStreamingTerminalExpanded={isStreamingTerminalExpanded}
                   onToggleStreamingTerminal={() => setIsStreamingTerminalExpanded(prev => !prev)}
                   onReparseDocument={() => {
@@ -4216,7 +4318,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   }}
                   mode="compliance"
                   docParsingTasks={parsingTasks}
-                  sessionMetrics={sessionMetrics}
+                  sessionMetrics={totalCombinedMetrics}
                 />
               </div>
 
@@ -5594,7 +5696,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         <div>
                           <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block mb-1">核验总耗时</span>
                           <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded p-2 text-on-surface dark:text-surface-bright">
-                            {sessionMetrics.totalDurationSeconds > 0 ? `${sessionMetrics.totalDurationSeconds.toFixed(1)}s` : '1.2s'} (模型提取 + 规则引擎)
+                            {totalCombinedMetrics.totalDurationSeconds > 0 ? `${totalCombinedMetrics.totalDurationSeconds.toFixed(1)}s` : '1.2s'} (文档提取 {totalCombinedMetrics.parseDurationSeconds.toFixed(1)}s + 智能比对 {totalCombinedMetrics.auditDurationSeconds.toFixed(1)}s)
                           </div>
                         </div>
 

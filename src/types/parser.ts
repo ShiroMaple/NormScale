@@ -26,4 +26,11 @@ export interface SessionTokenMetrics {
   activeConcurrency: number;   // 当前正在并发解析的线程数 (如 2~3)
   readyDocsCount: number;      // 已经解析就绪的文档数
   totalDocsCount: number;      // 总文档数
+  // 阶段开销细分 (文档抽取 vs 规则比对)
+  parseInputTokens?: number;
+  parseOutputTokens?: number;
+  parseDurationSeconds?: number;
+  auditInputTokens?: number;
+  auditOutputTokens?: number;
+  auditDurationSeconds?: number;
 }

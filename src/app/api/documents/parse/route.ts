@@ -409,8 +409,8 @@ export async function POST(request: Request) {
               provider: (extractor as any).activeConfig?.provider || 'Moonshot',
               parsedAt: new Date().toISOString(),
               tokenStats: {
-                inputTokens: (rawResult as any).tokens?.input || 1800,
-                outputTokens: (rawResult as any).tokens?.output || Math.ceil(streamedChars / 3.5),
+                inputTokens: (rawResult as any).tokens?.input ?? 1800,
+                outputTokens: (rawResult as any).tokens?.output ?? Math.ceil(streamedChars / 3.5),
                 durationSeconds,
                 isFromCache: false,
               },

@@ -19,6 +19,17 @@ export function useDocumentParser(
   const filesMapRef = useRef<Record<string, File>>({});
   const timerRefs = useRef<Record<string, NodeJS.Timeout[]>>({});
 
+  // Session 历史沉淀消耗池（重新解析时沉淀旧开销，保证单调递增不回缩）
+  const historicalUsageRef = useRef<{
+    inputTokens: number;
+    outputTokens: number;
+    durationSeconds: number;
+  }>({
+    inputTokens: 0,
+    outputTokens: 0,
+    durationSeconds: 0,
+  });
+
   // Session 累计 Token 指标
   const [sessionMetrics, setSessionMetrics] = useState<SessionTokenMetrics>({
     totalInputTokens: 0,
@@ -31,9 +42,9 @@ export function useDocumentParser(
 
   // 更新总计统计指标
   const recalculateMetrics = useCallback((updatedTasks: Record<string, DocumentParsingTask>) => {
-    let totalIn = 0;
-    let totalOut = 0;
-    let totalDur = 0;
+    let totalIn = historicalUsageRef.current.inputTokens;
+    let totalOut = historicalUsageRef.current.outputTokens;
+    let totalDur = historicalUsageRef.current.durationSeconds;
     let readyCount = 0;
     let activeCount = 0;
     const taskList = Object.values(updatedTasks);
@@ -49,7 +60,7 @@ export function useDocumentParser(
     setSessionMetrics({
       totalInputTokens: totalIn,
       totalOutputTokens: totalOut,
-      totalDurationSeconds: totalDur,
+      totalDurationSeconds: parseFloat(totalDur.toFixed(1)),
       activeConcurrency: activeCount,
       readyDocsCount: readyCount,
       totalDocsCount: taskList.length,
@@ -65,16 +76,23 @@ export function useDocumentParser(
       activeWorkersRef.current++;
       const file = filesMapRef.current[docId];
 
-      // 初始化任务为 parsing
+      // 初始化任务为 parsing，若该任务已有消耗则归档至历史累计池
       setTasks(prev => {
+        const previousTask = prev[docId];
+        if (previousTask && (previousTask.inputTokens > 0 || previousTask.outputTokens > 0 || previousTask.durationSeconds > 0)) {
+          historicalUsageRef.current.inputTokens += previousTask.inputTokens || 0;
+          historicalUsageRef.current.outputTokens += previousTask.outputTokens || 0;
+          historicalUsageRef.current.durationSeconds += previousTask.durationSeconds || 0;
+        }
+
         const updatedTask: DocumentParsingTask = {
           docId,
           filename: doc.filename,
           fileSize: doc.fileSize,
           status: 'parsing',
           progress: 10,
-          streamingJson: '// 正在计算文件 MD5 指纹并检索缓存...',
-          stepPhase: '1/3 校验 MD5 缓存与模型接入中...',
+          streamingJson: forceReparse ? '// 强制重新解析，绕过缓存并重新调用大模型...' : '// 正在计算文件 MD5 指纹并检索缓存...',
+          stepPhase: forceReparse ? '1/3 重新调用大模型解析中...' : '1/3 校验 MD5 缓存与模型接入中...',
           inputTokens: 0,
           outputTokens: 0,
           durationSeconds: 0,
@@ -255,8 +273,8 @@ export function useDocumentParser(
                     progress: 100,
                     streamingJson: formattedJson,
                     stepPhase: '解析完成，全景数据已结构化入库',
-                    inputTokens: parseResult.tokenStats?.inputTokens || 1800,
-                    outputTokens: parseResult.tokenStats?.outputTokens || estimatedOutputTokens,
+                    inputTokens: parseResult.tokenStats?.inputTokens ?? 0,
+                    outputTokens: parseResult.tokenStats?.outputTokens ?? estimatedOutputTokens,
                     durationSeconds: durationSec,
                     completedAt: new Date().toLocaleTimeString(),
                   };
@@ -323,6 +341,13 @@ export function useDocumentParser(
       });
       timerRefs.current = {};
 
+      // 启动全新 Session 时，归零历史累计池
+      historicalUsageRef.current = {
+        inputTokens: 0,
+        outputTokens: 0,
+        durationSeconds: 0,
+      };
+
       const docsMap: Record<string, SessionDocument> = {};
       const initialTasks: Record<string, DocumentParsingTask> = {};
       const queue: string[] = [];
@@ -368,6 +393,7 @@ export function useDocumentParser(
   // 单独强制重新解析某份文档 (绕过 MD5 缓存)
   const reparseDocument = useCallback(
     (docId: string) => {
+      setIsParsingActive(true);
       executeDocumentWorker(docId, true);
     },
     [executeDocumentWorker]

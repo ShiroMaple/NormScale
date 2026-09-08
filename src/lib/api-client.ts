@@ -1,5 +1,5 @@
 import { AuditReport } from '@/schemas/report.schema.ts';
-import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions, PropertyResolutionCandidate } from '@/workflow/state.interface.ts';
+import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions, PropertyResolutionCandidate, WorkflowTokenUsage } from '@/workflow/state.interface.ts';
 import { RawCertificatePayload } from '@/extractor/extractor.interface.ts';
 
 export interface StandardSliceOverviewDto {
@@ -41,6 +41,8 @@ export interface AuditApiResponse {
   finalReport?: AuditReport;
   hitlContext?: HitlInterruptContext;
   error?: string;
+  durationMs?: number;
+  tokenUsage?: WorkflowTokenUsage;
 }
 
 /** 渐进式流式回调监听契约 */
@@ -52,6 +54,8 @@ export interface AuditStreamCallbacks {
     report: AuditReport;
     pendingProperties?: PropertyResolutionCandidate[];
     hasPending: boolean;
+    durationMs?: number;
+    tokenUsage?: WorkflowTokenUsage;
   }) => void;
   /** Tier 2 LLM 长尾消歧补丁就绪 */
   onTier2Patch?: (data: {
@@ -59,6 +63,8 @@ export interface AuditStreamCallbacks {
     batchNo?: string;
     finalReport: AuditReport;
     resolvedProperties?: PropertyResolutionCandidate[];
+    durationMs?: number;
+    tokenUsage?: WorkflowTokenUsage;
   }) => void;
   /** Tier 3 触发人机协同挂起 */
   onHitlInterrupt?: (data: {
@@ -66,18 +72,23 @@ export interface AuditStreamCallbacks {
     batchNo?: string;
     hitlContext: HitlInterruptContext;
     partialReport?: AuditReport;
+    durationMs?: number;
+    tokenUsage?: WorkflowTokenUsage;
   }) => void;
   /** 全流程核验完成 */
   onComplete?: (data: {
     taskId: string;
     batchNo?: string;
     finalReport: AuditReport;
+    durationMs?: number;
+    tokenUsage?: WorkflowTokenUsage;
   }) => void;
   /** 异常失败 */
   onError?: (err: {
     taskId: string;
     batchNo?: string;
     error: string;
+    durationMs?: number;
   }) => void;
 }
 
@@ -181,6 +192,8 @@ export const apiClient = {
           try {
             const event = JSON.parse(jsonStr);
             if (event.taskId) finalResult.taskId = event.taskId;
+            if (typeof event.durationMs === 'number') finalResult.durationMs = event.durationMs;
+            if (event.tokenUsage) finalResult.tokenUsage = event.tokenUsage;
 
             if (event.type === 'tier1_ready') {
               callbacks?.onTier1Ready?.(event);

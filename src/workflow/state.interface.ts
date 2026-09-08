@@ -163,6 +163,14 @@ export type WorkflowStatus =
   | 'completed'
   | 'failed';
 
+/** 工作流执行 Token 与耗时计量统计 */
+export interface WorkflowTokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  duration_ms?: number;
+}
+
 /**
  * LangGraph 状态通道定义 (QualityAuditStateAnnotation)
  */
@@ -208,6 +216,20 @@ export const QualityAuditStateAnnotation = Annotation.Root({
   resolvedProperties: Annotation<PropertyResolutionCandidate[] | undefined>(),
   /** 最终完整质检核验报告 (包含决策汇总、单项明细与审计轨迹) */
   finalReport: Annotation<AuditReport | undefined>(),
+  /** 工作流执行 Token 消耗与开销累加通道 */
+  tokenUsage: Annotation<WorkflowTokenUsage | undefined>({
+    reducer: (curr, update) => {
+      if (!update) return curr;
+      if (!curr) return update;
+      return {
+        prompt_tokens: (curr.prompt_tokens || 0) + (update.prompt_tokens || 0),
+        completion_tokens: (curr.completion_tokens || 0) + (update.completion_tokens || 0),
+        total_tokens: (curr.total_tokens || 0) + (update.total_tokens || 0),
+        duration_ms: (curr.duration_ms || 0) + (update.duration_ms || 0),
+      };
+    },
+    default: () => undefined,
+  }),
   /** 错误异常信息 */
   error: Annotation<string | undefined>(),
 });

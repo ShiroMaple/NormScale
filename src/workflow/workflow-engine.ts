@@ -1,6 +1,13 @@
 import { MemorySaver, Command } from '@langchain/langgraph';
 import { buildAuditStateGraph, AuditGraphDependencies } from './audit-graph.ts';
-import { QualityAuditState, WorkflowOptions, HumanCorrectionInput, HitlInterruptContext, PropertyResolutionCandidate } from './state.interface.ts';
+import {
+  QualityAuditState,
+  WorkflowOptions,
+  HumanCorrectionInput,
+  HitlInterruptContext,
+  PropertyResolutionCandidate,
+  WorkflowTokenUsage,
+} from './state.interface.ts';
 import { AuditReport } from '../schemas/report.schema.ts';
 import { MemoryTraceCollector } from '../logger/trace-collector.ts';
 import { logger } from '../logger/index.ts';
@@ -16,6 +23,10 @@ export interface WorkflowExecutionResult {
   hitlContext?: HitlInterruptContext;
   /** 错误信息 */
   error?: string;
+  /** 任务执行耗时 (毫秒) */
+  durationMs?: number;
+  /** 工作流 Token 消耗统计 */
+  tokenUsage?: WorkflowTokenUsage;
 }
 
 /** 渐进式流式事件契约 (Progressive Stream Events) */
@@ -27,6 +38,8 @@ export type WorkflowStreamEvent =
       report: AuditReport;
       pendingProperties?: PropertyResolutionCandidate[];
       hasPending: boolean;
+      durationMs?: number;
+      tokenUsage?: WorkflowTokenUsage;
     }
   | {
       type: 'tier2_patch';
@@ -34,6 +47,8 @@ export type WorkflowStreamEvent =
       batchNo?: string;
       finalReport: AuditReport;
       resolvedProperties?: PropertyResolutionCandidate[];
+      durationMs?: number;
+      tokenUsage?: WorkflowTokenUsage;
     }
   | {
       type: 'hitl_interrupt';
@@ -41,18 +56,24 @@ export type WorkflowStreamEvent =
       batchNo?: string;
       hitlContext: HitlInterruptContext;
       partialReport?: AuditReport;
+      durationMs?: number;
+      tokenUsage?: WorkflowTokenUsage;
     }
   | {
       type: 'complete';
       taskId: string;
       batchNo?: string;
       finalReport: AuditReport;
+      durationMs?: number;
+      tokenUsage?: WorkflowTokenUsage;
     }
   | {
       type: 'error';
       taskId: string;
       batchNo?: string;
       error: string;
+      durationMs?: number;
+      tokenUsage?: WorkflowTokenUsage;
     };
 
 /**
@@ -169,6 +190,7 @@ export class WorkflowEngine {
     const taskId = threadId;
     const batchNo = options?.batchNo;
     const collector = new MemoryTraceCollector(taskId);
+    const startTime = Date.now();
 
     logger.info('WORKFLOW', `[WorkflowEngine] 启动流式渐进式核验任务 [${taskId}]...`);
 
@@ -187,6 +209,11 @@ export class WorkflowEngine {
       let lastReport: AuditReport | undefined;
       let pendingProps: PropertyResolutionCandidate[] | undefined;
       let resolvedProps: PropertyResolutionCandidate[] | undefined;
+      let accumulatedTokenUsage: WorkflowTokenUsage = {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+      };
 
       const eventStream = await this.graph.stream(initialState as any, {
         ...config,
@@ -210,9 +237,17 @@ export class WorkflowEngine {
         if (update.finalReport) {
           lastReport = update.finalReport;
         }
+        if (update.tokenUsage) {
+          accumulatedTokenUsage = {
+            prompt_tokens: (accumulatedTokenUsage?.prompt_tokens || 0) + (update.tokenUsage.prompt_tokens || 0),
+            completion_tokens: (accumulatedTokenUsage?.completion_tokens || 0) + (update.tokenUsage.completion_tokens || 0),
+            total_tokens: (accumulatedTokenUsage?.total_tokens || 0) + (update.tokenUsage.total_tokens || 0),
+          };
+        }
 
         // 当 deterministic_eval 节点产生核验报告
         if (nodeName === 'deterministic_eval' && lastReport) {
+          const durationMs = Date.now() - startTime;
           if (!tier1Emitted) {
             tier1Emitted = true;
             const hasPending = Boolean(pendingProps && pendingProps.length > 0);
@@ -223,6 +258,8 @@ export class WorkflowEngine {
               report: lastReport,
               pendingProperties: pendingProps,
               hasPending,
+              durationMs,
+              tokenUsage: accumulatedTokenUsage,
             };
           } else {
             // 第二次经过 deterministic_eval (Tier 2 消歧后的增量核验)
@@ -232,6 +269,8 @@ export class WorkflowEngine {
               batchNo,
               finalReport: lastReport,
               resolvedProperties: resolvedProps,
+              durationMs,
+              tokenUsage: accumulatedTokenUsage,
             };
           }
         }
@@ -242,9 +281,13 @@ export class WorkflowEngine {
         }
       }
 
+      const totalDurationMs = Date.now() - startTime;
+
       // stream 迭代结束后，优先检查 Checkpointer 快照中的正式中断 (由 human_review 节点 interrupt 产生)
       const snapshot = await this.graph.getState(config);
       const taskInterrupts = snapshot?.tasks?.[0]?.interrupts;
+      const finalTokenUsage = snapshot?.values?.tokenUsage || accumulatedTokenUsage;
+
       if (Array.isArray(taskInterrupts) && taskInterrupts.length > 0) {
         const hitlVal = taskInterrupts[0]?.value as HitlInterruptContext;
         yield {
@@ -253,6 +296,8 @@ export class WorkflowEngine {
           batchNo,
           hitlContext: hitlVal,
           partialReport: lastReport,
+          durationMs: totalDurationMs,
+          tokenUsage: finalTokenUsage,
         };
         return;
       }
@@ -266,6 +311,8 @@ export class WorkflowEngine {
           batchNo,
           hitlContext: stateHitl,
           partialReport: lastReport,
+          durationMs: totalDurationMs,
+          tokenUsage: finalTokenUsage,
         };
         return;
       }
@@ -280,6 +327,8 @@ export class WorkflowEngine {
           report: finalReport,
           pendingProperties: [],
           hasPending: false,
+          durationMs: totalDurationMs,
+          tokenUsage: finalTokenUsage,
         };
       }
 
@@ -289,6 +338,8 @@ export class WorkflowEngine {
           taskId,
           batchNo,
           finalReport,
+          durationMs: totalDurationMs,
+          tokenUsage: finalTokenUsage,
         };
       } else {
         yield {
@@ -296,6 +347,8 @@ export class WorkflowEngine {
           taskId,
           batchNo,
           error: snapshot?.values?.error || '未能生成最终核验报告',
+          durationMs: totalDurationMs,
+          tokenUsage: finalTokenUsage,
         };
       }
     } catch (err: unknown) {

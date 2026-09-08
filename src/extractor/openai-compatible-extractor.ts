@@ -212,6 +212,9 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
       tokens: {
         input: inputTokens,
         output: outputTokens,
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
       },
     } as any;
   }
@@ -346,6 +349,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
           ],
           temperature: 1,
           stream: true,
+          stream_options: { include_usage: true },
           response_format: { type: 'json_object' },
         };
 
@@ -385,6 +389,8 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
             const decoder = new TextDecoder('utf-8');
             let fullContent = '';
             let buffer = '';
+            let capturedPromptTokens: number | undefined;
+            let capturedCompletionTokens: number | undefined;
 
             while (true) {
               const { done, value } = await reader.read();
@@ -402,6 +408,17 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
                   const jsonStr = trimmed.slice(6);
                   try {
                     const parsedChunk = JSON.parse(jsonStr);
+
+                    // 1. 捕获官方返回的真实 Token 开销 (通过 stream_options.include_usage 返回)
+                    if (parsedChunk.usage) {
+                      if (typeof parsedChunk.usage.prompt_tokens === 'number') {
+                        capturedPromptTokens = parsedChunk.usage.prompt_tokens;
+                      }
+                      if (typeof parsedChunk.usage.completion_tokens === 'number') {
+                        capturedCompletionTokens = parsedChunk.usage.completion_tokens;
+                      }
+                    }
+
                     const delta = parsedChunk.choices?.[0]?.delta?.content || '';
                     if (delta) {
                       fullContent += delta;
@@ -417,6 +434,14 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
             if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
               try {
                 const parsedChunk = JSON.parse(buffer.trim().slice(6));
+                if (parsedChunk.usage) {
+                  if (typeof parsedChunk.usage.prompt_tokens === 'number') {
+                    capturedPromptTokens = parsedChunk.usage.prompt_tokens;
+                  }
+                  if (typeof parsedChunk.usage.completion_tokens === 'number') {
+                    capturedCompletionTokens = parsedChunk.usage.completion_tokens;
+                  }
+                }
                 const delta = parsedChunk.choices?.[0]?.delta?.content || '';
                 if (delta) {
                   fullContent += delta;
@@ -428,12 +453,12 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
             }
 
             const parsed = this.parseCleanJson(fullContent);
-            const promptTokens = 1800;
-            const completionTokens = Math.max(200, Math.ceil(fullContent.length / 3.5));
+            const promptTokens = capturedPromptTokens ?? 1800;
+            const completionTokens = capturedCompletionTokens ?? Math.max(200, Math.ceil(fullContent.length / 3.5));
 
             logger.info(
               'EXTRACTOR',
-              `[OpenAI-Extractor-Stream] 流式解析成功，累计字符: ${fullContent.length}，估算 Token: 输出 ${completionTokens}`
+              `[OpenAI-Extractor-Stream] 流式解析成功，累计字符: ${fullContent.length}，Token 开销: 输入 ${promptTokens} (${capturedPromptTokens !== undefined ? '官方真实' : '备用估算'}) / 输出 ${completionTokens} (${capturedCompletionTokens !== undefined ? '官方真实' : '备用估算'})`
             );
 
             return this.buildPayloadResult(parsed, fullContent, promptTokens, completionTokens);

@@ -100,6 +100,18 @@ authoring_mode: ai_generated
   - `extract.node.ts` 增加安全防御断言：若未显式配置真实提取器且输入非结构化数据，直接安全阻断报错，杜绝伪造数据流入生产；
   - `mock-extractor.ts` 严禁对未知输入静默退回至硬编码样本，仅作为纯测试辅助工具。
 
+### 2.6 Session 真实 Token 计量与跨阶段单调累加开销体系
+为彻底根除 Token 统计中的估算伪造（如 1800 假基数或字符除以 3.5）以及重新解析时开销被抹零重置的问题，NormScale 确立了工业级会话审计计量契约：
+1. **官方真实 Usage 捕获**：
+   - 在流式请求体中显式开启 `stream_options: { include_usage: true }`；
+   - 提取循环中精准捕获大模型服务在尾帧 chunk 中下发的 `prompt_tokens` 与 `completion_tokens`，仅在缺失时做安全兜底；
+2. **LangGraph 节点开销透传**：
+   - 状态机注解扩充 `tokenUsage` 通道（带 Reducer 累加规则），在流式事件 `WorkflowStreamEvent`（`tier1_ready`, `tier2_patch`, `hitl_interrupt`, `complete`）中实时透传执行毫秒数 `durationMs` 与 `tokenUsage`；
+3. **重新解析历史沉淀池（单调递增不回缩）**：
+   - `useDocumentParser` 引入 `historicalUsageRef`，当重新解析某份已处理文档时，将其此前产生的消耗无缝归档至历史池，新计算在历史底账上叠加；
+4. **跨阶段全局会话汇聚**：
+   - `WaterfallWorkbench` 统一维护 `auditMetrics`，与步骤 2 文档提取的 `sessionMetrics` 联合结算为 `totalCombinedMetrics`，工作台顶栏与核验归档卡片提供全局耗时与各阶段细分（`文档提取 X.Xs + 智能比对 Y.Ys`），全面符合工业审计心智模型。
+
 ---
 
 ## 3. 测试资产物理隔离与受控归档规范

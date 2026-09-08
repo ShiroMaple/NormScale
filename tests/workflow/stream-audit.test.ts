@@ -30,24 +30,30 @@ describe('渐进式流式通信与分段事件调度测试 (Phase 3)', () => {
 
     expect(events.length).toBeGreaterThanOrEqual(2);
 
-    // 1. 验证首帧为 tier1_ready
+    // 1. 验证首帧为 tier1_ready 并透传执行耗时与 Token 指标
     const firstEvent = events[0];
     expect(firstEvent).toBeDefined();
     if (firstEvent && firstEvent.type === 'tier1_ready') {
       expect(firstEvent.report).toBeDefined();
       expect(firstEvent.taskId).toBe(`${sessionId}::${batchNo}`);
       expect(firstEvent.hasPending).toBe(false);
+      expect(typeof firstEvent.durationMs).toBe('number');
+      expect(firstEvent.durationMs).toBeGreaterThanOrEqual(0);
+      expect(firstEvent.tokenUsage).toBeDefined();
     } else {
       throw new Error(`Expected firstEvent to be tier1_ready, got: ${firstEvent?.type}`);
     }
 
-    // 2. 验证末帧为 complete
+    // 2. 验证末帧为 complete 并透传全流程耗时与 Token
     const lastEvent = events[events.length - 1];
     expect(lastEvent).toBeDefined();
     if (lastEvent && lastEvent.type === 'complete') {
       expect(lastEvent.finalReport.declared_grade).toBe('06Cr19Ni10');
       expect(lastEvent.finalReport.summary.overall_status).toBeDefined();
       expect(lastEvent.finalReport.summary.total_rules_evaluated).toBeGreaterThan(0);
+      expect(typeof lastEvent.durationMs).toBe('number');
+      expect(lastEvent.durationMs).toBeGreaterThanOrEqual(0);
+      expect(lastEvent.tokenUsage).toBeDefined();
     } else {
       throw new Error(`Expected lastEvent to be complete, got: ${lastEvent?.type}`);
     }

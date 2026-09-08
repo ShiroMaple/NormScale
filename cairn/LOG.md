@@ -4,6 +4,17 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-08 · 会话级真实 Token 采集、LangGraph 开销透传与单调递增跨阶段计量大盘
+
+- 真实 Token 采集与假数据根除 (`openai-compatible-extractor.ts`, `route.ts`):
+  1. 官方 usage 捕获：流式请求体显式声明 `stream_options: { include_usage: true }`，从尾帧 chunk 捕获官方返回的 `prompt_tokens` 与 `completion_tokens`；
+  2. 假数据与硬编码根除：移除 1800 与字符除以 3.5 假估算，统一在 payload 中挂载标准化 `tokens` 结构，路由层优先采用真值。
+- LangGraph 开销透传与跨批次物理单调递增 (`workflow-engine.ts`, `WaterfallWorkbench.tsx`):
+  1. 状态机与流式事件扩展：`WorkflowStreamEvent` 新增 `durationMs` 与 `tokenUsage` 字段，各事件发射点实时透传节点实际耗时与累计 Token；
+  2. 重新解析历史沉淀池：`useDocumentParser` 引入 `historicalUsageRef`，重新解析时旧开销归档至底账，解决重算抹零，确保单调递增；
+  3. 跨阶段全局汇聚：`WaterfallWorkbench` 维护 `auditMetrics`，汇总步骤 2 抽取与步骤 3 多批次比对开销，工作台顶栏与导出摘要实时呈现。
+- 质量门禁: 47 个测试套件 231 个测试 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 打包构建成功。详见 `cairn/langgraph-orchestration-and-fixtures.md`。
+
 ## 2026-09-08 · HITL 抽屉手动输入钢级多维模糊匹配与键盘操作体验全面升级
 
 - 数据层与元数据直通 (`rule-store.interface.ts`, `file-rule-store.ts`, `api-client.ts`):
