@@ -6,10 +6,9 @@ import { WaterfallWorkbench } from '@/components/WaterfallWorkbench.tsx';
 import { StandardExplorer } from '@/components/StandardExplorer.tsx';
 import { AuditLedger } from '@/components/AuditLedger.tsx';
 import { AdminConsole } from '@/components/AdminConsole.tsx';
-import { HitlDrawer } from '@/components/HitlDrawer.tsx';
 import { apiClient, PresetSampleDto, StandardOverviewDto } from '@/lib/api-client.ts';
 import { AuditReport } from '@/schemas/report.schema.ts';
-import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions } from '@/workflow/state.interface.ts';
+import { WorkflowOptions } from '@/workflow/state.interface.ts';
 import { InspectionSession } from '@/types/session.ts';
 
 /**
@@ -35,10 +34,7 @@ export default function DashboardPage() {
   });
 
   const [isAuditing, setIsAuditing] = useState<boolean>(false);
-  const [currentTaskId, setCurrentTaskId] = useState<string>('');
   const [currentReport, setCurrentReport] = useState<AuditReport>();
-  const [hitlContext, setHitlContext] = useState<HitlInterruptContext>();
-  const [isHitlOpen, setIsHitlOpen] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // 1. 初始化加载标准库信息与预设样本
@@ -71,16 +67,8 @@ export default function DashboardPage() {
           options: currentOpts || options,
         });
 
-        setCurrentTaskId(res.taskId);
-
-        if (res.status === 'suspended_hitl') {
-          setHitlContext(res.hitlContext);
-          setIsHitlOpen(true);
+        if (res.status === 'suspended_hitl' || res.status === 'completed') {
           if (res.finalReport) setCurrentReport(res.finalReport);
-        } else if (res.status === 'completed' && res.finalReport) {
-          setCurrentReport(res.finalReport);
-          setHitlContext(undefined);
-          setIsHitlOpen(false);
         } else {
           setErrorMessage(res.error || '核验任务执行失败');
         }
@@ -93,29 +81,6 @@ export default function DashboardPage() {
     },
     [options]
   );
-
-  // 3. 人机协同修正数据提交并恢复执行
-  const handleResumeAudit = async (correction: HumanCorrectionInput) => {
-    if (!currentTaskId) return;
-    setIsAuditing(true);
-    try {
-      const res = await apiClient.resumeAudit(currentTaskId, correction);
-      if (res.status === 'completed' && res.finalReport) {
-        setCurrentReport(res.finalReport);
-        setHitlContext(undefined);
-        setIsHitlOpen(false);
-      } else if (res.status === 'suspended_hitl') {
-        setHitlContext(res.hitlContext);
-      } else {
-        setErrorMessage(res.error || '恢复任务执行失败');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorMessage(`恢复执行异常: ${msg}`);
-    } finally {
-      setIsAuditing(false);
-    }
-  };
 
   const toggleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : 'light';
@@ -190,11 +155,11 @@ export default function DashboardPage() {
             standardsData={standardsData}
             samples={samples}
             selectedSampleId={selectedSampleId}
-            onSelectSample={id => handleExecuteAudit(id)}
+            onSelectSample={id => setSelectedSampleId(id)}
             isAuditing={isAuditing}
             currentReport={currentReport}
             onOpenHitlDrawer={() => {}}
-            onTriggerAudit={() => handleExecuteAudit(selectedSampleId)}
+            onTriggerAudit={() => {}}
             loadedSession={loadedSession}
             onSessionChange={setCurrentWorkbenchSession}
           />
@@ -268,15 +233,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 人机协同干预右侧 480px 抽屉 */}
-      <HitlDrawer
-        isOpen={isHitlOpen}
-        onClose={() => setIsHitlOpen(false)}
-        hitlContext={hitlContext}
-        taskId={currentTaskId}
-        onSubmitResume={handleResumeAudit}
-        isSubmitting={isAuditing}
-      />
     </div>
   );
 }

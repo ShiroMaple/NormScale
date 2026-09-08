@@ -1,26 +1,23 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   HitlInterruptContext,
   HumanCorrectionInput,
-  CandidateGradeOption,
 } from '@/workflow/state.interface.ts';
+import { StandardOverviewDto } from '@/lib/api-client.ts';
+import { buildGradePool, searchFuzzyGrades, FuzzyGradeItem } from '@/utils/grade-fuzzy-matcher.ts';
 
 interface HitlDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   hitlContext?: HitlInterruptContext;
   taskId: string;
+  selectedStandardIds?: string[];
+  availableStandards?: StandardOverviewDto[];
   onSubmitResume: (correction: HumanCorrectionInput) => Promise<void>;
   isSubmitting: boolean;
 }
-
-const DEFAULT_CANDIDATES: CandidateGradeOption[] = [
-  { id: 'S30408', code: '06Cr19Ni10 (S30408)', match: '95% 匹配 (推荐)', standard: 'GB/T 13296-2023', recommended: true },
-  { id: 'S30403', code: '022Cr19Ni10 (S30403 / 304L)', match: '88% 匹配', standard: 'GB/T 13296-2023' },
-  { id: 'S32168', code: '06Cr18Ni11Ti (S32168 / 321)', match: '75% 匹配', standard: 'GB/T 13296-2023' },
-];
 
 /**
  * ============================================================================
@@ -33,12 +30,51 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
   onClose,
   hitlContext,
   taskId,
+  selectedStandardIds,
+  availableStandards,
   onSubmitResume,
   isSubmitting,
 }) => {
-  // 场景 1: 牌号消歧状态
-  const [selectedGrade, setSelectedGrade] = useState<string>('S30408');
+  const candidateList = hitlContext?.candidate_grades || [];
+
+  // 场景 1: 牌号消歧状态 (默认选中服务端动态推荐的首项，若无推荐则聚焦 CUSTOM)
+  const [selectedGrade, setSelectedGrade] = useState<string>(() => {
+    if (candidateList.length > 0) {
+      const rec = candidateList.find(c => c.recommended) || candidateList[0];
+      return rec ? rec.id : 'CUSTOM';
+    }
+    return 'CUSTOM';
+  });
   const [customGrade, setCustomGrade] = useState<string>('');
+  const [selectedCustomGradeTarget, setSelectedCustomGradeTarget] = useState<string>('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const [highlightIndex, setHighlightIndex] = useState<number>(-1);
+
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 动态提取当前选定标准（或全局退化）的候选钢级池
+  const gradePool = useMemo(() => {
+    return buildGradePool(availableStandards, selectedStandardIds);
+  }, [availableStandards, selectedStandardIds]);
+
+  // 模糊匹配实时检索结果
+  const fuzzyResults = useMemo(() => {
+    if (!customGrade || !isDropdownOpen) return [];
+    return searchFuzzyGrades(customGrade, gradePool, 8);
+  }, [customGrade, gradePool, isDropdownOpen]);
+
+  // 当 hitlContext 动态更新时同步选中态
+  useEffect(() => {
+    if (candidateList.length > 0) {
+      const rec = candidateList.find(c => c.recommended) || candidateList[0];
+      if (rec) {
+        setSelectedGrade(rec.id);
+      }
+    } else {
+      setSelectedGrade('CUSTOM');
+    }
+  }, [hitlContext?.candidate_grades]);
 
   // 场景 2: 替代条款确认状态
   const [acceptAlternative, setAcceptAlternative] = useState<boolean>(true);
@@ -74,14 +110,77 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
       );
     } else {
       setJustification(
-        '根据质保书化学成分及供货合同技术协议，确认该材料牌号，予以人工消歧锁定。'
+        '根据质保书化学成分及供货合同技术协议，人工确认该材料牌号。'
       );
     }
   }, [currentReason, acceptAlternative, selectedArbitratedStandard, qualitativeVerdict]);
 
-  if (!isOpen) return null;
+  // 点击外部收起模糊匹配下拉浮层
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+        setHighlightIndex(-1);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-  const candidateList = hitlContext?.candidate_grades || DEFAULT_CANDIDATES;
+  // 选中模糊匹配候选条目
+  const handleSelectFuzzyItem = useCallback((item: FuzzyGradeItem) => {
+    // 输入框回填标准全称显示（例如 022Cr17Ni12Mo2 (S31603)）
+    setCustomGrade(item.display_name);
+    // 底层记录规范主牌号，确保路由切片无歧义
+    setSelectedCustomGradeTarget(item.primary_grade || item.spec_key);
+    setIsDropdownOpen(false);
+    setHighlightIndex(-1);
+  }, []);
+
+  // 输入框文本变化
+  const handleCustomGradeInputChange = (val: string) => {
+    setCustomGrade(val);
+    setSelectedCustomGradeTarget(val.trim());
+    setIsDropdownOpen(true);
+    setHighlightIndex(-1);
+  };
+
+  // 输入框键盘快捷操作
+  const handleCustomGradeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isDropdownOpen || fuzzyResults.length === 0) {
+      if (e.key === 'ArrowDown') {
+        setIsDropdownOpen(true);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIndex(prev => (prev + 1 >= fuzzyResults.length ? 0 : prev + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIndex(prev => (prev <= 0 ? fuzzyResults.length - 1 : prev - 1));
+    } else if (e.key === 'Enter') {
+      if (highlightIndex >= 0 && highlightIndex < fuzzyResults.length) {
+        e.preventDefault();
+        handleSelectFuzzyItem(fuzzyResults[highlightIndex]!);
+      }
+    } else if (e.key === 'Escape') {
+      setIsDropdownOpen(false);
+      setHighlightIndex(-1);
+    }
+  };
+
+  // 一键清空输入框
+  const handleClearCustomGrade = () => {
+    setCustomGrade('');
+    setSelectedCustomGradeTarget('');
+    setIsDropdownOpen(false);
+    setHighlightIndex(-1);
+    inputRef.current?.focus();
+  };
+
+  if (!isOpen) return null;
 
   const handleSubmit = async () => {
     const payload: HumanCorrectionInput = {
@@ -90,7 +189,10 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
     };
 
     if (currentReason === 'UNKNOWN_GRADE' || currentReason === 'LOW_CONFIDENCE') {
-      payload.corrected_grade = selectedGrade === 'CUSTOM' ? customGrade : selectedGrade;
+      const targetGrade = selectedGrade === 'CUSTOM'
+        ? (selectedCustomGradeTarget || customGrade)
+        : selectedGrade;
+      payload.corrected_grade = targetGrade;
     } else if (currentReason === 'ALTERNATIVE_CLAUSE') {
       payload.accepted_alternative_clause = acceptAlternative;
     } else if (currentReason === 'MULTI_STANDARD_CONFLICT') {
@@ -98,7 +200,10 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
     } else if (currentReason === 'QUALITATIVE_AMBIGUITY') {
       payload.qualitative_verdict = qualitativeVerdict;
     } else {
-      payload.corrected_grade = selectedGrade === 'CUSTOM' ? customGrade : selectedGrade;
+      const targetGrade = selectedGrade === 'CUSTOM'
+        ? (selectedCustomGradeTarget || customGrade)
+        : selectedGrade;
+      payload.corrected_grade = targetGrade;
     }
 
     await onSubmitResume(payload);
@@ -165,12 +270,15 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
         <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-5 text-xs">
 
           {/* 挂起事实与原因说明看板 */}
-          <div className="rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-4 space-y-1.5 shadow-xs">
+          <div className="rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-4 space-y-2 shadow-xs">
             <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200 text-xs">
               <span className="material-symbols-outlined text-base text-amber-600 dark:text-amber-400">info</span>
-              <span>挂起原因：{hitlContext?.prompt_message || '系统存在无法自主推断的规则前提阻断'}</span>
+              <span>挂起原因</span>
             </div>
-            <p className="text-[12px] text-amber-800/90 dark:text-amber-200/90 leading-relaxed font-sans">
+            <div className="text-sm font-bold text-amber-950 dark:text-amber-100 leading-snug font-sans">
+              {hitlContext?.prompt_message || '系统存在无法自主推断的规则前提阻断'}
+            </div>
+            <p className="text-[12px] text-amber-800/80 dark:text-amber-300/80 leading-relaxed font-sans pt-1 border-t border-amber-200/60 dark:border-amber-800/40">
               根据检验安全规则，系统无法自动出具确定性计算结果，需人工指定裁定参数后恢复流转。
             </p>
           </div>
@@ -183,69 +291,158 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
               </label>
 
               <div className="space-y-2">
-                {candidateList.map(cand => (
-                  <label
-                    key={cand.id}
-                    className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${selectedGrade === cand.id
-                      ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs'
-                      : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
-                      }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="candidateGrade"
-                        value={cand.id}
-                        checked={selectedGrade === cand.id}
-                        onChange={() => setSelectedGrade(cand.id)}
-                        className="text-primary focus:ring-primary h-4 w-4"
-                      />
-                      <div>
-                        <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
-                          {cand.code}
-                        </span>
-                        <span className="text-[12px] text-on-surface-variant dark:text-outline-variant">
-                          {cand.standard}
-                        </span>
+                {candidateList.length > 0 ? (
+                  candidateList.map(cand => (
+                    <label
+                      key={cand.id}
+                      className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${selectedGrade === cand.id
+                        ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs'
+                        : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="candidateGrade"
+                          value={cand.id}
+                          checked={selectedGrade === cand.id}
+                          onChange={() => setSelectedGrade(cand.id)}
+                          className="text-primary focus:ring-primary h-4 w-4"
+                        />
+                        <div>
+                          <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                            {cand.code}
+                          </span>
+                          <span className="text-[12px] text-on-surface-variant dark:text-outline-variant">
+                            {cand.standard}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <span className={`text-[12px] font-bold px-2 py-0.5 rounded ${cand.recommended
-                      ? 'bg-status-pass-bg text-status-pass-text'
-                      : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
-                      }`}>
-                      {cand.match}
-                    </span>
-                  </label>
-                ))}
-
-                {/* 手动指定其他标准钢级 */}
-                <label className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${selectedGrade === 'CUSTOM'
-                  ? 'border-primary dark:border-primary-fixed-dim bg-primary/5'
-                  : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
-                  }`}>
-                  <input
-                    type="radio"
-                    name="candidateGrade"
-                    value="CUSTOM"
-                    checked={selectedGrade === 'CUSTOM'}
-                    onChange={() => setSelectedGrade('CUSTOM')}
-                    className="text-primary focus:ring-primary h-4 w-4"
-                  />
-                  <div className="flex-1">
-                    <span className="font-medium text-on-surface dark:text-surface-bright block mb-1 text-xs">
-                      手动输入其他标准钢级代号
-                    </span>
-                    {selectedGrade === 'CUSTOM' && (
-                      <input
-                        type="text"
-                        value={customGrade}
-                        onChange={e => setCustomGrade(e.target.value)}
-                        placeholder="例如: S31603 或 022Cr17Ni12Mo2"
-                        className="w-full text-xs border border-outline-variant dark:border-border-dark rounded-lg bg-surface-container-lowest dark:bg-surface-dark px-3 py-2 text-on-surface dark:text-surface-bright focus:border-primary focus:outline-none"
-                      />
-                    )}
+                      <span className={`text-[12px] font-bold px-2 py-0.5 rounded ${cand.recommended
+                        ? 'bg-status-pass-bg text-status-pass-text'
+                        : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
+                        }`}>
+                        {cand.match}
+                      </span>
+                    </label>
+                  ))
+                ) : (
+                  <div className="p-3.5 rounded-xl border border-dashed border-outline-variant/80 dark:border-border-dark text-center">
+                    <p className="text-xs text-on-surface-variant dark:text-outline-variant">
+                      当前标准规则库未检索到高匹配候选，请使用下方手动输入指定国家标准牌号
+                    </p>
                   </div>
-                </label>
+                )}
+
+                {/* 手动指定其他标准钢级 (支持多维模糊匹配与键盘操作) */}
+                <div
+                  ref={dropdownContainerRef}
+                  className={`p-3.5 rounded-xl border transition-all ${selectedGrade === 'CUSTOM'
+                    ? 'border-primary dark:border-primary-fixed-dim bg-primary/5'
+                    : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                    }`}
+                >
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="candidateGrade"
+                      value="CUSTOM"
+                      checked={selectedGrade === 'CUSTOM'}
+                      onChange={() => {
+                        setSelectedGrade('CUSTOM');
+                        setTimeout(() => inputRef.current?.focus(), 50);
+                      }}
+                      className="text-primary focus:ring-primary h-4 w-4 mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <span className="font-medium text-on-surface dark:text-surface-bright block text-xs">
+                        手动输入其他标准钢级代号
+                      </span>
+                    </div>
+                  </label>
+
+                  {selectedGrade === 'CUSTOM' && (
+                    <div className="relative mt-2 pl-7">
+                      <div className="relative flex items-center">
+                        <input
+                          ref={inputRef}
+                          type="text"
+                          value={customGrade}
+                          onChange={e => handleCustomGradeInputChange(e.target.value)}
+                          onFocus={() => {
+                            if (customGrade.trim()) setIsDropdownOpen(true);
+                          }}
+                          onKeyDown={handleCustomGradeKeyDown}
+                          placeholder="输入统一代号、化学牌号或别名 (如 316L, S31603)"
+                          className="w-full text-xs border border-outline-variant dark:border-border-dark rounded-lg bg-surface-container-lowest dark:bg-surface-dark pl-3 pr-8 py-2 text-on-surface dark:text-surface-bright focus:border-primary focus:outline-none transition-colors"
+                        />
+                        {customGrade && (
+                          <button
+                            type="button"
+                            onClick={handleClearCustomGrade}
+                            className="absolute right-2 text-on-surface-variant hover:text-on-surface p-1 rounded-full text-xs cursor-pointer"
+                            title="清空输入"
+                          >
+                            <span className="material-symbols-outlined text-sm block">close</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 模糊匹配下拉联想浮层 */}
+                      {isDropdownOpen && fuzzyResults.length > 0 && (
+                        <div className="absolute left-7 right-0 top-full mt-1.5 z-50 rounded-xl border border-outline-variant/80 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark shadow-xl overflow-hidden max-h-56 overflow-y-auto custom-scrollbar">
+                          <div className="py-1 divide-y divide-outline-variant/20 dark:divide-border-dark/60">
+                            {fuzzyResults.map((item, index) => {
+                              const isHighlighted = index === highlightIndex;
+                              return (
+                                <div
+                                  key={`${item.standard_id}::${item.primary_grade}::${item.unified_code || ''}`}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSelectFuzzyItem(item);
+                                  }}
+                                  onMouseEnter={() => setHighlightIndex(index)}
+                                  className={`px-3 py-2 flex items-center justify-between cursor-pointer transition-colors ${
+                                    isHighlighted
+                                      ? 'bg-primary/10 dark:bg-primary/20 text-primary'
+                                      : 'hover:bg-surface-container dark:hover:bg-surface-dark-high text-on-surface dark:text-surface-bright'
+                                  }`}
+                                >
+                                  <div className="flex-1 pr-2">
+                                    <div className="font-bold text-xs flex items-center gap-1.5">
+                                      <span>{item.display_name}</span>
+                                      {item.matchedAlias && (
+                                        <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-300 dark:border-amber-700/60">
+                                          命中别名: {item.matchedAlias}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="text-[11px] font-sans px-1.5 py-0.5 rounded bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant shrink-0">
+                                    {item.standard_id}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="px-3 py-1.5 bg-surface-container/60 dark:bg-surface-dark-low text-[11px] text-on-surface-variant flex items-center justify-between border-t border-outline-variant/30">
+                            <span>按 ↑ ↓ 方向键选择，Enter 回车确认</span>
+                            <span>匹配到 {fuzzyResults.length} 项</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 选定标准未命中候选时的轻量提示 */}
+                      {isDropdownOpen && customGrade.trim() && fuzzyResults.length === 0 && (
+                        <div className="absolute left-7 right-0 top-full mt-1.5 z-50 rounded-xl border border-outline-variant/80 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark shadow-xl p-3 text-center">
+                          <p className="text-xs text-on-surface-variant dark:text-outline-variant">
+                            当前选定标准库未检索到匹配钢级，将按您输入的自定义代号提交
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -436,12 +633,6 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
               rows={3}
               className="w-full rounded-xl border border-outline-variant dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark px-3 py-2.5 text-xs text-on-surface dark:text-surface-bright focus:border-primary focus:outline-none leading-relaxed"
             />
-          </div>
-
-          {/* 4. 签名与审计追溯指示 */}
-          <div className="flex items-center gap-2.5 p-3 rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low text-[12px] text-on-surface-variant">
-            <span className="material-symbols-outlined text-emerald-600 text-lg shrink-0">verified_user</span>
-            <span>本次协同裁定将完整记录于质量审计追踪链中。</span>
           </div>
 
         </div>
