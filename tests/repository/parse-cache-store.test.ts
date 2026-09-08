@@ -66,4 +66,26 @@ describe('ParseCacheStore', () => {
     expect(store.has(testMd5)).toBe(false);
     expect(store.get(testMd5)).toBeNull();
   });
+
+  it('当磁盘未预先缓存专测场景时，应该通过种子数据自动补齐并持久化落盘', () => {
+    // 使用 Case 2 典型场景的真实 MD5
+    const case2Md5 = '8f64aff4099035363ac96539b96551ba';
+    const diskPath = (store as any).getFilePath(case2Md5);
+
+    // 初始状态下磁盘该文件绝对不存在
+    expect(fs.existsSync(diskPath)).toBe(false);
+
+    // has 应该识别出专测种子
+    expect(store.has(case2Md5)).toBe(true);
+
+    // get 应该返回权威预置结构并自动完成落盘
+    const seeded = store.get(case2Md5);
+    expect(seeded).not.toBeNull();
+    expect(seeded?.filename).toBe('case2_tier1_to_tier2_pass.pdf');
+    expect(seeded?.sessionDocument.batches[0]?.grade).toBe('06Cr18Ni11Ti');
+    expect(seeded?.sessionDocument.batches[0]?.additionalTests).toHaveLength(2);
+
+    // 验证此时磁盘上已经成功落盘该 JSON 文件
+    expect(fs.existsSync(diskPath)).toBe(true);
+  });
 });

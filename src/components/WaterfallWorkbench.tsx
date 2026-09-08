@@ -962,6 +962,51 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     setUploadedFileUrls(prev => ({ ...prev, ...newUrls }));
   };
 
+  // 专测矩阵测试用例原件装载状态追踪
+  const [loadingScenarios, setLoadingScenarios] = useState<Record<string, boolean>>({});
+
+  // 从专测矩阵一键装载测试用例原件至待处理队列 (无论是否命中缓存均可继续测试)
+  const handleLoadScenarioFile = async (scenario: PresetSampleDto) => {
+    // 1. 检查该用例是否已在待处理队列中
+    const existingDoc = queuedDocs.find(d =>
+      d.id === scenario.id ||
+      d.filename === scenario.filename ||
+      (scenario.md5 && d.md5 === scenario.md5)
+    );
+    if (existingDoc) {
+      setSelectedDocId(existingDoc.id);
+      const matched = session.documents.find(d => d.docId === existingDoc.id);
+      if (matched && matched.batches[0]) {
+        setSelectedBatchNo(matched.batches[0].batchNo);
+      }
+      showToast(`测试用例已在待处理队列中: ${existingDoc.filename}`, 'info');
+      return;
+    }
+
+    const scenarioKey = scenario.id;
+    setLoadingScenarios(prev => ({ ...prev, [scenarioKey]: true }));
+
+    try {
+      const downloadUrl = scenario.download_url || `/samples/${scenario.filename || `${scenario.id}.pdf`}`;
+      const res = await fetch(downloadUrl);
+      if (!res.ok) {
+        throw new Error(`获取用例原件失败 [HTTP ${res.status}]`);
+      }
+      const blob = await res.blob();
+      const filename = scenario.filename || `${scenario.id}.pdf`;
+      const file = new File([blob], filename, { type: 'application/pdf' });
+
+      // 接入统一的文件上传预处理入队流水线
+      handleRealFiles([file]);
+      showToast(`已装载测试用例原件至待处理队列: ${filename}`, 'success');
+    } catch (err: any) {
+      console.warn('[handleLoadScenarioFile] 装载用例原件异常:', err);
+      showToast(`装载用例原件失败: ${err.message || '网络连接异常'}`, 'error');
+    } finally {
+      setLoadingScenarios(prev => ({ ...prev, [scenarioKey]: false }));
+    }
+  };
+
   // 从 Step 1 触发新建 Session 并前往 Step 2 (启动 2~3 线程异步并发工作池)
   const handleStartNewSessionAndAdvance = () => {
     if (queuedDocs.length === 0) {
@@ -2912,19 +2957,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             )}
                             <button
                               type="button"
-                              onClick={() => {
-                                handleRestoreFromCache({
-                                  id: sc.id,
-                                  md5: sc.md5 || sc.id,
-                                  filename: sc.filename || `${sc.id}.pdf`,
-                                  size: '15 KB',
-                                  date: '预置场景',
-                                });
-                              }}
-                              className="ml-auto px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                              disabled={Boolean(loadingScenarios[sc.id])}
+                              onClick={() => handleLoadScenarioFile(sc)}
+                              className={`ml-auto px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1 ${
+                                loadingScenarios[sc.id]
+                                  ? 'bg-primary/60 text-on-primary cursor-wait'
+                                  : 'bg-primary hover:bg-primary-container text-on-primary cursor-pointer'
+                              }`}
+                              title="将该测试用例高清矢量 PDF 原件装载入待处理队列"
                             >
-                              <span className="material-symbols-outlined text-[13px]">play_circle</span>
-                              <span>一键装载</span>
+                              <span className={`material-symbols-outlined text-[13px] ${loadingScenarios[sc.id] ? 'animate-spin' : ''}`}>
+                                {loadingScenarios[sc.id] ? 'progress_activity' : 'play_circle'}
+                              </span>
+                              <span>{loadingScenarios[sc.id] ? '装载原件中...' : '一键装载'}</span>
                             </button>
                           </div>
                         </div>

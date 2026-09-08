@@ -263,3 +263,256 @@ export function getScenarioFixture(key: string): RawCertificatePayload | undefin
   }
   return SCENARIO_PRESET_PAYLOADS[key];
 }
+
+/**
+ * 根据 MD5 获取预置场景的权威解析缓存（当本地 .cache/parses 缺失时用于自动补齐，确保离线与无 API Key 场景立即可用）
+ */
+export function getScenarioCachedParseResult(md5: string): any | null {
+  if (!md5) return null;
+  const targetMd5 = md5.trim().toLowerCase();
+
+  // 1. Case 1: 未知名录牌号 (触发 Tier 1 HITL 挂起)
+  if (targetMd5 === '6a508c6c31e05081fb3b594fd882e354') {
+    return {
+      md5: '6a508c6c31e05081fb3b594fd882e354',
+      filename: 'case1_tier1_hitl_unknown_grade.pdf',
+      fileSize: '15 KB',
+      parserConfigVersion: '1.1.0',
+      model: 'kimi-k2.7-code-highspeed',
+      provider: 'Moonshot',
+      parsedAt: '2026-09-08T09:42:34.797Z',
+      tokenStats: { inputTokens: 5976, outputTokens: 2773, durationSeconds: 1.2, isFromCache: true },
+      sessionDocument: {
+        docId: 'doc_6a508c6c',
+        filename: 'case1_tier1_hitl_unknown_grade.pdf',
+        fileSize: '15 KB',
+        uploadTime: '2026-09-08 09:42:34',
+        ocrStatus: 'DONE',
+        pageCount: 1,
+        batches: [
+          {
+            batchNo: 'BATCH-2026-01-UNK',
+            subBatchIndex: 1,
+            certificateNo: 'MTC-2026-CASE1-UNK',
+            productName: '不锈钢无缝钢管',
+            grade: 'SUS 304H-SpecialX',
+            standard: 'GB/T 13296-2023',
+            supplier: '无锡某特种不锈钢管件制造厂',
+            dimensions: 'OD 25.0mm × WT 2.0mm × L 6000mm',
+            heatNo: 'H-CASE1-991',
+            deliveryState: '固溶酸洗',
+            verdict: 'UNAUDITED',
+            verdictSummary: '大模型结构化提取完成，待合规比对',
+            ocrConfidence: 98,
+            gradeMatchConfidence: 50,
+            chemical: [
+              { element: 'C', value: '0.052', confidence: '99%' },
+              { element: 'Si', value: '0.50', confidence: '99%' },
+              { element: 'Mn', value: '1.20', confidence: '99%' },
+              { element: 'P', value: '0.026', confidence: '99%' },
+              { element: 'S', value: '0.002', confidence: '99%' },
+              { element: 'Cr', value: '18.25', confidence: '99%' },
+              { element: 'Ni', value: '8.45', confidence: '99%' },
+            ],
+            mechanical: { tensile_rm: '570 MPa', yield_rp02: '250 MPa', elongation_a: '45.0 %', hardness: '80 HRB' },
+            process: { flattening: '合格 (未见裂纹)', flaring: '合格 (未见裂纹)', intergranularCorrosion: '合格', ndt: '合格 (U2 等级)' },
+            additionalTests: [{ key: 'hyd_press', name: '液压试验', category: 'process', standard: 'GB/T 241', result: '合格 (无渗漏)', conclusion: 'PASS' }],
+            surfaceQuality: '内外表面光洁无裂纹缺陷',
+            reportNo: 'QA-CASE1-01',
+            sha256Hash: 'SHA256-CASE1-001',
+            inspector: 'Auto-AI-Inspector',
+          },
+        ],
+      },
+      bboxes: [],
+    };
+  }
+
+  // 2. Case 2: 表面光洁度 0.33 μm (全绿通过)
+  if (targetMd5 === '8f64aff4099035363ac96539b96551ba') {
+    return {
+      md5: '8f64aff4099035363ac96539b96551ba',
+      filename: 'case2_tier1_to_tier2_pass.pdf',
+      fileSize: '15 KB',
+      parserConfigVersion: '1.1.0',
+      model: 'kimi-k2.7-code-highspeed',
+      provider: 'Moonshot',
+      parsedAt: '2026-09-08T09:42:34.797Z',
+      tokenStats: { inputTokens: 5850, outputTokens: 2800, durationSeconds: 1.2, isFromCache: true },
+      sessionDocument: {
+        docId: 'doc_8f64aff4',
+        filename: 'case2_tier1_to_tier2_pass.pdf',
+        fileSize: '15 KB',
+        uploadTime: '2026-09-08 09:42:34',
+        ocrStatus: 'DONE',
+        pageCount: 1,
+        batches: [
+          {
+            batchNo: 'BATCH-2026-02-PASS',
+            subBatchIndex: 1,
+            certificateNo: 'MTC-2026-CASE2-PASS',
+            productName: '锅炉用无缝钢管',
+            grade: '06Cr18Ni11Ti',
+            standard: 'NB/T 47019.5-2021',
+            supplier: '浙江某特种承压合金管业有限公司',
+            dimensions: 'Φ25×2.5×6000mm',
+            heatNo: 'H-CASE2-401',
+            deliveryState: '固溶酸洗',
+            verdict: 'UNAUDITED',
+            verdictSummary: '大模型结构化提取完成，待合规比对',
+            ocrConfidence: 98,
+            gradeMatchConfidence: 99,
+            chemical: [
+              { element: 'C', value: '0.045', confidence: '99%' },
+              { element: 'Si', value: '0.55', confidence: '99%' },
+              { element: 'Mn', value: '1.30', confidence: '99%' },
+              { element: 'P', value: '0.028', confidence: '99%' },
+              { element: 'S', value: '0.003', confidence: '99%' },
+              { element: 'Cr', value: '17.80', confidence: '99%' },
+              { element: 'Ni', value: '10.20', confidence: '99%' },
+              { element: 'Ti', value: '0.350', confidence: '99%' },
+              { element: 'N', value: '0.010', confidence: '99%' },
+            ],
+            mechanical: { tensile_rm: '560 MPa', yield_rp02: '240 MPa', elongation_a: '42.0 %', hardness: '82 HRB' },
+            process: { flattening: '合格', flaring: '合格', intergranularCorrosion: '无晶间腐蚀倾向 (合格)', grainSize: '7.5级 (合格)', ndt: 'U2 验收合格' },
+            additionalTests: [
+              { key: 'proc_surface_finish', name: '表面光洁度', category: 'process', standard: '', result: '0.33', value_num: 0.33, unit: 'μm', conclusion: 'PASS' },
+              { key: 'proc_hydraulic', name: '液压试验', category: 'process', standard: 'GB/T 241', result: '20 MPa 稳压 10s 无渗漏合格', value_num: 20, unit: 'MPa', conclusion: 'PASS' },
+            ],
+            surfaceQuality: '内外表面光洁平整合格',
+            reportNo: 'QA-CASE2-02',
+            sha256Hash: 'SHA256-CASE2-002',
+            inspector: 'Auto-AI-Inspector',
+          },
+        ],
+      },
+      bboxes: [],
+    };
+  }
+
+  // 3. Case 3: 表面光洁度 1.50 μm (超标告警)
+  if (targetMd5 === '546c8372ab1c068111efd3b2190b941d') {
+    return {
+      md5: '546c8372ab1c068111efd3b2190b941d',
+      filename: 'case3_tier1_to_tier2_fail.pdf',
+      fileSize: '15 KB',
+      parserConfigVersion: '1.1.0',
+      model: 'kimi-k2.7-code-highspeed',
+      provider: 'Moonshot',
+      parsedAt: '2026-09-08T09:42:34.797Z',
+      tokenStats: { inputTokens: 5850, outputTokens: 2800, durationSeconds: 1.2, isFromCache: true },
+      sessionDocument: {
+        docId: 'doc_546c8372',
+        filename: 'case3_tier1_to_tier2_fail.pdf',
+        fileSize: '15 KB',
+        uploadTime: '2026-09-08 09:42:34',
+        ocrStatus: 'DONE',
+        pageCount: 1,
+        batches: [
+          {
+            batchNo: 'BATCH-2026-03-FAIL',
+            subBatchIndex: 1,
+            certificateNo: 'MTC-2026-CASE3-FAIL',
+            productName: '换热器用无缝钢管',
+            grade: '06Cr18Ni11Ti',
+            standard: 'NB/T 47019.5-2021',
+            supplier: '江苏某换热系统承压管件实业公司',
+            dimensions: 'Φ25×2.5×6000mm',
+            heatNo: 'H-CASE3-772',
+            deliveryState: '固溶酸洗',
+            verdict: 'UNAUDITED',
+            verdictSummary: '大模型结构化提取完成，待合规比对',
+            ocrConfidence: 98,
+            gradeMatchConfidence: 99,
+            chemical: [
+              { element: 'C', value: '0.045', confidence: '99%' },
+              { element: 'Si', value: '0.55', confidence: '99%' },
+              { element: 'Mn', value: '1.30', confidence: '99%' },
+              { element: 'P', value: '0.028', confidence: '99%' },
+              { element: 'S', value: '0.003', confidence: '99%' },
+              { element: 'Cr', value: '17.80', confidence: '99%' },
+              { element: 'Ni', value: '10.20', confidence: '99%' },
+              { element: 'Ti', value: '0.350', confidence: '99%' },
+              { element: 'N', value: '0.010', confidence: '99%' },
+            ],
+            mechanical: { tensile_rm: '560 MPa', yield_rp02: '240 MPa', elongation_a: '42.0 %', hardness: '82 HRB' },
+            process: { flattening: '合格', flaring: '合格', intergranularCorrosion: '无晶间腐蚀倾向 (合格)', grainSize: '7.5级 (合格)', ndt: 'U2 验收合格' },
+            additionalTests: [
+              { key: 'proc_surface_finish', name: '表面光洁度', category: 'process', standard: '', result: '1.50', value_num: 1.5, unit: 'μm', conclusion: 'PASS' },
+              { key: 'proc_hydraulic', name: '液压试验', category: 'process', standard: 'GB/T 241', result: '20 MPa 稳压 10s 无渗漏合格', value_num: 20, unit: 'MPa', conclusion: 'PASS' },
+            ],
+            surfaceQuality: '内外表面光洁平整合格',
+            reportNo: 'QA-CASE3-03',
+            sha256Hash: 'SHA256-CASE3-003',
+            inspector: 'Auto-AI-Inspector',
+          },
+        ],
+      },
+      bboxes: [],
+    };
+  }
+
+  // 4. Case 4: 特种非标微区抗剪切断裂韧度K1C (行内 HITL 歧义待定)
+  if (targetMd5 === 'd40757c9cc2fb3856ece3c7857a3c511') {
+    return {
+      md5: 'd40757c9cc2fb3856ece3c7857a3c511',
+      filename: 'case4_tier1_to_tier2_hitl.pdf',
+      fileSize: '15 KB',
+      parserConfigVersion: '1.1.0',
+      model: 'kimi-k2.7-code-highspeed',
+      provider: 'Moonshot',
+      parsedAt: '2026-09-08T09:42:34.797Z',
+      tokenStats: { inputTokens: 5850, outputTokens: 2800, durationSeconds: 1.2, isFromCache: true },
+      sessionDocument: {
+        docId: 'doc_d40757c9',
+        filename: 'case4_tier1_to_tier2_hitl.pdf',
+        fileSize: '15 KB',
+        uploadTime: '2026-09-08 09:42:34',
+        ocrStatus: 'DONE',
+        pageCount: 1,
+        batches: [
+          {
+            batchNo: 'BATCH-2026-04-AMB',
+            subBatchIndex: 1,
+            certificateNo: 'MTC-2026-CASE4-AMB',
+            productName: '特种核电无缝钢管',
+            grade: '06Cr18Ni11Ti',
+            standard: 'NB/T 47019.5-2021',
+            supplier: '苏州某特种核电承压装备厂',
+            dimensions: 'Φ25×2.5×6000mm',
+            heatNo: 'H-CASE4-338',
+            deliveryState: '固溶酸洗',
+            verdict: 'UNAUDITED',
+            verdictSummary: '大模型结构化提取完成，待合规比对',
+            ocrConfidence: 98,
+            gradeMatchConfidence: 99,
+            chemical: [
+              { element: 'C', value: '0.045', confidence: '99%' },
+              { element: 'Si', value: '0.55', confidence: '99%' },
+              { element: 'Mn', value: '1.30', confidence: '99%' },
+              { element: 'P', value: '0.028', confidence: '99%' },
+              { element: 'S', value: '0.003', confidence: '99%' },
+              { element: 'Cr', value: '17.80', confidence: '99%' },
+              { element: 'Ni', value: '10.20', confidence: '99%' },
+              { element: 'Ti', value: '0.350', confidence: '99%' },
+              { element: 'N', value: '0.010', confidence: '99%' },
+            ],
+            mechanical: { tensile_rm: '560 MPa', yield_rp02: '240 MPa', elongation_a: '42.0 %', hardness: '82 HRB' },
+            process: { flattening: '合格', flaring: '合格', intergranularCorrosion: '无晶间腐蚀倾向 (合格)', grainSize: '7.5级 (合格)', ndt: 'U2 验收合格' },
+            additionalTests: [
+              { key: 'mech_shear_fracture_toughness_k1c', name: '特种非标微区抗剪切断裂韧度K1C', category: 'mechanical', standard: '', result: '85', value_num: 85, unit: 'MPa·m^1/2', conclusion: 'PASS' },
+              { key: 'proc_hydraulic', name: '液压试验', category: 'process', standard: 'GB/T 241', result: '20 MPa 稳压 10s 无渗漏合格', value_num: 20, unit: 'MPa', conclusion: 'PASS' },
+            ],
+            surfaceQuality: '内外表面光洁平整合格',
+            reportNo: 'QA-CASE4-04',
+            sha256Hash: 'SHA256-CASE4-004',
+            inspector: 'Auto-AI-Inspector',
+          },
+        ],
+      },
+      bboxes: [],
+    };
+  }
+
+  return null;
+}

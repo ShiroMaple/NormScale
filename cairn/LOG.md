@@ -4,6 +4,16 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-08 · 首页专测矩阵原件载入待处理队列与按需缓存种子双模流转
+
+- 专测原件装载与统一流转流水线 (`WaterfallWorkbench.tsx`):
+  1. 原件二进制入队：点击「一键装载」通过 fetch 抓取对应 PDF 构造真实 File，接入 `handleRealFiles` 统一切图与预处理流水线；
+  2. 队列防重与状态停驻：若该用例已在队列中则高亮选中并 Toast 提示防重，完成装载后停留在步骤 1 供质检员确认。
+- 服务端缓存按需种子自动补齐 (`parse-cache-store.ts`, `scenarios/index.ts`):
+  1. Seeding on Demand：`ParseCacheStore` 在未命中场景缓存时自动从权威场景配置生成结构化切片落盘写入 `.cache/parses/`；
+  2. 离线/在线双模无缝切换：彻底根除“未找到解析缓存”错误，无 API Key 离线秒级复现，有 API Key 支持真模型重新解析。
+- 质量门禁: 47 个测试套件 232 个测试 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 打包构建成功。详见 `cairn/langgraph-orchestration-and-fixtures.md`。
+
 ## 2026-09-08 · 会话级真实 Token 采集、LangGraph 开销透传与单调递增跨阶段计量大盘
 
 - 真实 Token 采集与假数据根除 (`openai-compatible-extractor.ts`, `route.ts`):
