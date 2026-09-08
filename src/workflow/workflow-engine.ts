@@ -85,9 +85,9 @@ export class WorkflowEngine {
     input: Buffer | Uint8Array | string,
     options?: WorkflowOptions
   ): Promise<WorkflowExecutionResult> {
-    // 构造具备会话与批次物理隔离特性的唯一线程标识 (Session-Batch Thread Isolation)
+    // 构造具备会话、批次与运行实例强隔离的唯一线程标识 (Session-Batch-Run Thread Isolation)
     const threadId = (options?.sessionId && options?.batchNo)
-      ? `${options.sessionId}::${options.batchNo}`
+      ? (options.runId ? `${options.sessionId}::${options.batchNo}::${options.runId}` : `${options.sessionId}::${options.batchNo}`)
       : (options?.contextId || `TASK-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
     const taskId = threadId;
     const collector = new MemoryTraceCollector(taskId);
@@ -164,7 +164,7 @@ export class WorkflowEngine {
     options?: WorkflowOptions
   ): AsyncGenerator<WorkflowStreamEvent> {
     const threadId = (options?.sessionId && options?.batchNo)
-      ? `${options.sessionId}::${options.batchNo}`
+      ? (options.runId ? `${options.sessionId}::${options.batchNo}::${options.runId}` : `${options.sessionId}::${options.batchNo}`)
       : (options?.contextId || `TASK-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
     const taskId = threadId;
     const batchNo = options?.batchNo;
@@ -192,6 +192,8 @@ export class WorkflowEngine {
         ...config,
         streamMode: 'updates',
       });
+
+      let detectedHitlContext: HitlInterruptContext | undefined;
 
       for await (const chunk of eventStream) {
         const nodeName = Object.keys(chunk)[0];
@@ -234,20 +236,13 @@ export class WorkflowEngine {
           }
         }
 
-        // 检查人机协同挂起
+        // 记录人机协同挂起上下文，允许状态图推进至 human_review 节点正式触发 interrupt 并持久化快照
         if (update.hitlContext) {
-          yield {
-            type: 'hitl_interrupt',
-            taskId,
-            batchNo,
-            hitlContext: update.hitlContext,
-            partialReport: lastReport,
-          };
-          return;
+          detectedHitlContext = update.hitlContext;
         }
       }
 
-      // stream 迭代结束后，检查快照中的中断
+      // stream 迭代结束后，优先检查 Checkpointer 快照中的正式中断 (由 human_review 节点 interrupt 产生)
       const snapshot = await this.graph.getState(config);
       const taskInterrupts = snapshot?.tasks?.[0]?.interrupts;
       if (Array.isArray(taskInterrupts) && taskInterrupts.length > 0) {
@@ -257,6 +252,19 @@ export class WorkflowEngine {
           taskId,
           batchNo,
           hitlContext: hitlVal,
+          partialReport: lastReport,
+        };
+        return;
+      }
+
+      // 兜底检查：若快照中未检出 tasks interrupts 但状态中记录了 hitlContext
+      const stateHitl = snapshot?.values?.hitlContext || detectedHitlContext;
+      if (stateHitl) {
+        yield {
+          type: 'hitl_interrupt',
+          taskId,
+          batchNo,
+          hitlContext: stateHitl,
           partialReport: lastReport,
         };
         return;

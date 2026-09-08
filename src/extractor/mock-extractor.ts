@@ -4,6 +4,7 @@ import {
   ExtractOptions,
 } from './extractor.interface';
 import { logger } from '../logger';
+import { getScenarioFixture } from '../../tests/fixtures/scenarios/index.ts';
 
 /**
  * ============================================================================
@@ -147,6 +148,8 @@ export class MockCertificateExtractor implements ICertificateExtractor {
         { raw_category: '耐腐蚀性能', raw_property_name: '晶间腐蚀 (E法)', raw_value: '合格', raw_unit: '' },
       ],
     });
+
+    // 样本 4 ~ 7 (Case 1 ~ Case 4 四维场景) 已独立物理归档至 tests/fixtures/scenarios/
   }
 
   /**
@@ -159,17 +162,31 @@ export class MockCertificateExtractor implements ICertificateExtractor {
     logger.info('EXTRACTOR', `[MockCertificateExtractor] 正在提取质保书数据 (模式: 本地仿真样本)...`);
 
     // 若入参为指定的预设键名，则直接返回对应预设样本
+    const fixture = typeof input === 'string' ? getScenarioFixture(input) : undefined;
+    if (fixture) {
+      const payload = JSON.parse(JSON.stringify(fixture));
+      logger.info('EXTRACTOR', `[MockCertificateExtractor] 成功从测试归档加载场景样本 [${input}]，共包含 ${payload.test_records?.length || 0} 条检验项`);
+      return payload;
+    }
+
     if (typeof input === 'string' && this.presetPayloads.has(input)) {
       const payload = JSON.parse(JSON.stringify(this.presetPayloads.get(input)!));
       logger.info('EXTRACTOR', `[MockCertificateExtractor] 成功加载预设样本 [${input}]，共包含 ${payload.test_records?.length || 0} 条检验项`);
       return payload;
     }
 
-    // 默认返回首个 S30408 典型样本
-    const defaultPayload = this.presetPayloads.get('s30408_messy_sample')!;
-    const payload = JSON.parse(JSON.stringify(defaultPayload));
-    logger.info('EXTRACTOR', `[MockCertificateExtractor] 默认加载 S30408 典型样本，共包含 ${payload.test_records?.length || 0} 条检验项`);
-    return payload;
+    // 严禁对未知输入静默伪造假数据，必须精确命中预置键名
+    const sampleKey = typeof input === 'string' ? input : 'unknown_raw_buffer';
+    const errMessage = `[MockCertificateExtractor] 未匹配到预置测试样本 [${sampleKey}]。Mock 提取器仅限测试使用，严禁在生产或非预置输入下伪造核验数据`;
+    logger.error('EXTRACTOR', errMessage);
+    throw new Error(errMessage);
+  }
+
+  /**
+   * 获取指定的预设样本
+   */
+  public getPreset(key: string): RawCertificatePayload | undefined {
+    return getScenarioFixture(key) || this.presetPayloads.get(key);
   }
 
   /**
@@ -183,3 +200,15 @@ export class MockCertificateExtractor implements ICertificateExtractor {
     return { healthy: true, message: 'Mock extractor is always available.' };
   }
 }
+
+const defaultMockInstance = new MockCertificateExtractor();
+
+/**
+ * 获取系统内置测试样本的结构化 Payload (供测试路由与纯净核验调用)
+ */
+export function getPresetSamplePayload(sampleId: string): RawCertificatePayload | undefined {
+  return defaultMockInstance.getPreset(sampleId);
+}
+
+export const getPreset = getPresetSamplePayload;
+

@@ -55,7 +55,7 @@ export function validateAllStandards(standardsDir?: string): { success: boolean;
           }
         }
       }
-    } else if (entry.isFile() && entry.name.endsWith('.json')) {
+    } else if (entry.isFile() && entry.name.endsWith('.json') && entry.name !== 'user_learned_aliases.json') {
       totalStandards++;
       try {
         const content = JSON.parse(fs.readFileSync(fullPath, 'utf8'));

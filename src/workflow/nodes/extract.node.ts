@@ -1,5 +1,4 @@
 import { ICertificateExtractor } from '../../extractor/extractor.interface.ts';
-import { MockCertificateExtractor } from '../../extractor/mock-extractor.ts';
 import { QualityAuditState } from '../state.interface.ts';
 import { getSafeCollector } from '../trace-helper.ts';
 import { logger } from '../../logger/index.ts';
@@ -10,14 +9,14 @@ import { logger } from '../../logger/index.ts';
  * ============================================================================
  */
 export function createExtractNode(extractor?: ICertificateExtractor) {
-  const activeExtractor = extractor || new MockCertificateExtractor();
+  const activeExtractor = extractor;
 
   return async function extractNode(state: QualityAuditState): Promise<Partial<QualityAuditState>> {
     const { input } = state;
     const collector = getSafeCollector(state);
 
-    logger.info('WORKFLOW', `[Node 1: Extract] 启动文档抽取，当前适配器: [${activeExtractor.providerName}]`);
-    collector.addTrace('WORKFLOW', 'info', `[节点 1] 启动数据抽取 (适配器: ${activeExtractor.providerName})`);
+    logger.info('WORKFLOW', `[Node 1: Extract] 启动文档抽取处理，当前抽取适配器: [${activeExtractor?.providerName || '未配置(仅支持结构化直通)'}]`);
+    collector.addTrace('WORKFLOW', 'info', `[节点 1] 启动数据抽取 (适配器: ${activeExtractor?.providerName || '结构化直通'})`);
 
     // 若输入已为结构化对象或 JSON 字符串，直接短路直通，避免二次 Mock 抽取损耗
     if (typeof input === 'object' && input !== null && !(input instanceof Uint8Array) && !(input instanceof Buffer)) {
@@ -46,6 +45,17 @@ export function createExtractNode(extractor?: ICertificateExtractor) {
       } catch {
         // 非有效 JSON，正常走 extractor
       }
+    }
+
+    if (!activeExtractor) {
+      const errMsg = '工作流未配置质保书数据抽取器，且输入非结构化数据，拒绝执行伪造抽取';
+      logger.error('WORKFLOW', `[Node 1: Extract] ${errMsg}`);
+      collector.addTrace('WORKFLOW', 'error', `[节点 1] ${errMsg}`);
+      return {
+        error: `Extract Node Failed: ${errMsg}`,
+        traces: collector.getTraces(),
+        workflowStatus: 'failed',
+      };
     }
 
     try {

@@ -502,8 +502,8 @@ export class PropertyKeyNormalizer {
       };
     }
 
-    // 9. 兜底为其他类别 / 安全沙箱
-    const fallbackCat: RuleCategory = (rawCategoryHint as RuleCategory) || 'other';
+    // 9. 兜底为其他类别 / 安全沙箱 (确保 category 必须为合法 RuleCategory 枚举)
+    const fallbackCat: RuleCategory = this.normalizeCategoryHint(rawCategoryHint);
     return {
       raw_property_name: rawName,
       property_key: rawName.trim().toLowerCase().replace(/[\s\-]/g, '_'),
@@ -512,5 +512,24 @@ export class PropertyKeyNormalizer {
       is_known: false,
       is_sandbox: true,
     };
+  }
+
+  /**
+   * 规范化中英文类别提示为标准系统内部 RuleCategory 枚举
+   */
+  public static normalizeCategoryHint(hint?: string): RuleCategory {
+    if (!hint) return 'other';
+    const h = hint.toLowerCase().trim();
+    if (h.includes('化') || h.includes('chem')) return 'chemical';
+    if (h.includes('力') || h.includes('拉') || h.includes('硬') || h.includes('mech')) return 'mechanical';
+    if (h.includes('工') || h.includes('proc')) return 'process';
+    if (h.includes('金') || h.includes('相') || h.includes('晶') || h.includes('metall')) return 'metallographic';
+    if (h.includes('腐') || h.includes('蚀') || h.includes('corr')) return 'corrosion';
+    if (h.includes('损') || h.includes('探') || h.includes('ndt')) return 'ndt';
+    if (h.includes('尺') || h.includes('寸') || h.includes('geom')) return 'geometric';
+    if (h.includes('表') || h.includes('面') || h.includes('surf')) return 'surface';
+    const validCats = ['chemical', 'mechanical', 'process', 'metallographic', 'corrosion', 'ndt', 'geometric', 'surface', 'other'];
+    if (validCats.includes(h)) return h as RuleCategory;
+    return 'other';
   }
 }

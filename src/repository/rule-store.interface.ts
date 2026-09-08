@@ -1,6 +1,14 @@
 import { SpecificationSlice, StandardMeta, StandardRuleSet } from '../schemas/standard.schema';
 import { CompositeSlice } from '../engine/multi-standard-composer';
 
+export interface StandardSliceOverview {
+  spec_key: string;
+  primary_grade: string;
+  unified_code?: string;
+  display_name: string;
+  aliases?: string[];
+}
+
 export interface StandardOverview {
   standard_id: string;
   standard_name: string;
@@ -8,6 +16,7 @@ export interface StandardOverview {
   status: 'CURRENT' | 'SUPERSEDED' | 'WITHDRAWN';
   slice_count: number;
   available_slices: string[];
+  slice_details?: StandardSliceOverview[];
 }
 
 export interface IRuleStore {

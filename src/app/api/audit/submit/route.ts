@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { serverWorkflowEngine } from '@/lib/server-engine.ts';
 import { PropertyKeyNormalizer } from '@/normalizer/property-key-normalizer.ts';
+import { getPresetSamplePayload } from '@/extractor/mock-extractor.ts';
 
 const SubmitAuditRequestSchema = z.object({
   /** 预设样本 ID (如 's30408_messy_sample', 's31603_kgf_sample') */
@@ -26,6 +27,7 @@ const SubmitAuditRequestSchema = z.object({
       skipSemanticReview: z.boolean().optional(),
       sessionId: z.string().optional(),
       batchNo: z.string().optional(),
+      runId: z.string().optional(),
       contextId: z.string().optional(),
     })
     .optional(),
@@ -345,7 +347,14 @@ export async function POST(request: Request) {
         batchNo: effectiveOptions.batchNo || (batchSpecimen.batchNo ? String(batchSpecimen.batchNo) : undefined),
       };
     } else if (sampleId) {
-      inputData = sampleId;
+      const preset = getPresetSamplePayload(sampleId);
+      if (!preset) {
+        return NextResponse.json(
+          { success: false, error: `未找到预设样本: [${sampleId}]` },
+          { status: 404 }
+        );
+      }
+      inputData = JSON.stringify(preset);
     } else if (rawPayload) {
       inputData = JSON.stringify(rawPayload);
     } else {
@@ -364,16 +373,27 @@ export async function POST(request: Request) {
         async start(controller) {
           try {
             for await (const event of streamGenerator) {
+              if (request.signal.aborted) {
+                controller.close();
+                return;
+              }
               const payload = `data: ${JSON.stringify(event)}\n\n`;
               controller.enqueue(encoder.encode(payload));
             }
             controller.close();
           } catch (err: unknown) {
+            if (request.signal.aborted) {
+              try { controller.close(); } catch { }
+              return;
+            }
             const errMsg = err instanceof Error ? err.message : String(err);
             const errPayload = `data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`;
             controller.enqueue(encoder.encode(errPayload));
             controller.close();
           }
+        },
+        cancel() {
+          // 客户端主动断开连接，无需进一步处理
         },
       });
 

@@ -19,6 +19,7 @@ related:
   - cairn/mtc-schema-evolution.md
   - cairn/viewport-scroll-isolation.md
   - cairn/ocr-bbox-lens-guide.md
+  - cairn/langgraph-orchestration-and-fixtures.md
 authoring_mode: ai_generated
 ---
 

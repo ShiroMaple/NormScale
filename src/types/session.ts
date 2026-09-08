@@ -9,6 +9,7 @@
 
 import type { AdditionalTestItem } from '@/schemas/certificate.schema';
 import type { AuditReport } from '@/schemas/report.schema.ts';
+import type { HitlInterruptContext } from '@/workflow/state.interface.ts';
 
 export type { AdditionalTestItem };
 
@@ -37,7 +38,7 @@ export interface BatchSpecimen {
   deliveryState?: string;      // 交货热处理状态，如 "固溶热处理 (Solution Treated)"
   verdict: 'UNAUDITED' | 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
   verdictSummary: string;      // 判定依据简述
-  hitlReason?: 'UNKNOWN_GRADE' | 'ALTERNATIVE_CLAUSE' | 'MULTI_STANDARD_CONFLICT' | 'QUALITATIVE_AMBIGUITY' | 'MANUAL_REQUEST'; // 触发 HITL 挂起的原因
+  hitlReason?: HitlInterruptContext['reason']; // 触发 HITL 挂起的原因
   // 双轨制判定模型 (Dual-Track Verdict: 系统客观计算与人工复核审批并行，互不抹除)
   systemVerdict?: 'UNAUDITED' | 'PASS' | 'FAIL' | 'MANUAL_REVIEW';   // 系统客观算法判定结论
   systemVerdictSummary?: string;                       // 系统判定规则依据简述

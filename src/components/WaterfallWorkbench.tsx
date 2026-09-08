@@ -34,7 +34,7 @@ interface WaterfallWorkbenchProps {
   onSelectSample: (sampleId: string) => void;
   isAuditing: boolean;
   currentReport?: AuditReport;
-  onOpenHitlDrawer: () => void;
+  onOpenHitlDrawer?: () => void;
   onTriggerAudit: () => void;
   loadedSession?: InspectionSession | null;
   onSessionChange?: (session: InspectionSession) => void;
@@ -56,6 +56,23 @@ export interface StandardCatalogItem {
   badgeColor: string;
   grades: StandardCatalogGrade[];
 }
+
+export const formatHitlReasonBadge = (reason?: string): string => {
+  switch (reason) {
+    case 'UNKNOWN_GRADE':
+      return '材料牌号待消歧';
+    case 'PROPERTY_AMBIGUITY':
+      return '非标检验项目对齐';
+    case 'ALTERNATIVE_CLAUSE':
+      return '替代条款合规确权';
+    case 'MULTI_STANDARD_CONFLICT':
+      return '多标准互斥仲裁';
+    case 'QUALITATIVE_AMBIGUITY':
+      return '定性条款语义争议';
+    default:
+      return '待人工核实确认';
+  }
+};
 
 export const STANDARDS_CATALOG: StandardCatalogItem[] = [
   {
@@ -100,6 +117,61 @@ export const AVAILABLE_GRADE_SLICES = STANDARDS_CATALOG.flatMap(s =>
   }))
 );
 
+export const DEFAULT_SCENARIOS: PresetSampleDto[] = [
+  {
+    id: 'case1_tier1_hitl_unknown_grade',
+    md5: '6a508c6c31e05081fb3b594fd882e354',
+    filename: 'case1_tier1_hitl_unknown_grade.pdf',
+    title: 'Case 1: Tier 1 - HITL 人机协同',
+    category: '分层核验典型场景',
+    tier_flow: 'Tier 1 ➡️ HITL 抽屉挂起',
+    declared_grade: 'SUS 304H-SpecialX',
+    expected_outcome: 'AWAITING_HUMAN_REVIEW',
+    download_url: '/samples/case1_tier1_hitl_unknown_grade.pdf',
+    description: '非标未收录牌号，直接触发阻断性断点挂起，右侧滑出 480px 抽屉。',
+    tags: ['Tier 1', '牌号未收录', '阻断性挂起', '480px抽屉'],
+  },
+  {
+    id: 'case2_tier1_to_tier2_pass',
+    md5: '8f64aff4099035363ac96539b96551ba',
+    filename: 'case2_tier1_to_tier2_pass.pdf',
+    title: 'Case 2: Tier 1 ➡️ Tier 2 语义达标',
+    category: '分层核验典型场景',
+    tier_flow: 'Tier 1 ➡️ Tier 2 ➡️ PASS',
+    declared_grade: '06Cr18Ni11Ti',
+    expected_outcome: 'PASS',
+    download_url: '/samples/case2_tier1_to_tier2_pass.pdf',
+    description: '表面光洁度 0.33 μm 自动对齐至标准粗糙度 Ra ≤ 0.8 μm，全绿达标。',
+    tags: ['Tier 2', '语义消歧', '长尾对齐', '全绿通过'],
+  },
+  {
+    id: 'case3_tier1_to_tier2_fail',
+    md5: '546c8372ab1c068111efd3b2190b941d',
+    filename: 'case3_tier1_to_tier2_fail.pdf',
+    title: 'Case 3: Tier 1 ➡️ Tier 2 语义超标',
+    category: '分层核验典型场景',
+    tier_flow: 'Tier 1 ➡️ Tier 2 ➡️ FAIL',
+    declared_grade: '06Cr18Ni11Ti',
+    expected_outcome: 'FAIL',
+    download_url: '/samples/case3_tier1_to_tier2_fail.pdf',
+    description: '表面光洁度 1.50 μm 对齐至粗糙度后判定超差超标，红灯 FAIL 否定。',
+    tags: ['Tier 2', '超差超标', '一票否决', 'FAIL 告警'],
+  },
+  {
+    id: 'case4_tier1_to_tier2_hitl',
+    md5: 'd40757c9cc2fb3856ece3c7857a3c511',
+    filename: 'case4_tier1_to_tier2_hitl.pdf',
+    title: 'Case 4: Tier 1 ➡️ Tier 2 行内待定',
+    category: '分层核验典型场景',
+    tier_flow: 'Tier 1 ➡️ Tier 2 ➡️ 行内 HITL',
+    declared_grade: '06Cr18Ni11Ti',
+    expected_outcome: 'AWAITING_HUMAN_REVIEW',
+    download_url: '/samples/case4_tier1_to_tier2_hitl.pdf',
+    description: '特种非标微区抗剪切断裂韧度置信度不足，矩阵行内展开 HITL 卡片。',
+    tags: ['Tier 2', '行内 HITL', '特异非标', '置信度不足'],
+  },
+];
+
 /**
  * ============================================================================
  * NormScale 工业质检工作台 (1:1 像素级还原 Stitch 设计系统)
@@ -108,11 +180,11 @@ export const AVAILABLE_GRADE_SLICES = STANDARDS_CATALOG.flatMap(s =>
  */
 export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   standardsData,
-  samples: _samples,
+  samples = [],
   selectedSampleId,
   onSelectSample,
   isAuditing,
-  onOpenHitlDrawer,
+  onOpenHitlDrawer: _onOpenHitlDrawer,
   onTriggerAudit: _onTriggerAudit,
   loadedSession,
   onSessionChange,
@@ -171,6 +243,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     onSessionChange?.(session);
   }, [session, onSessionChange]);
 
+  // 分层核验场景测试矩阵列表（优先取传入 samples 中的分层场景，兜底内置 DEFAULT_SCENARIOS）
+  const scenarioSamples = useMemo(() => {
+    const list = samples.filter(s => s.category === '分层核验典型场景' || s.id.startsWith('case'));
+    if (list.length > 0) return list;
+    return DEFAULT_SCENARIOS;
+  }, [samples]);
+
   // 源文档 OCR 视觉 BBox 与右侧解析字段双向联动状态
   const [highlightedFieldId, setHighlightedFieldId] = useState<string | null>(null);
   // 停顿满 1 秒后激活 200% 原位放大的字段 ID 与防晕倒计时器
@@ -196,6 +275,22 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
   const [uploadedFileUrls, setUploadedFileUrls] = useState<Record<string, string>>({});
   const [docBboxesMap, setDocBboxesMap] = useState<Record<string, FieldBBox[]>>({});
+  // 步骤 3 批次核验调度防重锁（跨步骤级联清理与并发控制）
+  const batchEvaluatingKeyRef = useRef<string>('');
+  // 批次执行运行计数器（用于生成独立隔离的 runId: RUN-${counter}，避免 LangGraph Checkpoint 状态污染）
+  const batchRunCountersRef = useRef<Record<string, number>>({});
+  // 批次级 AbortController 引用字典 (用于掐旧启新熔断与防止并发幽灵覆盖)
+  const batchAbortControllersRef = useRef<Record<string, AbortController>>({});
+  // 重新核验点击冷却锁 (500ms 内防盲目连击)
+  const isReevaluatingCooldownRef = useRef<boolean>(false);
+
+  // 获取并自增指定批次的执行运行标识 (RUN-1, RUN-2, ...)
+  const nextBatchRunId = useCallback((batchNo: string): string => {
+    const current = batchRunCountersRef.current[batchNo] || 0;
+    const next = current + 1;
+    batchRunCountersRef.current[batchNo] = next;
+    return `RUN-${next}`;
+  }, []);
 
   // Schema 反射派生的检验项默认方法标准字典（避免任何硬编码）
   const fieldDefMap = useMemo(() => {
@@ -216,9 +311,20 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         const preservedPages = (parsedDoc.pages && parsedDoc.pages.length > 0)
           ? parsedDoc.pages
           : (d.pages && d.pages.length > 0 ? d.pages : (d.samplePages && d.samplePages.length > 0 ? d.samplePages : undefined));
-        const enrichedBatches = (parsedDoc.batches || []).map(b =>
-          ConfidenceEvaluator.enrichBatchConfidences(b, bboxes)
-        );
+        const enrichedBatches = (parsedDoc.batches || []).map(b => {
+          const enriched = ConfidenceEvaluator.enrichBatchConfidences(b, bboxes);
+          return {
+            ...enriched,
+            verdict: 'UNAUDITED' as const,
+            auditReport: undefined,
+            overrideGrade: undefined,
+            overrideStandard: undefined,
+            systemVerdict: undefined,
+            systemVerdictSummary: undefined,
+            humanVerdict: null,
+            humanVerdictSummary: undefined,
+          };
+        });
         return {
           ...parsedDoc,
           batches: enrichedBatches,
@@ -237,12 +343,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         [parsedDoc.docId]: bboxes,
       }));
     }
+    // 级联清除对应批次的视图缓存，消除上一轮历史判定残留
     if (parsedDoc.batches && parsedDoc.batches.length > 0) {
+      setBatchPresentationMap(prev => {
+        const next = { ...prev };
+        for (const b of parsedDoc.batches) {
+          delete next[b.batchNo];
+        }
+        return next;
+      });
       const firstBatchNo = parsedDoc.batches[0]?.batchNo;
       if (firstBatchNo) {
         setSelectedBatchNo(firstBatchNo);
       }
     }
+    // 彻底释放调度防重锁，确保进入步骤 3 能够无缝自动拉起重新比对
+    batchEvaluatingKeyRef.current = '';
+    // 重置批次执行计数器并中止任何进行中的旧网络请求
+    batchRunCountersRef.current = {};
+    Object.values(batchAbortControllersRef.current).forEach(c => c.abort('DOCUMENT_REPARSED'));
+    batchAbortControllersRef.current = {};
   }, []);
 
   // 多文档异步并发解析工作池 Hook
@@ -381,29 +501,50 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     setSelectedBatchNo(newBatchNo);
   };
 
-  // 恢复默认原件规则切片
+  // 恢复默认原件规则切片（显式清空人工指定的牌号与标准，归零判定与审批状态）
   const handleResetGrade = () => {
+    if (!currentBatch) return;
+
+    const cleanBatch: BatchSpecimen = {
+      ...currentBatch,
+      overrideGrade: undefined,
+      overrideStandard: undefined,
+      auditReport: undefined,
+      verdict: 'UNAUDITED',
+      systemVerdict: undefined,
+      systemVerdictSummary: undefined,
+      humanVerdict: null,
+      humanVerdictSummary: undefined,
+    };
+
     setSession(prev => ({
       ...prev,
       documents: prev.documents.map(doc => {
-        if (doc.docId === selectedDocId) {
-          return {
-            ...doc,
-            batches: doc.batches.map(b => {
-              if (b.batchNo === selectedBatchNo) {
-                const { overrideGrade, overrideStandard, auditReport: _oldRep, ...rest } = b;
-                return rest as BatchSpecimen;
-              }
-              return b;
-            }),
-          };
-        }
-        return doc;
+        if (doc.docId !== selectedDocId) return doc;
+        return {
+          ...doc,
+          batches: doc.batches.map(b => {
+            if (b.batchNo !== selectedBatchNo) return b;
+            return cleanBatch;
+          }),
+        };
       }),
     }));
-    if (currentBatch) {
-      evaluateBatch({ ...currentBatch, overrideStandard: undefined, overrideGrade: undefined, auditReport: undefined });
+
+    // 级联清空当前批次的视图缓存，杜绝旧规则报告死灰复燃
+    if (selectedBatchNo) {
+      setBatchPresentationMap(prev => {
+        const next = { ...prev };
+        delete next[selectedBatchNo];
+        return next;
+      });
     }
+
+    // 释放调度防重锁
+    batchEvaluatingKeyRef.current = '';
+
+    // 以干净的原件基准重新拉起流式核验
+    evaluateBatch(cleanBatch);
   };
 
   // 质检员人工复核判定（双轨制：非必须，且绝不覆盖系统判定的客观计算结果）
@@ -509,11 +650,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     setQueuedDocs(prev => prev.filter(item => item.id !== doc.id));
 
     // 若被移除的正是当前选中的样本，自动切换至队列中下一个有效文档
-    if (selectedSampleId === doc.id) {
+    if (selectedSampleId === doc.id || selectedDocId === doc.id) {
       const remaining = queuedDocs.filter(item => item.id !== doc.id);
       const nextDoc = remaining[0];
       if (nextDoc) {
-        onSelectSample(nextDoc.id);
+        setSelectedDocId(nextDoc.id);
+        const matched = session.documents.find(d => d.docId === nextDoc.id);
+        if (matched && matched.batches[0]) {
+          setSelectedBatchNo(matched.batches[0].batchNo);
+        }
+        onSelectSample?.(nextDoc.id);
       }
     }
   };
@@ -563,7 +709,6 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           setSelectedBatchNo(doc.batches[0].batchNo);
         }
         showToast(`已从缓存载入: ${item.filename}`, 'success');
-        onSelectSample(finalDocId);
       } else {
         showToast(`载入缓存失败: ${data.error || '未找到有效解析结果'}`, 'error');
       }
@@ -865,87 +1010,30 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [activeHitlContext, setActiveHitlContext] = useState<HitlInterruptContext | undefined>(undefined);
   const [isHitlSubmitting, setIsHitlSubmitting] = useState<boolean>(false);
 
-  // 触发打开 HITL 抽屉 (根据当前批次动态适配场景)
+  // 触发打开 HITL 抽屉 (根据当前批次动态适配场景，继承已计算出的候选与建议)
   const handleTriggerHitl = () => {
     if (!currentBatch) return;
-    const reason: HitlInterruptContext['reason'] = currentBatch.hitlReason || (
+    const existingCtx = batchPresentationMap[currentBatch.batchNo]?.hitlContext;
+
+    const reason: HitlInterruptContext['reason'] = existingCtx?.reason || currentBatch.hitlReason || (
       currentBatch.grade.includes('Special') || currentBatch.grade.includes('SUS') || currentBatch.grade.includes('未知')
         ? 'UNKNOWN_GRADE'
         : 'ALTERNATIVE_CLAUSE'
     );
 
     const ctx: HitlInterruptContext = {
+      ...existingCtx,
       reason,
-      prompt_message: currentBatch.systemVerdictSummary || currentBatch.verdictSummary || '触发人机协同规则阻断，需人工介入核实',
+      prompt_message: existingCtx?.prompt_message || currentBatch.systemVerdictSummary || currentBatch.verdictSummary || '触发人机协同规则阻断，需人工介入核实',
       batch_no: currentBatch.batchNo,
+      candidate_grades: existingCtx?.candidate_grades,
+      suggestions: existingCtx?.suggestions,
     };
     setActiveHitlContext(ctx);
     setIsHitlDrawerOpen(true);
-    onOpenHitlDrawer?.();
   };
 
-  // 质检员确认并恢复流转（闭环重算当前批次）
-  const handleResolveHitl = async (correction: HumanCorrectionInput) => {
-    setIsHitlSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 350));
 
-    setSession(prev => ({
-      ...prev,
-      documents: prev.documents.map(doc => {
-        if (doc.docId === selectedDocId) {
-          return {
-            ...doc,
-            batches: doc.batches.map(b => {
-              if (b.batchNo === selectedBatchNo) {
-                let nextVerdict: 'PASS' | 'FAIL' = 'PASS';
-                let nextSummary = '质检工程师完成协同确认放行';
-                let nextOverrideGrade = b.overrideGrade;
-
-                if (correction.corrected_grade) {
-                  nextOverrideGrade = correction.corrected_grade;
-                  nextVerdict = 'PASS';
-                  nextSummary = `质检员已消歧指定国家标准钢级为 ${correction.corrected_grade}，全项比对合格`;
-                } else if (correction.accepted_alternative_clause !== undefined) {
-                  if (correction.accepted_alternative_clause) {
-                    nextVerdict = 'PASS';
-                    nextSummary = '质检员已确认依据合同采纳涡流探伤替代液压试验，致密性指标判定通过';
-                  } else {
-                    nextVerdict = 'FAIL';
-                    nextSummary = '质检员已核实不予采纳替代，按水压试验缺项一票否决处理';
-                  }
-                } else if (correction.arbitrated_standard_id) {
-                  nextVerdict = 'PASS';
-                  nextSummary = `已指定以 ${correction.arbitrated_standard_id} 作为主仲裁标尺重新计算，判定合规`;
-                } else if (correction.qualitative_verdict) {
-                  nextVerdict = correction.qualitative_verdict;
-                  nextSummary = correction.qualitative_verdict === 'PASS'
-                    ? '质检工程师已复核定性描述条款，确认显微组织符合标准技术要求'
-                    : '质检工程师已复核定性描述条款，判定显微组织存在缺陷，予以否决';
-                }
-
-                return {
-                  ...b,
-                  verdict: nextVerdict,
-                  verdictSummary: nextSummary,
-                  systemVerdict: nextVerdict,
-                  systemVerdictSummary: nextSummary,
-                  overrideGrade: nextOverrideGrade,
-                  humanVerdict: nextVerdict === 'FAIL' ? 'REJECT' : 'PASS',
-                  humanVerdictSummary: correction.waiver_notes || (nextVerdict === 'FAIL' ? '质检工程师核准予以否决' : '质检工程师完成协同确认放行'),
-                  humanVerifiedAt: new Date().toISOString(),
-                };
-              }
-              return b;
-            }),
-          };
-        }
-        return doc;
-      }),
-    }));
-
-    setIsHitlSubmitting(false);
-    setIsHitlDrawerOpen(false);
-  };
 
   // 步骤 2: 质检员直接原位编辑校准提取数据 (HITL 方案一)
   const handleUpdateExtractValue = (fieldId: string, newValue: string) => {
@@ -1191,9 +1279,18 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       setIsEvaluatingBatch(true);
     }
 
-    // 2. 并行调度各个批次独立通过 SSE 流式接口核验 (多批次物理强隔离，thread_id: sessionId::batchNo)
+    // 2. 并行调度各个批次独立通过 SSE 流式接口核验 (多批次物理强隔离，thread_id: sessionId::batchNo::RUN-${counter})
     const tasks = batchesToEval.map(async (batch) => {
+      // 掐旧启新 (Abort & Replace)：若当前批次已有未完成的活跃流式请求，立即主动掐断，彻底杜绝算力浪费与时序倒挂
+      const prevController = batchAbortControllersRef.current[batch.batchNo];
+      if (prevController) {
+        prevController.abort('SUPERSEDED_BY_NEW_RUN');
+      }
+      const controller = new AbortController();
+      batchAbortControllersRef.current[batch.batchNo] = controller;
+
       try {
+        const runId = nextBatchRunId(batch.batchNo);
         await apiClient.submitAuditStream(
           {
             batchSpecimen: batch,
@@ -1202,11 +1299,15 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             options: {
               sessionId: session.sessionId,
               batchNo: batch.batchNo,
+              runId,
             },
           },
           {
             // (a) Tier 1 确定性规则大盘毫秒级直出
             onTier1Ready: (data) => {
+              // 版本令牌校验：若收到的不是当前最新 runId 的事件包，直接静默丢弃，杜绝幽灵覆写
+              if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
+
               const isReportPass = data.report.summary.overall_status === 'PASS';
               const summaryText = isReportPass
                 ? `核心指标核验合格 (共评估 ${data.report.summary.total_rules_evaluated} 项)`
@@ -1252,6 +1353,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
             // (b) Tier 2 LLM 长尾语义消歧增量补丁
             onTier2Patch: (data) => {
+              if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
+
               const isReportPass = data.finalReport.summary.overall_status === 'PASS';
               const summaryText = isReportPass
                 ? `全项核验合格 (共评估 ${data.finalReport.summary.total_rules_evaluated} 项)`
@@ -1292,15 +1395,40 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
             // (c) Tier 3 歧义项触发人机协同挂起
             onHitlInterrupt: (data) => {
+              if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
+
               setBatchPresentationMap(prev => ({
                 ...prev,
                 [batch.batchNo]: {
                   ...(prev[batch.batchNo] || { batchNo: batch.batchNo }),
                   stage: 'hitl_pending',
                   hitlContext: data.hitlContext,
-                  report: data.partialReport || prev[batch.batchNo]?.report,
+                  report: data.partialReport,
                   taskId: data.taskId,
                 },
+              }));
+
+              // 同步更新当前批次进入 MANUAL_REVIEW 挂起状态，消除状态脱节
+              setSession(prev => ({
+                ...prev,
+                documents: prev.documents.map(d => {
+                  if (d.docId !== selectedDocId) return d;
+                  return {
+                    ...d,
+                    batches: d.batches.map(b => {
+                      if (b.batchNo !== batch.batchNo) return b;
+                      return {
+                        ...b,
+                        verdict: 'MANUAL_REVIEW',
+                        verdictSummary: data.hitlContext.prompt_message || '系统指标存在歧义或条件待核实，须在人机协同抽屉中完成核验',
+                        systemVerdict: 'MANUAL_REVIEW',
+                        systemVerdictSummary: data.hitlContext.prompt_message,
+                        hitlReason: data.hitlContext.reason,
+                        auditReport: data.partialReport,
+                      };
+                    }),
+                  };
+                }),
               }));
 
               if (batch.batchNo === selectedBatchNo) {
@@ -1311,6 +1439,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
             // (d) 全流程顺利完成
             onComplete: (data) => {
+              if (data.taskId && !data.taskId.endsWith(`::${runId}`)) return;
+
               const isReportPass = data.finalReport.summary.overall_status === 'PASS';
               const summaryText = isReportPass
                 ? `全项核验合格 (共评估 ${data.finalReport.summary.total_rules_evaluated} 项)`
@@ -1351,6 +1481,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
             // (e) 异常报错
             onError: (err) => {
+              if (err.taskId && !err.taskId.endsWith(`::${runId}`)) return;
+              if (controller.signal.aborted) return; // 主动中止忽略报错
+
               setBatchPresentationMap(prev => ({
                 ...prev,
                 [batch.batchNo]: {
@@ -1360,9 +1493,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 },
               }));
             },
-          }
+          },
+          controller.signal
         );
       } catch (taskErr) {
+        if (controller.signal.aborted) return; // 主动中止忽略捕获
         console.error(`[WaterfallWorkbench] 批次 ${batch.batchNo} 执行流式核验异常:`, taskErr);
         setBatchPresentationMap(prev => ({
           ...prev,
@@ -1373,6 +1508,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           },
         }));
       } finally {
+        if (batchAbortControllersRef.current[batch.batchNo] === controller) {
+          delete batchAbortControllersRef.current[batch.batchNo];
+        }
         if (batch.batchNo === selectedBatchNo) {
           setIsEvaluatingBatch(false);
         }
@@ -1381,6 +1519,118 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
     await Promise.allSettled(tasks);
   }, [selectedBatchNo, selectedDocId, selectedStandardIds, session.sessionId]);
+
+  // 质检员确认并恢复流转（闭环重算当前批次，严禁覆写质保书原件牌号）
+  const handleResolveHitl = async (correction: HumanCorrectionInput) => {
+    setIsHitlSubmitting(true);
+    const taskId = (selectedBatchNo && batchPresentationMap[selectedBatchNo]?.taskId)
+      ? batchPresentationMap[selectedBatchNo]!.taskId!
+      : (currentBatch ? `${session.sessionId}::${currentBatch.batchNo}` : '');
+
+    let resumedReport: AuditReport | undefined = undefined;
+    if (taskId) {
+      try {
+        const res = await apiClient.resumeAudit(taskId, correction);
+        if (res.success && res.finalReport) {
+          resumedReport = res.finalReport;
+        }
+      } catch (resumeErr) {
+        console.warn('[WaterfallWorkbench] 调用 resumeAudit 异常，降级全量核验驱动:', resumeErr);
+      }
+    }
+
+    const nextOverrideGrade = correction.corrected_grade || currentBatch?.overrideGrade;
+
+    // 1. 若服务端已顺利恢复并产出具备规则评估的有效报告 (比对项数 > 0)
+    if (resumedReport && resumedReport.summary && (resumedReport.summary.total_rules_evaluated ?? 0) > 0) {
+      const isReportPass = resumedReport.summary.overall_status === 'PASS';
+      const summaryText = isReportPass
+        ? `全项核验合格 (共评估 ${resumedReport.summary.total_rules_evaluated} 项)`
+        : `核验未通过 (不合格 ${resumedReport.summary.fail_count} 项，漏检 ${resumedReport.summary.missing_count} 项)`;
+
+      setSession(prev => ({
+        ...prev,
+        documents: prev.documents.map(doc => {
+          if (doc.docId !== selectedDocId) return doc;
+          return {
+            ...doc,
+            batches: doc.batches.map(b => {
+              if (b.batchNo !== selectedBatchNo) return b;
+              return {
+                ...b,
+                grade: b.grade, // 严格保持质保书原件声明牌号不变
+                overrideGrade: nextOverrideGrade,
+                auditReport: resumedReport,
+                verdict: isReportPass ? 'PASS' : 'FAIL',
+                verdictSummary: summaryText,
+                systemVerdict: isReportPass ? 'PASS' : 'FAIL',
+                systemVerdictSummary: summaryText,
+                humanVerdict: null,
+                humanVerdictSummary: undefined,
+                humanVerifiedAt: undefined,
+              };
+            }),
+          };
+        }),
+      }));
+
+      if (selectedBatchNo) {
+        setBatchPresentationMap(prev => ({
+          ...prev,
+          [selectedBatchNo]: {
+            ...(prev[selectedBatchNo] || { batchNo: selectedBatchNo }),
+            stage: 'completed',
+            report: resumedReport,
+            hitlContext: undefined,
+            pendingProperties: [],
+          },
+        }));
+      }
+    } else {
+      // 2. 若服务端未直接返回包含规则的报告 (例如牌号消歧恢复后需根据更新后的牌号基准重新执行核验)
+      const targetBatch: BatchSpecimen | undefined = currentBatch ? {
+        ...currentBatch,
+        grade: currentBatch.grade, // 严格保持质保书原件声明牌号不变
+        overrideGrade: nextOverrideGrade,
+        verdict: 'UNAUDITED',
+        auditReport: undefined,
+        humanVerdict: null,
+        humanVerdictSummary: undefined,
+        humanVerifiedAt: undefined,
+      } : undefined;
+
+      setSession(prev => ({
+        ...prev,
+        documents: prev.documents.map(doc => {
+          if (doc.docId !== selectedDocId) return doc;
+          return {
+            ...doc,
+            batches: doc.batches.map(b => {
+              if (b.batchNo !== selectedBatchNo) return b;
+              return {
+                ...b,
+                grade: b.grade, // 保持原件牌号不变
+                overrideGrade: nextOverrideGrade,
+                verdict: 'UNAUDITED',
+                auditReport: undefined,
+                humanVerdict: null,
+                humanVerdictSummary: undefined,
+                humanVerifiedAt: undefined,
+              };
+            }),
+          };
+        }),
+      }));
+
+      // 立即以最新的 overrideGrade 发起全量合规比对，驱动规则引擎产出全部 16 条比对项
+      if (targetBatch) {
+        await evaluateBatches([targetBatch], selectedStandardIds);
+      }
+    }
+
+    setIsHitlSubmitting(false);
+    setIsHitlDrawerOpen(false);
+  };
 
   // 步骤 3: 行内采纳推荐属性并恢复核验
   const handleInlineAdoptProperty = useCallback(async (batchNo: string, rawKey: string, resolvedKey: string) => {
@@ -1442,6 +1692,35 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     }
   }, [batchPresentationMap, selectedDocId, session.sessionId]);
 
+  // 步骤 3: 行内快捷采纳推荐项（支持牌号消歧与非标属性对齐双场景）
+  const handleInlineAdoptHitl = useCallback(async (batchNo: string, ctx?: HitlInterruptContext) => {
+    if (!ctx) return;
+
+    // 1. 牌号消歧场景 (UNKNOWN_GRADE)
+    if (ctx.reason === 'UNKNOWN_GRADE') {
+      const topGrade = ctx.candidate_grades?.[0]?.id || (ctx.suggestions?.default ? String(ctx.suggestions.default) : '06Cr19Ni10');
+      const topCode = ctx.candidate_grades?.[0]?.code || topGrade;
+
+      showToast(`正在采纳推荐牌号: ${topCode}...`, 'info');
+      await handleResolveHitl({
+        inspector_id: 'QC-Engineer (质检工程师)',
+        corrected_grade: topGrade,
+        waiver_notes: '质检工程师在全景比对卡片中一键采纳系统推荐国家标准牌号',
+      });
+      showToast(`牌号修正成功 [${topCode}]，已完成全项标准核验`, 'success');
+      return;
+    }
+
+    // 2. 非标属性对齐场景 (PROPERTY_AMBIGUITY 等)
+    if (ctx.suggestions && Object.keys(ctx.suggestions).length > 0) {
+      const entries = Object.entries(ctx.suggestions);
+      if (entries.length > 0 && entries[0]) {
+        const [rawKey, targetKey] = entries[0];
+        await handleInlineAdoptProperty(batchNo, rawKey, String(targetKey));
+      }
+    }
+  }, [handleInlineAdoptProperty, handleResolveHitl]);
+
   // 单批次核验封装（兼容已有单批次调用）
   const evaluateBatch = useCallback(async (batchToEval?: BatchSpecimen, forcedStdIds?: string[]) => {
     const target = batchToEval || currentBatch;
@@ -1450,8 +1729,6 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   }, [currentBatch, evaluateBatches]);
 
   // 步骤 3 自动触发全批次异步并行核验（带历史台账防重算保护与全批次并发调度）
-  const batchEvaluatingKeyRef = useRef<string>('');
-
   useEffect(() => {
     if (currentStep !== 2 || !currentDoc || currentDoc.batches.length === 0) return;
 
@@ -1507,17 +1784,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       }),
     }));
 
-    if (currentDoc && currentDoc.batches.length > 0) {
-      const reevalBatches = currentDoc.batches.map(b => {
-        const isEquiv = areStandardCollectionsEquivalent(newSelected, b.standard);
-        return {
-          ...b,
-          overrideStandard: isEquiv ? undefined : newStandardStr,
-        };
-      });
-      batchEvaluatingKeyRef.current = ''; // 清除防抖锁
-      evaluateBatches(reevalBatches, newSelected);
-    }
+    // 彻底释放去重锁，由步骤 3 顶层的自动调度 useEffect 统一侦听并唯一派发 evaluateBatches，杜绝双重调用导致 runId 跳号
+    batchEvaluatingKeyRef.current = '';
   };
 
   // 计算当前文档/批次的 OCR BBox 字典（100% 严格受控于解析生命周期，纯动态消费接口/缓存返回的坐标）
@@ -2098,6 +2366,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     setDocBboxesMap({});
     setSelectedDocId('');
     setSelectedBatchNo('');
+    batchRunCountersRef.current = {};
+    Object.values(batchAbortControllersRef.current).forEach(c => c.abort('NEW_TASK_STARTED'));
+    batchAbortControllersRef.current = {};
 
     // 自动刷新服务端最新的历史已缓存文档列表
     refreshCachedDocs();
@@ -2212,12 +2483,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
                         {queuedDocs.map(doc => {
-                          const isSelected = selectedSampleId === doc.id;
+                          const isSelected = selectedDocId === doc.id || selectedSampleId === doc.id;
                           const isUploading = doc.status === '上传中';
                           return (
                             <div
                               key={doc.id}
-                              onClick={() => onSelectSample(doc.id)}
+                              onClick={() => {
+                                setSelectedDocId(doc.id);
+                                const matchedDoc = session.documents.find(d => d.docId === doc.id);
+                                if (matchedDoc && matchedDoc.batches[0]) {
+                                  setSelectedBatchNo(matchedDoc.batches[0].batchNo);
+                                }
+                                onSelectSample?.(doc.id);
+                              }}
                               className={`relative group p-3 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-between text-center h-36 ${isSelected
                                 ? 'border-primary dark:border-primary-fixed-dim ring-2 ring-primary/20 bg-surface-container-lowest dark:bg-surface-dark shadow-xs'
                                 : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
@@ -2383,7 +2661,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 </div>
               </div>
 
-              {/* 历史已缓存文档栏 */}
+              {/* 1. 历史已缓存文档栏 */}
               <div className="space-y-3 pt-2">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
@@ -2443,6 +2721,116 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* 2. 分层核验场景专测矩阵 (独立测试资产归档：可通过 NEXT_PUBLIC_ENABLE_TEST_FIXTURES=false 随时卸载) */}
+              {process.env.NEXT_PUBLIC_ENABLE_TEST_FIXTURES !== 'false' && scenarioSamples.length > 0 && (
+                <div className="space-y-3 pt-3 border-t border-outline-variant/30 dark:border-border-dark">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-base">
+                        fact_check
+                      </span>
+                      <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright flex items-center gap-2">
+                        <span>分层核验典型场景专测矩阵</span>
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800 text-[10px] font-bold">
+                          专用测试数据
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded-full bg-primary/10 text-primary dark:text-primary-fixed-dim text-[11px] font-medium">
+                          {scenarioSamples.length} 个流向
+                        </span>
+                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant font-normal hidden sm:inline">
+                          (覆盖 Tier 1 阻断、Tier 2 语义达标、Tier 2 语义超标否定、Tier 2 行内 HITL 全链路)
+                        </span>
+                      </h3>
+                    </div>
+                  </div>
+
+                  {/* 4 栏卡片网格 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+                    {scenarioSamples.map((sc, idx) => {
+                      const isPass = sc.expected_outcome === 'PASS';
+                      const isFail = sc.expected_outcome === 'FAIL';
+                      const isHitl = sc.expected_outcome === 'AWAITING_HUMAN_REVIEW';
+                      const badgeTheme = isPass
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                        : isFail
+                          ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                          : isHitl
+                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                            : 'bg-surface-container-high text-on-surface-variant';
+
+                      return (
+                        <div
+                          key={sc.id || idx}
+                          className="bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl p-3.5 shadow-xs flex flex-col justify-between hover:border-primary transition-all group relative"
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${badgeTheme}`}>
+                                {sc.tier_flow || (isPass ? 'PASS 通过' : isFail ? 'FAIL 否定' : 'HITL 挂起')}
+                              </span>
+                              <span className="text-[10px] text-on-surface-variant dark:text-outline-variant">
+                                {sc.declared_grade}
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="text-xs font-bold text-on-surface dark:text-surface-bright line-clamp-1 group-hover:text-primary transition-colors" title={sc.title}>
+                                {sc.title}
+                              </h4>
+                              <p className="text-[11px] text-on-surface-variant dark:text-outline-variant leading-relaxed line-clamp-2 mt-1" title={sc.description}>
+                                {sc.description}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1 pt-1">
+                              {sc.tags?.map((tag, tIdx) => (
+                                <span
+                                  key={tIdx}
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant dark:text-outline-variant"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="pt-3 mt-2 border-t border-outline-variant/30 dark:border-border-dark flex items-center justify-between gap-2">
+                            {sc.download_url && (
+                              <a
+                                href={sc.download_url}
+                                download={sc.filename || `${sc.id}.pdf`}
+                                className="text-[11px] text-on-surface-variant hover:text-primary dark:hover:text-primary-fixed-dim font-medium flex items-center gap-1 transition-colors"
+                                title="下载高清矢量 PDF 原件"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                <span className="material-symbols-outlined text-[14px]">download</span>
+                                <span>下载原件</span>
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleRestoreFromCache({
+                                  id: sc.id,
+                                  md5: sc.md5 || sc.id,
+                                  filename: sc.filename || `${sc.id}.pdf`,
+                                  size: '15 KB',
+                                  date: '预置场景',
+                                });
+                              }}
+                              className="ml-auto px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-container text-on-primary text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">play_circle</span>
+                              <span>一键装载</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -2470,7 +2858,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   sessionMetrics={sessionMetrics}
                   isStreamingTerminalExpanded={isStreamingTerminalExpanded}
                   onToggleStreamingTerminal={() => setIsStreamingTerminalExpanded(prev => !prev)}
-                  onReparseDocument={() => reparseDocument(selectedDocId)}
+                  onReparseDocument={() => {
+                    batchEvaluatingKeyRef.current = '';
+                    if (currentDoc?.batches) {
+                      setBatchPresentationMap(prev => {
+                        const next = { ...prev };
+                        for (const b of currentDoc.batches) {
+                          delete next[b.batchNo];
+                        }
+                        return next;
+                      });
+                    }
+                    reparseDocument(selectedDocId);
+                  }}
                   rightExtraAction={
                     isHitl ? (
                       <button
@@ -4180,12 +4580,22 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               <h4 className="text-xs font-bold text-on-surface dark:text-surface-bright">
                                 执行标准与技术协议
                               </h4>
-                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-primary/10 text-primary border border-primary/20" title="依据质保书原件声明牌号进行客观裁决">
-                                核验牌号: {currentBatch.grade || '未声明'}
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-primary/10 text-primary border border-primary/20" title="当前用于执行合规判定的材料牌号基准">
+                                核验牌号: {activeGrade || '未声明'}
                               </span>
-                              {isOverridden && (
+                              {isStandardOverridden && isGradeOverridden && (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                  标准与牌号已变更
+                                </span>
+                              )}
+                              {isStandardOverridden && !isGradeOverridden && (
                                 <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
                                   标准已变更
+                                </span>
+                              )}
+                              {!isStandardOverridden && isGradeOverridden && (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                  牌号已指定
                                 </span>
                               )}
                             </div>
@@ -4194,7 +4604,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => evaluateBatch(currentBatch, selectedStandardIds)}
+                                onClick={() => {
+                                  if (isReevaluatingCooldownRef.current || isEvaluatingBatch) return;
+                                  isReevaluatingCooldownRef.current = true;
+                                  setTimeout(() => { isReevaluatingCooldownRef.current = false; }, 500);
+                                  evaluateBatch(currentBatch, selectedStandardIds);
+                                }}
                                 disabled={isEvaluatingBatch}
                                 title="强制调用合规引擎对当前试样重新计算"
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shadow-2xs border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary cursor-pointer disabled:opacity-50"
@@ -4209,7 +4624,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 type="button"
                                 onClick={handleResetGrade}
                                 disabled={!isOverridden}
-                                title={isOverridden ? '重置为质保书原件声明标准' : '当前已是质保书原件声明基准'}
+                                title={isOverridden ? '重置为质保书原件声明基准（清除人工指定的牌号与标准）' : '当前已是质保书原件声明基准'}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shadow-2xs ${isOverridden
                                   ? 'border border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 cursor-pointer'
                                   : 'border border-outline-variant/30 dark:border-border-dark text-on-surface-variant/40 dark:text-outline-variant/40 cursor-not-allowed bg-transparent'
@@ -4440,8 +4855,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                             <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark shadow-xs flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden items-stretch">
 
                               {/* 1. 左侧约 55% (md:col-span-7)：系统客观判定 */}
-                              <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1.5 ${
-                                isResolving
+                              <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1.5 ${isResolving
                                   ? 'bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200'
                                   : isBatchHitl
                                     ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
@@ -4451,13 +4865,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 }`}>
                                 <div className="flex items-center gap-2 flex-wrap justify-between">
                                   <div className="flex items-center gap-2">
-                                    <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${
-                                      isResolving
+                                    <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${isResolving
                                         ? 'text-indigo-600 dark:text-indigo-400 animate-spin'
                                         : isBatchHitl
                                           ? 'text-amber-600 dark:text-amber-400'
                                           : ''
-                                    }`}>
+                                      }`}>
                                       {isResolving ? 'sync' : isBatchHitl ? 'pending_actions' : sysVerdict === 'FAIL' ? 'cancel' : 'check_circle'}
                                     </span>
                                     <h3 className="text-sm sm:text-base font-bold font-headline whitespace-nowrap">
@@ -4470,11 +4883,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                             : '系统判定: PASS 全项合规'}
                                     </h3>
                                   </div>
-                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap shadow-2xs ${
-                                    isResolving
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap shadow-2xs ${isResolving
                                       ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700'
                                       : badgeMeta.badgeClass
-                                  }`}>
+                                    }`}>
                                     {isResolving ? '流转: 语义消歧中' : `流转: ${arbitration.statusLabel}`}
                                   </span>
                                 </div>
@@ -4867,10 +5279,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                       <span className="text-[11px]">匹配切片条款中...</span>
                                     </div>
                                   </td>
-                                  <td className="px-3.5 py-2.5 font-mono font-bold text-xs text-on-surface dark:text-surface-bright">
+                                  <td className="px-3.5 py-2.5  font-bold text-xs text-on-surface dark:text-surface-bright">
                                     {String(prop.raw_value ?? '')} {prop.unit || ''}
                                   </td>
-                                  <td className="px-3.5 py-2.5 font-mono text-[11px] text-outline-variant">
+                                  <td className="px-3.5 py-2.5  text-[11px] text-outline-variant">
                                     --
                                   </td>
                                   <td className="px-3.5 py-2.5 whitespace-nowrap">
@@ -4901,44 +5313,60 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                       <div>
                                         <div className="text-xs font-bold text-amber-900 dark:text-amber-100 flex items-center gap-2">
                                           <span>人机协同 (HITL) 待核实确认</span>
-                                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 font-mono">
-                                            {currentBatchState.hitlContext.reason}
+                                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 font-sans font-medium">
+                                            {formatHitlReasonBadge(currentBatchState.hitlContext.reason)}
                                           </span>
                                         </div>
                                         <p className="text-[12px] text-amber-800 dark:text-amber-200 mt-1 leading-relaxed">
                                           {currentBatchState.hitlContext.prompt_message}
                                         </p>
-                                        {currentBatchState.hitlContext.suggestions && Object.keys(currentBatchState.hitlContext.suggestions).length > 0 && (
-                                          <div className="mt-2 flex items-center gap-2 text-[11px] text-amber-800 dark:text-amber-300 font-sans">
-                                            <span className="font-semibold">AI 候选推荐:</span>
-                                            {Object.entries(currentBatchState.hitlContext.suggestions).map(([raw, target]) => (
-                                              <span key={raw} className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/80 border border-amber-300 dark:border-amber-700 font-mono font-bold">
-                                                {raw} → {String(target)}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
+                                        {(() => {
+                                          const ctx = currentBatchState.hitlContext;
+                                          if (ctx.reason === 'UNKNOWN_GRADE') {
+                                            const topCandidate = ctx.candidate_grades?.[0];
+                                            const candidateCode = topCandidate?.code || (ctx.suggestions?.default ? String(ctx.suggestions.default) : '06Cr19Ni10 (S30408)');
+                                            const matchText = topCandidate?.match ? ` [${topCandidate.match}]` : '';
+                                            return (
+                                              <div className="mt-2 flex items-center gap-2 text-[11px] text-amber-800 dark:text-amber-300 font-sans">
+                                                <span className="font-semibold">AI 候选推荐:</span>
+                                                <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/80 border border-amber-300 dark:border-amber-700 font-sans font-bold">
+                                                  首选建议: {candidateCode}{matchText}
+                                                </span>
+                                              </div>
+                                            );
+                                          }
+
+                                          if (ctx.suggestions && Object.keys(ctx.suggestions).length > 0) {
+                                            return (
+                                              <div className="mt-2 flex items-center gap-2 text-[11px] text-amber-800 dark:text-amber-300 font-sans">
+                                                <span className="font-semibold">AI 候选推荐:</span>
+                                                {Object.entries(ctx.suggestions).map(([raw, target]) => (
+                                                  <span key={raw} className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/80 border border-amber-300 dark:border-amber-700 font-sans font-bold">
+                                                    {raw === 'default' ? '默认建议' : raw} → {String(target)}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            );
+                                          }
+
+                                          return null;
+                                        })()}
                                       </div>
                                     </div>
 
                                     {/* 行内快捷采纳与展开复核操作 */}
                                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                      {currentBatchState.hitlContext.suggestions && Object.keys(currentBatchState.hitlContext.suggestions).length > 0 && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const entries = Object.entries(currentBatchState.hitlContext?.suggestions || {});
-                                            if (entries.length > 0 && entries[0]) {
-                                              const [rawKey, targetKey] = entries[0];
-                                              handleInlineAdoptProperty(currentBatch.batchNo, rawKey, String(targetKey));
-                                            }
-                                          }}
-                                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
-                                        >
-                                          <span className="material-symbols-outlined text-sm">done_all</span>
-                                          <span>采纳推荐项</span>
-                                        </button>
-                                      )}
+                                      {((currentBatchState.hitlContext.candidate_grades && currentBatchState.hitlContext.candidate_grades.length > 0) ||
+                                        (currentBatchState.hitlContext.suggestions && Object.keys(currentBatchState.hitlContext.suggestions).length > 0)) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleInlineAdoptHitl(currentBatch.batchNo, currentBatchState.hitlContext)}
+                                            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                          >
+                                            <span className="material-symbols-outlined text-sm">done_all</span>
+                                            <span>采纳推荐项</span>
+                                          </button>
+                                        )}
                                       <button
                                         type="button"
                                         onClick={handleTriggerHitl}
@@ -5427,7 +5855,13 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         isOpen={isHitlDrawerOpen}
         onClose={() => setIsHitlDrawerOpen(false)}
         hitlContext={activeHitlContext}
-        taskId={currentBatch ? `TK-${currentBatch.batchNo}` : 'TK-PENDING'}
+        taskId={
+          (selectedBatchNo && batchPresentationMap[selectedBatchNo]?.taskId)
+            ? `TK-${batchPresentationMap[selectedBatchNo]!.taskId!}`
+            : (currentBatch ? `TK-${currentBatch.batchNo}` : 'TK-PENDING')
+        }
+        selectedStandardIds={selectedStandardIds}
+        availableStandards={standardsData?.standards}
         onSubmitResume={handleResolveHitl}
         isSubmitting={isHitlSubmitting}
       />

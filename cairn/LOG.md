@@ -4,6 +4,144 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-08 · HITL 抽屉手动输入钢级多维模糊匹配与键盘操作体验全面升级
+
+- 数据层与元数据直通 (`rule-store.interface.ts`, `file-rule-store.ts`, `api-client.ts`):
+  1. 切片元数据拓展：`listAvailableStandards` 扩充装载 `slice_details`（主牌号、统一代号、全称与别名），由 `/api/standards` 原生输出；
+  2. 选定标准范围切片池：`buildGradePool` 优先提取当前执行标准切片库，保证选中的牌号 100% 有规可循。
+- 多维模糊匹配算法与工业级键盘交互 (`grade-fuzzy-matcher.ts`, `HitlDrawer.tsx`):
+  1. 多维模糊索引：支持统一代号、化学式子串与别名拼写匹配（完全匹配 > 前缀 > 别名命中）；
+  2. 键盘与鼠标双模支持：支持键盘 ↑ ↓ 快速高亮、Enter 确认选择、Esc / 点击外部关闭浮层与一键清空按钮；
+  3. 双轨回填提交：选中项回填标准全称并向后端提交主牌号，未选中时保留自由输入提交权。
+- 质量门禁: 47 个测试套件 230 个测试 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 打包构建成功。详见 `cairn/hitl-scenarios-and-drawer.md`。
+
+## 2026-09-08 · 标准切换跳号根除（收敛自动调度）与多标准切片池聚合牌号推荐引擎升级
+
+
+- 收敛核验调度至步骤 3 顶层 `useEffect` (`WaterfallWorkbench.tsx`):
+  1. 根治双重触发：`handleToggleStandard` 彻底移除手动 `evaluateBatches`，仅声明式重置批次为 UNAUDITED 并清空防抖锁；
+  2. 调度单一事实来源：由步骤 3 顶层 `useEffect` 侦听并唯一派发核验，杜绝前后双调，保证每次切标 RUN 计数严格单调递增 1。
+- 多标准切片池聚合与共有牌号激励加权 (`candidate-grade-recommender.ts`, `normalize.node.ts`):
+  1. 多标准解构与合并加载：支持 `standardIds` 数组及顿号/逗号分隔代号拆解，循环加载各标准切片，根治整串匹配失效导致的候选为空；
+  2. 共有牌号契合激励：跨标准共有的牌号（如 `06Cr19Ni10`）给予 +0.05 契合加分，并按 `primary_grade` 主键去重保留最高分切片；
+  3. 参数透传：`normalize` 节点调用推荐器时透传 `options?.forcedStandardIds`，实现多标准并存与叠加下的精准消歧。
+- 质量门禁: 46 个测试套件 223 个测试 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 打包构建成功。详见 `cairn/hitl-scenarios-and-drawer.md`。
+
+## 2026-09-08 · 批次级 AbortController 熔断、版本令牌校验与时序幽灵覆盖彻底根治
+
+
+- 批次级网络掐旧启新熔断（Abort & Replace）(`WaterfallWorkbench.tsx`):
+  1. 控制器管理：维护 `batchAbortControllersRef`，任何新核验（重新核验/重置/切标）瞬间 abort 旧连接，彻底截断迟到旧流；
+  2. 生命周期兜底：组件卸载、重选文档、开启新任务以及步骤 2 重新解析时，级联 abort 全部活跃批次请求。
+- 前后端协同防竞态与服务端级联退出 (`submit/route.ts`, `WaterfallWorkbench.tsx`):
+  1. 版本令牌锁：流式回调校验 `data.taskId` 是否匹配当前活跃的 `activeRunId`，迟到旧包直接静默丢弃；
+  2. 服务端感知：`ReadableStream` 监听 `request.signal.aborted`，客户端断开后立即终止流式生成器，避免无谓 LLM 与算力消耗；
+  3. 交互层防连击：重置按钮基于 `!isOverridden` 即刻置灰，「重新核验」增加 500ms 冷却互斥锁。
+- 质量门禁: 46 个测试套件 221 个测试 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 打包构建成功。
+
+## 2026-09-08 · 执行实例强隔离（RUN-${counter}）落地与重置后 HITL 确定性复现闭环
+
+- 执行实例与会话线程彻底解耦 (`workflow-engine.ts`, `WaterfallWorkbench.tsx`):
+  1. 契约升级：工作流线程标识演进为 `${sessionId}::${batchNo}::RUN-${counter}`，同批次每次重新核验或重置自增 counter；
+  2. 根治幽灵数据：彻底消除 LangGraph Checkpointer 跨运行残留 `humanCorrection` 导致条件路由短路的隐患；
+  3. 重置闭环复现：Case 1 牌号消歧后点击重置，新进程以 `RUN-2` 全新纯净启动，原牌号 100% 确定性再次触发 HITL 挂起。
+- 前后端协同与兼容设计 (`state.interface.ts`, `submit/route.ts`, `api-client.ts`):
+  1. 选项透传：`WorkflowOptions` 增加 `runId?: string`，未传自动保持旧格式保证全量历史单测平稳向下兼容；
+  2. 抽屉恢复对齐：前端 `handleResolveHitl` 优先绑定当前 Run 的活跃 `taskId`，避免恢复错位。
+- 质量门禁: 46 个测试套件 221 个测试（新增多轮运行隔离与二次 HITL 触发回归单测）100% 绿色通过，`tsc --noEmit` 0 错误。
+
+## 2026-09-08 · 人工终审权与前置消歧彻底解绑、基准变更徽章精细化与重置归零闭环
+
+- HITL 消歧与双轨制人工审批（Human Verdict）彻底解绑 (`WaterfallWorkbench.tsx`):
+  1. 契约矫正：消歧恢复后保持 `humanVerdict: null`，杜绝系统因客观比对 FAIL 越权勾选人工 REJECT 并塞入消歧说明；
+  2. 权限归位：无论客观核验结论为何，人工复核终审审批权 100% 交还质检工程师。
+- 核验基准变更徽章语义细化 (`WaterfallWorkbench.tsx`):
+  1. 状态细化分流：标准与牌号均变显示「标准与牌号已变更」，仅标变显示「标准已变更」，仅牌号变显示「牌号已指定」；
+  2. 解决 Case 1 仅牌号消歧却误显「标准已变更」的感知缺陷。
+- 「重置」按钮归零重构与重新核验分工确立 (`WaterfallWorkbench.tsx`, `session.ts`):
+  1. 职责正名：重置按钮专用于清除人工指定的 `overrideGrade` 与 `overrideStandard`；
+  2. 彻底归零：显式清除 `overrideGrade/Standard`、清空旧报告、级联删除 Presentation 缓存并释放防重锁，自动拉起质保书原件声明基准的流式核验。
+- 质量门禁: `hitlReason` 联合类型对齐；46 个测试套件 220 个测试 100% 通过；`tsc --noEmit` 0 错误；Next.js 15 打包构建成功。
+
+## 2026-09-08 · 质保书声明解耦、消歧自动全量重算与重新解析级联重置
+
+- 质保书事实与核验基准解耦 (`WaterfallWorkbench.tsx`):
+  1. 契约治理：消歧操作严格写入 `overrideGrade`，严禁覆写 `b.grade`（原件声明事实不可变）；
+  2. 视图分层：步骤 3 左侧质保书信息卡片保持不动（原件牌号），仅右侧执行标准栏的「核验牌号」更新为消歧钢级。
+- 根除虚假降级与消歧自动比对闭环 (`workflow-engine.ts`, `WaterfallWorkbench.tsx`):
+  1. 修复流式中断快照：`streamAudit` 在遇到挂起上下文时推进至 `human_review` 触发 `interrupt`，确保 Checkpointer 记录合法挂起任务，使 `resumeAudit` 恢复执行；
+  2. 彻底移除 `!resumedReport -> nextVerdict = 'PASS'` 的假降级，消歧恢复后自动触发全量规则比对，比对矩阵直接输出 16 条指标，杜绝 0 项过渡态。
+- 步骤 2 重新解析级联重置 (`WaterfallWorkbench.tsx`):
+  1. 重新解析与解析完成回调中，级联将批次状态重置为 `UNAUDITED`、清空旧比对报告与视图缓存；
+  2. 彻底释放调度防重锁 `batchEvaluatingKeyRef`，再次进入步骤 3 时自动拉起全新比对。
+- 质量门禁: 46 个测试套件 220 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 生产打包顺利构建成功。
+
+
+## 2026-09-08 · 主界面 HITL 旗帜汉化、双层抽屉根除与一键采纳全链路闭环
+
+- HITL 旗帜汉化与牌号别名呈现 (`WaterfallWorkbench.tsx`):
+  1. 枚举汉化转译：`UNKNOWN_GRADE` 转为「材料牌号待消歧」，其余场景同步汉化，消除机器英文裸出；
+  2. 牌号别名推荐展示：牌号消歧场景优先渲染「首选建议: 06Cr19Ni10 (S30408) [98% 匹配 (推荐)]」，消除 `default -> ...` 裸输出。
+- 双层抽屉与假任务编号根除 (`src/app/page.tsx`, `WaterfallWorkbench.tsx`):
+  1. 彻底剥离 `page.tsx` 冗余的 `HitlDrawer` 渲染与旧默认编号，抽屉生命周期 100% 收敛至工作台单一来源；
+  2. 改造 `handleTriggerHitl`，重新打开抽屉时继承 `batchPresentationMap` 中完整的 `hitlContext`，彻底杜绝候选数据丢失。
+- “采纳推荐项”按钮业务分流闭环 (`WaterfallWorkbench.tsx`):
+  1. 新增 `handleInlineAdoptHitl`，针对牌号消歧提交 `corrected_grade`（而非属性键映射），彻底解决非标牌号在确定性比对节点找不到规则的阻断；
+  2. 采纳后自动闭环刷新批次牌号、合格状态与大盘。
+- 质量门禁: 46 个测试套件 219 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误，Next.js 15 生产打包构建成功。
+
+## 2026-09-08 · 人机协同抽屉（HitlDrawer）挂起原因排版升级与审计提示移除
+
+- 挂起原因信息看板视觉升级 (`src/components/HitlDrawer.tsx`):
+  1. 上下分层排布：首行呈现黄色信息图标与「挂起原因」标题，具体提示内容（prompt_message）独立成行；
+  2. 字体加粗与放大：提示内容增大至 14px（`text-sm font-bold text-amber-950`），显著增强首屏异常视觉权重；
+  3. 下方保留安全规则辅助说明，以轻柔细边框分割（`border-t border-amber-200/60`），层次分明；
+- 底部冗余提示移除 (`src/components/HitlDrawer.tsx`):
+  1. 彻底移除文本输入框下方的「本次协同裁定将完整记录于质量审计追踪链中。」提示卡片，释放垂直空间并紧凑布局；
+- 质量门禁: 46 个测试套件 219 个测试用例 100% 绿色通过，`tsc --noEmit` 0 错误，端到端浏览器实机渲染核验。
+
+## 2026-09-08 · 材料牌号推荐算法动态化、静态 Mock 根治与纯逻辑架构落地
+
+- 材料牌号推荐算法纯逻辑动态化 (`src/normalizer/candidate-grade-recommender.ts`, `normalize.node.ts`):
+  1. 架构定调：确立纯代码双标尺模型（化学指纹区间落入度 60% + 牌号词根与别名倒排 40%），零模型幻觉、< 1ms 毫秒级极速响应且 100% 确保推荐钢级在当前库中有切片可闭环；
+  2. 动态规则驱动：100% 动态依赖 `IRuleStore.getCompleteStandard` 获取当前标准全部切片，绝无硬编码切片列表；
+  3. 状态机与工作流集成：`normalize` 节点未命中标准牌号时动态触发推荐，向 `hitlContext.candidate_grades` 注入真实计算候选。
+- 前端静态 Mock 彻底根除与交互闭环 (`src/components/HitlDrawer.tsx`, `tests/`):
+  1. 彻底移除前端 `DEFAULT_CANDIDATES` 静态字典，增加动态候选为空时的友好引导，默认选中最高推荐项；
+  2. 跑通手动输入（选项 4）沿 `human_review` -> `normalize` -> `retrieve_standard` 重新加载切片确定性核验闭环。
+- 质量门禁与端到端闭环:
+  1. 单元与集成测试: 新增 `candidate-grade-recommender.test.ts`，全量 46 个测试套件 219 个测试用例 100% 绿色通过；
+  2. 类型安全与生产打包: `tsc --noEmit` 0 错误；Next.js 15 `pnpm build` 全量 12 路由打包成功。
+
+## 2026-09-08 · 四维分层场景缺陷修复、CJK 编码治理与测试资产隔离落地
+
+- 矢量 PDF 中文编码根除乱码与用例重构 (`scripts/generate-sample-test-cases.ts`, `public/samples/`):
+  1. 废弃 Helvetica 单字节编码，升级为标准 PDF 1.4 Type0 (STSong-Light + UniGB-UTF16-H) 字体体系；
+  2. 重新生成 4 套场景 PDF，实机渲染验证汉字与符号 100% 清晰无乱码，并同步刷新 MD5 索引与切片缓存。
+- 测试资产物理隔离与环境开关规范 (`.env`, `.env.example`, `scenarios/index.ts`):
+  1. 规范 `NEXT_PUBLIC_ENABLE_TEST_FIXTURES` 开关，补齐无敏感信息的 `.env.example` 模板；
+  2. 根页面解耦 404 伪异常，欢迎区调序；直通分支强制牌号消歧并打通 HITL 抽屉 `resumeAudit` 闭环。
+- 逻辑 Mock 隐雷治理与分支覆盖率规划 (`cairn/ROADMAP.md` 开放问题 9):
+  1. 确立“数据 Mock 易清、逻辑 Mock 深埋”的技术治理方向，规划分支覆盖率（Branch Coverage ≥ 80%）门禁；
+  2. 拟定“分支覆盖补齐法”与对抗变异测试，杜绝条件分支中的静默放行与假数据直通隐患。
+- 质量门禁与端到端闭环:
+  1. 单元与集成测试: 45 个测试套件 214 个测试用例 100% 绿色通过；
+  2. 类型安全: `tsc --noEmit` 0 错误；生产构建: Next.js 15 `pnpm build` 全量 12 路由打包成功。
+
+## 2026-09-07 · 四维分层核验场景矩阵闭环与提取器安全剥离加固落地
+
+- 生产提取器依赖剥离与假数据隐雷消除 (`src/lib/server-engine.ts`, `src/workflow/nodes/extract.node.ts`):
+  1. 彻底将 `MockCertificateExtractor` 从服务端生产单例与默认 fallback 中剥离，服务端仅注入持久化 Checkpointer 和规则库；
+  2. 严禁对未知输入伪造 S30408 数据，主链路数据由前端解析直传，未配置提取器时传入原始非结构化数据直接安全抛错阻断。
+- 四维分层典型核验场景矩阵落地 (方案 A + B 结合) (`scripts/generate-sample-test-cases.ts`, `WaterfallWorkbench.tsx`, `api/samples/`):
+  1. 构建 4 套标准工业矢量 PDF 原件 (`public/samples/`) 与高保真结构化切片缓存 (`.cache/parses/`)，提供真实原件下载；
+  2. 前端步骤 1 欢迎区新增「分层核验典型场景专测矩阵」卡片组件，支持一键装载秒级直通核心核验流转；
+  3. 四维流向完整覆盖：Case 1 (Tier 1 HITL 阻断挂起及人工修正)、Case 2 (Tier 2 语义对齐合格)、Case 3 (Tier 2 语义对齐超标否定)、Case 4 (Tier 2 特异非标项行内 HITL 待定)。
+- 质量门禁与端到端闭环:
+  1. 单元与集成测试: 新增 `tests/e2e/four-tier-scenarios.test.ts`，全量 45 个测试套件 213 个测试用例 100% 绿色通过；
+  2. 类型安全: `tsc --noEmit` 0 错误 (严格模式)；
+  3. 生产构建: Next.js 15 `pnpm build` 全量 12 路由打包成功。
+
 ## 2026-09-07 · 知识经验闭环反哺与端到端全量验收落地 (Phase 4)
 
 - 质检经验自学习与动态别名沉淀 (`src/normalizer/property-key-normalizer.ts`, `human-review.node.ts`):

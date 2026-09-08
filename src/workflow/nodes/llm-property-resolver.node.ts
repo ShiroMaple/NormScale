@@ -156,17 +156,20 @@ export function createLlmPropertyResolverNode(ruleStore?: IRuleStore) {
 
       // 3. 若存在重大歧义项且此前未挂起，触发 HITL 人机协同中断
       if (!hitlContext && ambiguousList.length > 0 && !humanCorrection) {
-        const topAmbiguous = ambiguousList[0];
-        // 若实测项属于重要质检字段但置信度低于 0.6
-        if (topAmbiguous && (topAmbiguous.raw_category === 'mechanical' || topAmbiguous.raw_category === 'chemical')) {
+        // 优先定位属于力学或化学等核心检验大类的歧义字段，置信度不足时挂起人机协同
+        const criticalAmbiguous = ambiguousList.find(
+          item => item.raw_category === 'mechanical' || item.raw_category === 'chemical'
+        );
+
+        if (criticalAmbiguous && criticalAmbiguous.confidence < 0.6) {
           hitlContext = {
             reason: 'PROPERTY_AMBIGUITY',
-            prompt_message: `实测项目 [${topAmbiguous.raw_name}] 无法明确对应至执行标准指标，请质检员确认或指定标准属性`,
-            pending_fields: [topAmbiguous.raw_name],
-            suggestions: topAmbiguous.resolved_key ? { [topAmbiguous.raw_name]: topAmbiguous.resolved_key } : undefined,
-            property_ambiguity_details: topAmbiguous,
+            prompt_message: `实测项目 [${criticalAmbiguous.raw_name}] 无法明确对应至执行标准指标，请质检员确认或指定标准属性`,
+            pending_fields: [criticalAmbiguous.raw_name],
+            suggestions: criticalAmbiguous.resolved_key ? { [criticalAmbiguous.raw_name]: criticalAmbiguous.resolved_key } : undefined,
+            property_ambiguity_details: criticalAmbiguous,
           };
-          collector.addTrace('WORKFLOW', 'warn', `[人机协同请求] 字段 ${topAmbiguous.raw_name} 存在歧义，挂起等待复核`);
+          collector.addTrace('WORKFLOW', 'warn', `[人机协同请求] 字段 ${criticalAmbiguous.raw_name} 存在歧义，挂起等待复核`);
         }
       }
 

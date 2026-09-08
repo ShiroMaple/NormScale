@@ -29,6 +29,12 @@
   - 双标尺追溯：全景矩阵与核验报告中注入多标准对比依据、单标独立核验矩阵与剪刀差归因（Scissors Attribution）明确责任边界；
   - 双轨制判定契约支持：实现放行仲裁矩阵 `resolveFinalDisposition`，系统客观计算判定与质检员人工签认双轨并行流转，绝对不抹除系统客观计算数据；
   - 前端全景比对矩阵联动：步骤 3 全景大表支持多标尺彩色徽标、主导加严标准标识与剪刀差高亮警示。
+- [x] **Phase 10.5: LangGraph 有状态编排重构、渐进式流式通信与测试资产物理隔离归档**
+  - 多批次并发线程隔离：LangGraph `MemorySaver` checkpointer 按 `thread_id: ${sessionId}::${batchNo}` 复合隔离，杜绝批次状态竞争；
+  - 渐进式流式推流 (SSE)：Tier 1 确定性规则秒级下发 `tier1_ready` 全景大盘，长尾项异步推流 `tier2_patch` 补丁，兼顾吞吐与极速响应；
+  - 知识经验自学习闭环：质检员在 HITL 中确认的属性映射自动沉淀至 `data/learned_aliases.json`，下次直通 Tier 1 Fast-Path；
+  - 生产提取器安全加固：彻底从服务端生产单例与默认 fallback 中剥离 `MockCertificateExtractor`，消除假数据伪造隐雷；
+  - 四维分层典型场景测试资产物理隔离归档：独立收敛至 `tests/fixtures/scenarios/`，受控于 `NEXT_PUBLIC_ENABLE_TEST_FIXTURES` 环境变量，支持一键零残留卸载；详见 [`cairn/langgraph-orchestration-and-fixtures.md`](file:///c:/Users/gaoft/Documents/CodeSpace/NormScale/cairn/langgraph-orchestration-and-fixtures.md)。
 - [ ] **Phase 11: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 10)**
   - 扩充管材、板材、锻件等多品类标准规则库
   - 升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），对接生产级分布式向量库
@@ -50,3 +56,6 @@
    - 牌号免选落地：步骤 3 移除牌号下拉框，只读展示原件声明牌号；原牌号位置替换为【应用技术协议】卡片（选项留空待完善）。
 7. **标准离线入库工具链**：离线标准结构化初期采用“人工编写模板”还是“LLM 自动结构化初提 + 人工核验”工作流？
 8. **提取层服务边界与 DocEx REST API 待办**：当前 DocEx 项目端尚未实现专用的 MTC 质保书提取 REST API 端点（此项为未来联动待办），因此 Phase 3 优先通过 `ICertificateExtractor` 接口抽象完成协议契约与适配层（Mock / Direct LLM / HTTP Client），待 DocEx API 就绪后直接填入 URL 配置即可无缝打通。
+9. **历史遗留逻辑 Mock 排查与分支覆盖率专项治理**：
+   - 核心洞察：数据 Mock 易于全局检索排查，但埋设在条件分支（如 fast-path 直通、错误降级、短路假定）中的“逻辑 Mock”隐蔽极深，常规行覆盖率单测常因未走异常分支而漏过隐雷；
+   - 治理规划：后续专项安排带分支覆盖率（Branch Coverage 门禁 ≥ 80%）的测试度量体系，推行“分支覆盖补齐法”对各核心节点的决策分支逐一穿透，杜绝非标牌号或异常数据的静默放行漏洞。

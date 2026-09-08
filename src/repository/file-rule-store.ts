@@ -306,6 +306,13 @@ export class FileRuleStore implements IRuleStore {
         status: entry.meta.status,
         slice_count: entry.uniqueSlices.length,
         available_slices: entry.uniqueSlices.map(s => s.spec_key),
+        slice_details: entry.uniqueSlices.map(s => ({
+          spec_key: s.spec_key,
+          primary_grade: s.primary_grade || s.spec_key,
+          unified_code: s.unified_code,
+          display_name: s.display_name || `${s.primary_grade || s.spec_key}${s.unified_code ? ` (${s.unified_code})` : ''}`,
+          aliases: s.aliases || [],
+        })),
       });
     }
 

@@ -61,6 +61,13 @@ export class CertificateNormalizer {
   }
 
   /**
+   * 暴露材料牌号归一化消歧方法
+   */
+  public async normalizeGrade(rawGrade: string, declaredStandard?: string): Promise<NormalizedGradeResult> {
+    return this.gradeNormalizer.normalize(rawGrade, declaredStandard);
+  }
+
+  /**
    * 执行全量确定性清洗与归一化
    */
   public async normalize(

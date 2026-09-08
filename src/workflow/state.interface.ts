@@ -144,6 +144,8 @@ export interface WorkflowOptions {
   sessionId?: string;
   /** 批次编号 (用于多批次线程物理隔离) */
   batchNo?: string;
+  /** 执行运行序号 (如 'RUN-1', 'RUN-2'，用于同批次重新核验/重置时的独立线程生命周期隔离) */
+  runId?: string;
   /** 质检任务上下文标识 */
   contextId?: string;
 }

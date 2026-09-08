@@ -2,6 +2,14 @@ import { AuditReport } from '@/schemas/report.schema.ts';
 import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions, PropertyResolutionCandidate } from '@/workflow/state.interface.ts';
 import { RawCertificatePayload } from '@/extractor/extractor.interface.ts';
 
+export interface StandardSliceOverviewDto {
+  spec_key: string;
+  primary_grade: string;
+  unified_code?: string;
+  display_name: string;
+  aliases?: string[];
+}
+
 export interface StandardOverviewDto {
   standard_id: string;
   standard_name: string;
@@ -9,6 +17,7 @@ export interface StandardOverviewDto {
   status: string;
   slice_count: number;
   available_slices: string[];
+  slice_details?: StandardSliceOverviewDto[];
 }
 
 export interface PresetSampleDto {
@@ -19,6 +28,10 @@ export interface PresetSampleDto {
   expected_outcome: 'PASS' | 'FAIL' | 'AWAITING_HUMAN_REVIEW';
   description: string;
   tags: string[];
+  md5?: string;
+  tier_flow?: string;
+  download_url?: string;
+  filename?: string;
 }
 
 export interface AuditApiResponse {

@@ -114,4 +114,89 @@ describe('渐进式流式通信与分段事件调度测试 (Phase 3)', () => {
       expect(hitlEv.taskId).toBe(`${sessionId}::${batchNo}`);
     }
   });
+
+  it('未收录未知牌号触发 streamAudit 挂起后，能够通过 resumeAudit 成功恢复并产出包含规则项的报告', async () => {
+    const engine = new WorkflowEngine();
+    const sessionId = 'SES-STREAM-UNK';
+    const batchNo = 'BATCH-UNK-01';
+
+    const payload = {
+      header: {
+        certificate_no: 'CERT-STR-UNK',
+        declared_standard: 'GB/T 13296-2023',
+        declared_grade: 'SUS 304H-SpecialX',
+      },
+      test_records: [
+        { raw_property_name: 'C', raw_value: '0.052' },
+        { raw_property_name: 'Si', raw_value: '0.50' },
+        { raw_property_name: 'Mn', raw_value: '1.20' },
+      ],
+    };
+
+    const events: WorkflowStreamEvent[] = [];
+    for await (const ev of engine.streamAudit(JSON.stringify(payload), { sessionId, batchNo })) {
+      events.push(ev);
+    }
+
+    const hitlEv = events.find(e => e.type === 'hitl_interrupt');
+    expect(hitlEv).toBeDefined();
+    expect(hitlEv?.hitlContext.reason).toBe('UNKNOWN_GRADE');
+
+    // 质检员确认指定国标牌号并恢复流转
+    const resumeRes = await engine.resumeAudit(`${sessionId}::${batchNo}`, {
+      corrected_grade: '06Cr19Ni10',
+    });
+
+    expect(resumeRes.status).toBe('completed');
+    expect(resumeRes.finalReport).toBeDefined();
+    expect(resumeRes.finalReport?.matched_grade).toBe('06Cr19Ni10');
+    expect(resumeRes.finalReport?.summary.total_rules_evaluated).toBeGreaterThan(0);
+  });
+
+  it('多轮生命周期隔离验证：同一批次在 RUN-1 恢复完成后，使用 RUN-2 重新核验能够纯净再次触发 HITL 挂起', async () => {
+    const engine = new WorkflowEngine();
+    const sessionId = 'SES-MULTI-RUN';
+    const batchNo = 'BATCH-UNK-02';
+
+    const payload = {
+      header: {
+        certificate_no: 'CERT-STR-MULTI-RUN',
+        declared_standard: 'GB/T 13296-2023',
+        declared_grade: 'SUS 304H-SpecialX',
+      },
+      test_records: [
+        { raw_property_name: 'C', raw_value: '0.052' },
+        { raw_property_name: 'Cr', raw_value: '18.2' },
+        { raw_property_name: 'Ni', raw_value: '8.1' },
+      ],
+    };
+
+    // 1. 发起 RUN-1 核验
+    const run1Events: WorkflowStreamEvent[] = [];
+    for await (const ev of engine.streamAudit(JSON.stringify(payload), { sessionId, batchNo, runId: 'RUN-1' })) {
+      run1Events.push(ev);
+    }
+    const run1Hitl = run1Events.find(e => e.type === 'hitl_interrupt');
+    expect(run1Hitl).toBeDefined();
+    expect(run1Hitl?.taskId).toBe(`${sessionId}::${batchNo}::RUN-1`);
+    expect(run1Hitl?.hitlContext.reason).toBe('UNKNOWN_GRADE');
+
+    // 恢复 RUN-1
+    const run1Resume = await engine.resumeAudit(`${sessionId}::${batchNo}::RUN-1`, {
+      corrected_grade: '06Cr19Ni10',
+    });
+    expect(run1Resume.status).toBe('completed');
+
+    // 2. 发起 RUN-2 核验 (模拟用户点击重置后，以原件牌号重新核验)
+    const run2Events: WorkflowStreamEvent[] = [];
+    for await (const ev of engine.streamAudit(JSON.stringify(payload), { sessionId, batchNo, runId: 'RUN-2' })) {
+      run2Events.push(ev);
+    }
+    const run2Hitl = run2Events.find(e => e.type === 'hitl_interrupt');
+    // 关键断言：RUN-2 绝不受 RUN-1 的 humanCorrection 幽灵数据污染，确定性再次触发 HITL 挂起！
+    expect(run2Hitl).toBeDefined();
+    expect(run2Hitl?.taskId).toBe(`${sessionId}::${batchNo}::RUN-2`);
+    expect(run2Hitl?.hitlContext.reason).toBe('UNKNOWN_GRADE');
+  });
 });
+
