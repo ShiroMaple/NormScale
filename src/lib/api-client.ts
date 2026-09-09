@@ -80,6 +80,7 @@ export interface AuditStreamCallbacks {
     taskId: string;
     batchNo?: string;
     finalReport: AuditReport;
+    resolvedProperties?: any[];
     durationMs?: number;
     tokenUsage?: WorkflowTokenUsage;
   }) => void;

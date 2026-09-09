@@ -94,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
       </div>
 
-      {/* 右侧动作区：主题切换、通知铃铛、默认用户 ZPJE 头像 */}
+      {/* 右侧动作区：主题切换、默认用户 ZPJE 头像 */}
       <div className="flex items-center gap-4">
         {/* 明暗风格切换按钮 */}
         <button
@@ -106,16 +106,6 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="material-symbols-outlined text-xl">
             {theme === 'dark' ? 'light_mode' : 'dark_mode'}
           </span>
-        </button>
-
-        {/* 通知铃铛 */}
-        <button
-          type="button"
-          title="系统通知"
-          className="text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim p-1.5 rounded-lg hover:bg-surface-container-low dark:hover:bg-surface-dark transition-colors relative flex items-center justify-center"
-        >
-          <span className="material-symbols-outlined text-xl">notifications</span>
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest" />
         </button>
 
         {/* 分割线 */}

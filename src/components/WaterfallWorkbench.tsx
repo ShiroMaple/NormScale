@@ -120,7 +120,7 @@ export const AVAILABLE_GRADE_SLICES = STANDARDS_CATALOG.flatMap(s =>
 export const DEFAULT_SCENARIOS: PresetSampleDto[] = [
   {
     id: 'case1_tier1_hitl_unknown_grade',
-    md5: '6a508c6c31e05081fb3b594fd882e354',
+    md5: '5b0ae963b9470bd53454d4066d89022b',
     filename: 'case1_tier1_hitl_unknown_grade.pdf',
     title: 'Case 1: Tier 1 - HITL 人机协同',
     category: '分层核验典型场景',
@@ -133,7 +133,7 @@ export const DEFAULT_SCENARIOS: PresetSampleDto[] = [
   },
   {
     id: 'case2_tier1_to_tier2_pass',
-    md5: '8f64aff4099035363ac96539b96551ba',
+    md5: '855e45ff15c9814029232b3bf564ee0b',
     filename: 'case2_tier1_to_tier2_pass.pdf',
     title: 'Case 2: Tier 1 ➡️ Tier 2 语义达标',
     category: '分层核验典型场景',
@@ -146,7 +146,7 @@ export const DEFAULT_SCENARIOS: PresetSampleDto[] = [
   },
   {
     id: 'case3_tier1_to_tier2_fail',
-    md5: '546c8372ab1c068111efd3b2190b941d',
+    md5: '1b6254e44694e389bfe1431d33bf51aa',
     filename: 'case3_tier1_to_tier2_fail.pdf',
     title: 'Case 3: Tier 1 ➡️ Tier 2 语义超标',
     category: '分层核验典型场景',
@@ -159,7 +159,7 @@ export const DEFAULT_SCENARIOS: PresetSampleDto[] = [
   },
   {
     id: 'case4_tier1_to_tier2_hitl',
-    md5: 'd40757c9cc2fb3856ece3c7857a3c511',
+    md5: 'd881d1e91044007468f87059ec96c60a',
     filename: 'case4_tier1_to_tier2_hitl.pdf',
     title: 'Case 4: Tier 1 ➡️ Tier 2 行内待定',
     category: '分层核验典型场景',
@@ -213,6 +213,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     pendingProperties?: PropertyResolutionCandidate[];
     resolvedProperties?: PropertyResolutionCandidate[];
     hitlContext?: HitlInterruptContext;
+    hitlFieldCorrection?: HumanCorrectionInput;
+    hitlCorrection?: HumanCorrectionInput;
     error?: string;
     taskId?: string;
   }>>({});
@@ -1454,6 +1456,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               setBatchPresentationMap(prev => ({
                 ...prev,
                 [batch.batchNo]: {
+                  ...prev[batch.batchNo],
                   batchNo: batch.batchNo,
                   stage: data.hasPending ? 'tier1_ready' : 'completed',
                   report: data.report,
@@ -1503,6 +1506,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               setBatchPresentationMap(prev => ({
                 ...prev,
                 [batch.batchNo]: {
+                  ...prev[batch.batchNo],
                   batchNo: batch.batchNo,
                   stage: 'completed',
                   report: data.finalReport,
@@ -1711,9 +1715,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 verdictSummary: summaryText,
                 systemVerdict: isReportPass ? 'PASS' : 'FAIL',
                 systemVerdictSummary: summaryText,
+                // 核心解耦：HITL 字段纠偏严禁越权篡改整批人工终审！保持未复核 (null)，交由工程师审阅全景矩阵后自主终审
                 humanVerdict: null,
                 humanVerdictSummary: undefined,
                 humanVerifiedAt: undefined,
+                hitlFieldCorrection: correction,
+                hitlCorrection: correction,
               };
             }),
           };
@@ -1729,6 +1736,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             report: resumedReport,
             hitlContext: undefined,
             pendingProperties: [],
+            hitlFieldCorrection: correction,
+            hitlCorrection: correction,
           },
         }));
       }
@@ -1740,10 +1749,24 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         overrideGrade: nextOverrideGrade,
         verdict: 'UNAUDITED',
         auditReport: undefined,
+        // 核心解耦：保持批次人工终审为 null (未复核)
         humanVerdict: null,
         humanVerdictSummary: undefined,
         humanVerifiedAt: undefined,
+        hitlFieldCorrection: correction,
+        hitlCorrection: correction,
       } : undefined;
+
+      if (selectedBatchNo) {
+        setBatchPresentationMap(prev => ({
+          ...prev,
+          [selectedBatchNo]: {
+            ...(prev[selectedBatchNo] || { batchNo: selectedBatchNo, stage: 'idle' }),
+            hitlFieldCorrection: correction,
+            hitlCorrection: correction,
+          },
+        }));
+      }
 
       setSession(prev => ({
         ...prev,
@@ -1759,9 +1782,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 overrideGrade: nextOverrideGrade,
                 verdict: 'UNAUDITED',
                 auditReport: undefined,
+                // 核心解耦：保持批次人工终审为 null (未复核)
                 humanVerdict: null,
                 humanVerdictSummary: undefined,
                 humanVerifiedAt: undefined,
+                hitlFieldCorrection: correction,
+                hitlCorrection: correction,
               };
             }),
           };
@@ -4487,11 +4513,15 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       };
                     }
 
-                    // 检查是否属于 Tier 2 消歧产出的指标
+                    // 检查是否属于 Tier 2 消歧产出的指标或 HITL 人工对齐指标
                     const currentBatchPres = batchPresentationMap[currentBatch.batchNo];
                     const matchedResolved = currentBatchPres?.resolvedProperties?.find(
                       rp => rp.resolved_key === item.property_key
                     );
+                    const batchCorrection = (currentBatch as any).hitlCorrection || (currentBatch.auditReport as any)?.human_correction;
+                    const mappedRawEntry = batchCorrection?.corrected_property_keys
+                      ? Object.entries(batchCorrection.corrected_property_keys).find(([, targetKey]) => targetKey === item.property_key)
+                      : undefined;
 
                     if (!detailTag && matchedResolved) {
                       if (matchedResolved.is_degraded) {
@@ -4505,6 +4535,11 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           color: 'bg-indigo-100 dark:bg-indigo-950/70 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700',
                         };
                       }
+                    } else if (!detailTag && mappedRawEntry) {
+                      detailTag = {
+                        label: 'HITL人工对齐',
+                        color: 'bg-purple-100 dark:bg-purple-950/70 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-700',
+                      };
                     }
 
                     const measuredDisplay = item.actual_value_text
@@ -4593,6 +4628,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       } else {
                         logicExplanation = `[AI意图对齐: ${matchedResolved.model_name || '大模型'}] ${matchedResolved.reasoning}；${logicExplanation}`;
                       }
+                    } else if (mappedRawEntry) {
+                      logicExplanation = `[HITL人工对齐: 原始字段【${mappedRawEntry[0]}】] ${currentBatch.humanVerdictSummary || batchCorrection?.waiver_notes || ''}；${logicExplanation}`;
                     }
 
                     return {
@@ -4615,6 +4652,215 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       multiStandardEvaluations: item.multi_standard_evaluations,
                     };
                   });
+
+                  // 处理未匹配记录项 (Unmatched Certificate Records) 及质检员 HITL 裁定项
+                  const addedKeys = new Set(complianceMatrixItems.map(i => i.name));
+                  const unmatchedRecords = currentBatch.auditReport.unmatched_certificate_records || [];
+                  const hitlCorrection =
+                    (currentBatch as any).hitlFieldCorrection ||
+                    (currentBatch as any).hitlCorrection ||
+                    (currentBatch.auditReport as any)?.human_correction ||
+                    (selectedBatchNo ? (batchPresentationMap[selectedBatchNo]?.hitlFieldCorrection || batchPresentationMap[selectedBatchNo]?.hitlCorrection) : undefined);
+
+                  const isSentinelKey = (str?: string | null): boolean => {
+                    if (!str) return true;
+                    const s = str.trim().toLowerCase();
+                    return s === 'special_protocol_item' || s === 'unrecognized_rejected_item';
+                  };
+
+                  for (const rec of unmatchedRecords) {
+                    let originalName: string | undefined = undefined;
+
+                    // (1) 质保书原始项目名（直接解析自原件表格列头或字段名）
+                    if (!isSentinelKey(rec.raw_property_name)) {
+                      originalName = rec.raw_property_name;
+                    }
+
+                    // (2) 归一化展示名（若不是内部 sentinel key）
+                    if (!originalName && !isSentinelKey(rec.display_name)) {
+                      originalName = rec.display_name;
+                    }
+
+                    // (3) 从 hitlCorrection.corrected_property_keys 反向映射原始项目名
+                    if (!originalName && hitlCorrection?.corrected_property_keys) {
+                      const matchEntry = Object.entries(hitlCorrection.corrected_property_keys).find(
+                        ([k, v]) => v === rec.property_key || (rec.raw_property_name && k === rec.raw_property_name)
+                      );
+                      if (matchEntry && !isSentinelKey(matchEntry[0])) {
+                        originalName = matchEntry[0];
+                      }
+                    }
+
+                    // (4) 从 activeHitlContext 反查待处理字段名
+                    if (!originalName && activeHitlContext?.property_ambiguity_details?.raw_name) {
+                      if (!isSentinelKey(activeHitlContext.property_ambiguity_details.raw_name)) {
+                        originalName = activeHitlContext.property_ambiguity_details.raw_name;
+                      }
+                    }
+
+                    // (5) 从批次原始附加试验记录根据测量值反查原始项目名
+                    if (!originalName && currentBatch?.additionalTests) {
+                      const matchedTest = currentBatch.additionalTests.find(t =>
+                        t && t.name && !isSentinelKey(t.name) &&
+                        (t.result === rec.measured_value_raw || String((t as any).value_num) === String(rec.measured_value_num))
+                      );
+                      if (matchedTest?.name) {
+                        originalName = matchedTest.name;
+                      }
+                    }
+
+                    const isProtocolApproved =
+                      rec.property_key === 'special_protocol_item' ||
+                      (rec as any).is_special_protocol ||
+                      Boolean(rec.raw_property_name && hitlCorrection?.corrected_property_keys?.[rec.raw_property_name] === 'special_protocol_item') ||
+                      Boolean(originalName && hitlCorrection?.corrected_property_keys?.[originalName] === 'special_protocol_item');
+
+                    const isRejected =
+                      rec.property_key === 'unrecognized_rejected_item' ||
+                      (rec as any).is_rejected ||
+                      Boolean(rec.raw_property_name && hitlCorrection?.corrected_property_keys?.[rec.raw_property_name] === 'unrecognized_rejected_item') ||
+                      Boolean(originalName && hitlCorrection?.corrected_property_keys?.[originalName] === 'unrecognized_rejected_item');
+
+                    // 终极显示名称：坚决杜绝暴露内部 sentinel key
+                    let recName = originalName;
+                    if (!recName || isSentinelKey(recName)) {
+                      if (isProtocolApproved) {
+                        recName = '订货技术协议特约项目';
+                      } else if (isRejected) {
+                        recName = '未识别非标排除项';
+                      } else {
+                        recName = rec.raw_property_name || rec.display_name || '特约检验项目';
+                      }
+                    }
+
+                    if (!recName || addedKeys.has(recName)) continue;
+                    addedKeys.add(recName);
+
+                    const catKey = rec.category && rec.category in categoryMeta ? rec.category : 'additional';
+                    const defaultMeta = { label: '扩展', color: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700' };
+                    const meta = categoryMeta[catKey] ?? defaultMeta;
+                    const measuredDisplay = rec.measured_value_raw || (rec.measured_value_num !== null && rec.measured_value_num !== undefined ? String(rec.measured_value_num) : '--');
+
+                    if (isProtocolApproved) {
+                      complianceMatrixItems.push({
+                        id: `unmatched_protocol_${rec.property_key}_${complianceMatrixItems.length}`,
+                        category: catKey as any,
+                        categoryLabel: meta.label,
+                        categoryColor: meta.color,
+                        name: recName,
+                        measuredValue: measuredDisplay,
+                        standardRequirement: '订货技术协议特约增补条款 (协议放行)',
+                        deviation: '达标',
+                        status: 'PASS',
+                        statusLabel: '✓ PASS',
+                        detailTag: {
+                          label: '协议特约放行',
+                          color: 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700',
+                        },
+                        ruleBasis: `[协议特约项: 质检工程师核准放行] ${hitlCorrection?.waiver_notes || (rec as any).waiver_notes || '经质检工程师裁定：确认该指标系订货技术协议增补验证项目，实测数据完整合规，纳入合格放行依据。'}`,
+                      });
+                    } else if (isRejected) {
+                      complianceMatrixItems.push({
+                        id: `unmatched_rejected_${rec.property_key}_${complianceMatrixItems.length}`,
+                        category: catKey as any,
+                        categoryLabel: meta.label,
+                        categoryColor: meta.color,
+                        name: recName,
+                        measuredValue: measuredDisplay,
+                        standardRequirement: '未经认可特种非标指标',
+                        deviation: '未达标',
+                        isDeviationWarning: true,
+                        status: 'FAIL',
+                        statusLabel: '✗ FAIL',
+                        detailTag: {
+                          label: '特种非标否决',
+                          color: 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700',
+                        },
+                        ruleBasis: `[质检裁定不予认可] ${hitlCorrection?.waiver_notes || (rec as any).waiver_notes || '该非标指标缺乏权威规范依据且未经技术协议认可，作缺项否决处理。'}`,
+                      });
+                    } else {
+                      complianceMatrixItems.push({
+                        id: `unmatched_extra_${rec.property_key}_${complianceMatrixItems.length}`,
+                        category: 'additional',
+                        categoryLabel: '扩展',
+                        categoryColor: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700',
+                        name: recName,
+                        measuredValue: measuredDisplay,
+                        standardRequirement: '现行标准未作强制要求',
+                        deviation: '-',
+                        status: 'INFO',
+                        statusLabel: '- N/A',
+                        detailTag: {
+                          label: '额外报送',
+                          color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700',
+                        },
+                        ruleBasis: '质保书额外报送项，标准库未定义比对规则，仅供存档参考',
+                      });
+                    }
+                  }
+
+                  // 检查 additionalTests 中是否存在经 HITL 裁定放行或否决但尚未添加至比对矩阵的条目
+                  if (Array.isArray(currentBatch.additionalTests)) {
+                    for (const addTest of currentBatch.additionalTests) {
+                      const testName = addTest.name || addTest.key;
+                      if (!testName || isSentinelKey(testName) || addedKeys.has(testName)) continue;
+
+                      const isProtocolApproved =
+                        hitlCorrection?.corrected_property_keys?.[addTest.key] === 'special_protocol_item' ||
+                        hitlCorrection?.corrected_property_keys?.[addTest.name] === 'special_protocol_item';
+
+                      const isRejected =
+                        hitlCorrection?.corrected_property_keys?.[addTest.key] === 'unrecognized_rejected_item' ||
+                        hitlCorrection?.corrected_property_keys?.[addTest.name] === 'unrecognized_rejected_item';
+
+                      if (isProtocolApproved || isRejected) {
+                        addedKeys.add(testName);
+                        const catKey = addTest.category && addTest.category in categoryMeta ? addTest.category : 'mechanical';
+                        const defaultMeta = { label: '扩展', color: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700' };
+                        const meta = categoryMeta[catKey] ?? defaultMeta;
+                        const measuredDisplay = addTest.result || (addTest.value_num !== undefined ? String(addTest.value_num) : '--');
+
+                        if (isProtocolApproved) {
+                          complianceMatrixItems.push({
+                            id: `hitl_protocol_${addTest.key}`,
+                            category: catKey as any,
+                            categoryLabel: meta.label,
+                            categoryColor: meta.color,
+                            name: testName,
+                            measuredValue: measuredDisplay,
+                            standardRequirement: '订货技术协议特约增补条款 (协议放行)',
+                            deviation: '达标',
+                            status: 'PASS',
+                            statusLabel: '✓ PASS',
+                            detailTag: {
+                              label: '协议特约放行',
+                              color: 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700',
+                            },
+                            ruleBasis: `[协议特约项: 质检工程师核准放行] ${currentBatch.humanVerdictSummary || hitlCorrection?.waiver_notes || '确认该指标系订货技术协议增补验证项目，实测数据完整合规，纳入合格放行依据。'}`,
+                          });
+                        } else {
+                          complianceMatrixItems.push({
+                            id: `hitl_rejected_${addTest.key}`,
+                            category: catKey as any,
+                            categoryLabel: meta.label,
+                            categoryColor: meta.color,
+                            name: testName,
+                            measuredValue: measuredDisplay,
+                            standardRequirement: '未经认可特种非标指标',
+                            deviation: '未达标',
+                            isDeviationWarning: true,
+                            status: 'FAIL',
+                            statusLabel: '✗ FAIL',
+                            detailTag: {
+                              label: '特种非标否决',
+                              color: 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700',
+                            },
+                            ruleBasis: `[质检裁定不予认可] ${currentBatch.humanVerdictSummary || hitlCorrection?.waiver_notes || '该非标指标缺乏权威规范依据且未经技术协议认可，作缺项否决处理。'}`,
+                          });
+                        }
+                      }
+                    }
+                  }
 
                   // 质保书独占非标追溯项（施工号、炉号）排布在表底作为【ℹ️ 供参考】
                   if (currentBatch.constructionNo && currentBatch.constructionNo !== '待提取' && currentBatch.constructionNo !== '') {
@@ -5019,9 +5265,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           const isResolving = currentBatchState?.stage === 'tier1_ready' && (currentBatchState?.pendingProperties?.length || 0) > 0;
                           const isBatchHitl = isHitl || currentBatchState?.stage === 'hitl_pending';
                           const hasScissors = complianceMatrixItems.some(i => i.isScissorsDifference);
+                          const hasMatrixFail = complianceMatrixItems.some(i => i.status === 'FAIL');
                           const sysVerdict: SystemVerdict = isBatchHitl
                             ? 'MANUAL_REVIEW'
-                            : (!computedIsPass || hasScissors)
+                            : (!computedIsPass || hasScissors || hasMatrixFail)
                               ? 'FAIL'
                               : 'PASS';
                           const humanVerdict: HumanVerdict = currentBatch.humanVerdict;
@@ -5072,7 +5319,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     ? `已完成全部确定性化学、力学与常规工艺规则比对；正在进行长尾条款受限语义推断`
                                     : hasScissors
                                       ? `【加严剪刀差】存在指标满足通用国标但未达承压订货加严标，按就高严苛原则判定不合格`
-                                      : (arbitration.auditExplanation || computedVerdictSummary)}
+                                      : hasMatrixFail
+                                        ? `【一票否决】存在不合格指标或包含经质检工程师裁定不予认可的特种非标指标，系统坚决拦截放行`
+                                        : (arbitration.auditExplanation || computedVerdictSummary)}
                                 </p>
                               </div>
 
@@ -5294,7 +5543,28 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   <td className="px-3.5 py-2.5 text-on-surface dark:text-surface-bright font-medium">
                                     {(() => {
                                       const evals = row.multiStandardEvaluations;
-                                      if (!evals || evals.length <= 1) {
+                                      if (!evals || evals.length === 0) {
+                                        // 兜底兼容：若只有纯文本且含 [标准名] 方括号，拆分为指标与徽章
+                                        const match = row.standardRequirement?.match(/^(.*?)\s*\[(.*?)\]$/);
+                                        if (match) {
+                                          const [, reqText, stdTag] = match;
+                                          return (
+                                            <div className="flex flex-col items-start gap-1.5 py-0.5">
+                                              <div className="font-bold text-[12px] text-on-surface dark:text-surface-bright flex items-center gap-1">
+                                                <span>{reqText}</span>
+                                              </div>
+                                              <div className="flex flex-col items-start gap-1 w-full">
+                                                <span
+                                                  className="px-1.5 py-0.5 rounded text-[10px] border whitespace-nowrap inline-flex items-center bg-surface-container-high/70 dark:bg-surface-dark-high/70 text-on-surface-variant dark:text-outline-variant border-outline-variant/30 dark:border-border-dark leading-tight"
+                                                  title={stdTag}
+                                                >
+                                                  {stdTag}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+
                                         return (
                                           <div className="py-0.5 font-bold text-[12px] text-on-surface dark:text-surface-bright">
                                             {row.standardRequirement}
@@ -5302,15 +5572,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                         );
                                       }
 
-                                      // 判断是否所有参与标准指标要求完全一致 (排除无强制指标/独占项)
+                                      // 判断是否单标准或所有参与标准指标要求完全一致 (排除无强制指标/独占项)
                                       const activeEvals = evals.filter((e) => !e.requirement_text.includes('无强制指标'));
                                       const firstReq = activeEvals[0]?.requirement_text?.trim() || evals[0]!.requirement_text.trim();
-                                      const isAllIdentical = activeEvals.length > 1 && activeEvals.every(
-                                        (e) => e.requirement_text.trim() === firstReq
+                                      const isAllIdentical = evals.length === 1 || (
+                                        activeEvals.length > 1 && activeEvals.every(
+                                          (e) => e.requirement_text.trim() === firstReq
+                                        )
                                       );
 
                                       if (isAllIdentical) {
-                                        // 【场景 A：各标准指标完全一致】
+                                        // 【场景 A：单标准或各标准指标完全一致】
                                         // 首行突出加粗展示主指标；下方垂直堆叠各标准微型药丸徽章，不重复输出数字
                                         return (
                                           <div className="flex flex-col items-start gap-1.5 py-0.5">
@@ -6028,20 +6300,38 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       </footer>
 
       {/* 步骤 3 / 步骤 2 人机协同 (HITL) 侧边抽屉 (520px 方案 A) */}
-      <HitlDrawer
-        isOpen={isHitlDrawerOpen}
-        onClose={() => setIsHitlDrawerOpen(false)}
-        hitlContext={activeHitlContext}
-        taskId={
-          (selectedBatchNo && batchPresentationMap[selectedBatchNo]?.taskId)
-            ? `TK-${batchPresentationMap[selectedBatchNo]!.taskId!}`
-            : (currentBatch ? `TK-${currentBatch.batchNo}` : 'TK-PENDING')
+      {(() => {
+        // 动态提取当前批次有效核验规则作为 HITL 动态候选条款
+        let candidateRulesForHitl: Array<{ key: string; name: string; category?: string; requirement_text?: string; unit?: string }> | undefined = undefined;
+        const targetReport = currentBatch?.auditReport || (selectedBatchNo ? batchPresentationMap[selectedBatchNo]?.report : undefined);
+        if (targetReport && Array.isArray(targetReport.item_results) && targetReport.item_results.length > 0) {
+          candidateRulesForHitl = targetReport.item_results.map(r => ({
+            key: r.property_key,
+            name: r.display_name,
+            category: r.category,
+            requirement_text: r.dual_standard_requirement_text || r.standard_requirement_text,
+            unit: (r as any).unit || '',
+          }));
         }
-        selectedStandardIds={selectedStandardIds}
-        availableStandards={standardsData?.standards}
-        onSubmitResume={handleResolveHitl}
-        isSubmitting={isHitlSubmitting}
-      />
+
+        return (
+          <HitlDrawer
+            isOpen={isHitlDrawerOpen}
+            onClose={() => setIsHitlDrawerOpen(false)}
+            hitlContext={activeHitlContext}
+            taskId={
+              (selectedBatchNo && batchPresentationMap[selectedBatchNo]?.taskId)
+                ? `TK-${batchPresentationMap[selectedBatchNo]!.taskId!}`
+                : (currentBatch ? `TK-${currentBatch.batchNo}` : 'TK-PENDING')
+            }
+            selectedStandardIds={selectedStandardIds}
+            availableStandards={standardsData?.standards}
+            candidateRules={candidateRulesForHitl}
+            onSubmitResume={handleResolveHitl}
+            isSubmitting={isHitlSubmitting}
+          />
+        );
+      })()}
     </div >
   );
 };

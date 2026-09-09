@@ -50,11 +50,36 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
         if (humanCorrection.corrected_property_keys && payloadToClean.test_records) {
           for (const rec of payloadToClean.test_records) {
             const rawKey = rec.raw_property_name;
-            if (rawKey && humanCorrection.corrected_property_keys[rawKey]) {
-              const newKey = humanCorrection.corrected_property_keys[rawKey];
-              rec.raw_property_name = newKey;
-              logger.info('WORKFLOW', `[Node 2: Normalize] 应用人工修正属性 [${rawKey}] -> [${newKey}]`);
-              collector.addTrace('WORKFLOW', 'info', `[人工修正属性] ${rawKey} -> ${newKey}`);
+            const propKey = (rec as any).property_key;
+            const matchKey = (rawKey && humanCorrection.corrected_property_keys[rawKey])
+              ? rawKey
+              : (propKey && humanCorrection.corrected_property_keys[propKey] ? propKey : undefined);
+            if (matchKey) {
+              const newKey = humanCorrection.corrected_property_keys[matchKey];
+              if (newKey) {
+                if (newKey === 'special_protocol_item') {
+                  (rec as any).property_key = newKey;
+                  (rec as any).display_name = matchKey;
+                  (rec as any).raw_property_name = matchKey;
+                  (rec as any).is_special_protocol = true;
+                  (rec as any).waiver_notes = humanCorrection.waiver_notes;
+                } else if (newKey === 'unrecognized_rejected_item') {
+                  (rec as any).property_key = newKey;
+                  (rec as any).display_name = matchKey;
+                  (rec as any).raw_property_name = matchKey;
+                  (rec as any).is_rejected = true;
+                  (rec as any).waiver_notes = humanCorrection.waiver_notes;
+                } else {
+                  rec.raw_property_name = newKey;
+                  if ((rec as any).property_key) {
+                    (rec as any).property_key = newKey;
+                  }
+                  (rec as any).mapped_from = matchKey;
+                  (rec as any).waiver_notes = humanCorrection.waiver_notes;
+                }
+                logger.info('WORKFLOW', `[Node 2: Normalize] 应用人工修正属性 [${matchKey}] -> [${newKey}]`);
+                collector.addTrace('WORKFLOW', 'info', `[人工修正属性] ${matchKey} -> ${newKey}`);
+              }
             }
           }
         }

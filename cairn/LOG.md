@@ -4,6 +4,113 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-09 · HITL 字段级裁定与批次级终审权责解耦及非标否决一票穿透
+
+- 权责边界与命名体系治理 (`WaterfallWorkbench.tsx`, `session.ts`, `core.ts`):
+  1. 权责解耦：彻底移除 `handleResolveHitl` 中越权为批次设置 `humanVerdict: PASS` 的逻辑，恢复流转后批次终审严格保持 `humanVerdict: null`（未复核），交由工程师审阅矩阵后自主点击【拒收/审批】；
+  2. 命名强区隔：批次级终审标记为 `humanVerdict`（BATCH-LEVEL FINAL REVIEW ONLY），字段级 HITL 输入纠偏快照统一为 `hitlFieldCorrection`，彻底消除语义混淆；
+  3. 非标否决一票穿透：当质检员对特种非标选择缺项否决（`unrecognized_rejected_item`）时，`core.ts` 自动将否决项作为 `FAIL` 计入 `itemResults`，`overall_status` 强制置为 `FAIL`；前端综合看板红底警示“系统判定: FAIL 一票否决”，流转置为“系统已拦截待处置”，杜绝放行假象。
+- 质量门禁与端到端自动化测试:
+  1. 静态检查：`tsc --noEmit` strict 模式 0 错误；
+  2. 测试闭环：`four-tier-scenarios.test.ts` 新增 Case 4 否决分支穿透断言，6/6 测试用例全部绿灯通过。
+- 详情沉淀: 详见 [`cairn/hitl-scenarios-and-drawer.md`](cairn/hitl-scenarios-and-drawer.md)。
+
+## 2026-09-09 · 顶部导航栏冗余通知铃铛按钮移除
+
+- 顶部导航组件瘦身 (`Header.tsx`):
+  1. 界面优化：移除右侧动作区未接入实际业务功能的系统通知铃铛按钮及其红点提示，避免引起用户误触与疑惑；
+  2. 保留核心交互：完整保留明暗主题切换按键、在线用户状态与职务头像徽章。
+- 质量门禁验证:
+  1. 静态类型检查：`pnpm typecheck`（`tsc --noEmit`）严格模式 0 错误；
+  2. 单元测试闭环：全量 48 个套件、240 个测试用例 100% 绿灯通过。
+
+## 2026-09-09 · 全景比对矩阵执行标准要求单标与多标微型徽章渲染归一化
+
+- 执行标准要求列视觉渲染归一 (`WaterfallWorkbench.tsx`):
+  1. 根因消除：放宽原 `evals.length <= 1` 拦截门禁，将单标准场景（`evals.length === 1`）纳入场景 A（指标一致）同构渲染流水线；
+  2. 视觉一致性保障：单标与多标统一采用「首行加粗指标要求值 + 次行标准微型药丸徽章（`rounded text-[10px] border`）」排版，携带原生标准完整代号与单标评定状态 Tooltip；
+  3. 纯文本兜底兼容：针对未携带 `multiStandardEvaluations` 的离线数据，内置正则提取 `/(.*?)\s*\[(.*?)\]$/` 将字面量方括号自动升格为微型徽章，彻底杜绝裸露方括号。
+- 质量门禁与测试闭环:
+  1. 静态类型检查：`pnpm typecheck`（`tsc --noEmit`）严格模式 0 错误；
+  2. 单元与集成测试：全量 48 个套件、240 个测试用例 100% 绿灯通过。
+- 详情沉淀: 详见 [`cairn/multi-standard-engine.md`](multi-standard-engine.md) 章节 6.4。
+
+## 2026-09-09 · 全景比对矩阵质保书原始项目名呈现与 Sentinel 内部标识彻底隔离
+
+- 矩阵原始项目名呈现与 Sentinel 标识隔离 (`property-key-normalizer.ts`, `human-review.node.ts`, `WaterfallWorkbench.tsx`, `session.ts`):
+  1. 根因修复：修正 `registerLearnedAlias` 与 `humanReviewNode`，当目标键为 `special_protocol_item` / `unrecognized_rejected_item` 等内部 sentinel 时，强制采用 `rawAlias` 作为 `display_name`，杜绝将内部英文标识存入自学习知识库；
+  2. 矩阵名称提取重构：构建五级名称反查体系（`rec.raw_property_name` -> 非 sentinel `display_name` -> `hitlCorrection` 逆向映射 -> `activeHitlContext` -> `currentBatch.additionalTests` 测量值反查），彻底杜绝在全景矩阵中暴露 `special_protocol_item`；
+  3. 状态持久化与双轨呈现：在 `BatchSpecimen` 与 `batchPresentationMap` 中原生沉淀 `hitlCorrection`，放行行完整显示原始项目名（如 `Shear Toughness K1C`）、实测值（`85 MPa.m^1/2`）、`✓ PASS`（协议特约放行徽标）与工程师审批说明。
+- 质量门禁与端到端自动化测试:
+  1. 静态检查：`pnpm exec tsc --noEmit` 严格模式 0 错误；
+  2. 自动化测试：`four-tier-scenarios.test.ts` 扩展 Case 4 完整 resume 链路，断言 `display_name` 严格为 `Shear Toughness K1C` 且 `not.toBe('special_protocol_item')`，全量测试 100% 绿灯通过。
+- 详情沉淀: 详见 [`cairn/hitl-scenarios-and-drawer.md`](cairn/hitl-scenarios-and-drawer.md)。
+
+## 2026-09-09 · HITL 标准指标动态联动与比对矩阵特约字段呈现治理
+
+- HITL 抽屉指标联动与比对矩阵全景纳管 (`HitlDrawer.tsx`, `WaterfallWorkbench.tsx`, `normalize.node.ts`):
+  1. 彻底废除写死的 5 个静态选项，按标准切片动态以专业分类 `<optgroup>` 加载全部候选规则；
+  2. 质检审批说明依据所选处置类型（特约放行/对齐/否决）动态联动生成合规条款与理由；
+  3. 比对矩阵全景纳管非标与额外项：特约放行项完整呈现原始项目名、实测值、`✓ PASS`（协议特约放行徽标）与审批依据；
+  4. 修复内部键改写时名称丢失问题，贯穿保留原始中文名称与全生命周期存证。
+- 质量门禁与端到端实机验证:
+  1. 自动化测试与检查：`tsc --noEmit` 0 错误；E2E 及全量 240 个单测全部通过；
+  2. 实机浏览器复验：Case 4 完整验证动态分类选项与特约放行行内呈现；Case 3 真实无缓存复验确认表面外观合格与粗糙度 1.50 μm 超标 FAIL 一票否决。
+- 详情沉淀: 详见 [`cairn/hitl-scenarios-and-drawer.md`](cairn/hitl-scenarios-and-drawer.md) 踩坑 7 与 8。
+
+## 2026-09-09 · Case 4 特种属性歧义 HITL 抽屉交互治理与人机协同闭环
+
+- 特种属性歧义人机协同治理 (`HitlDrawer.tsx`, `normalize.node.ts`):
+  1. 修复协同类型识别：支持 `PROPERTY_AMBIGUITY` 枚举，准确呈现“特种属性语义歧义裁定”徽标；
+  2. 新增未决检验项看板与三种处置决策卡片：协议特约合格项放行（推荐）、映射对齐至现行标准条款（下拉选择冲击功/拉伸/硬度等）、不予认可/缺项否决；
+  3. 审批说明与依据废除硬编码牌号文本，动态与所选处置决策联动填充专业质检文案；
+  4. 增强 `normalize.node.ts` 属性改写链路，双向支持 `raw_property_name` 与 `property_key` 修正；
+- 质量门禁与端到端实机验证:
+  1. 静态检查与测试: `pnpm tsc --noEmit` 0 错误；48 套件 240 个单测全部绿灯；
+  2. 浏览器实机核验: Case 4 触发 HITL 抽屉交互，完整验证 3 项处置选项展开与说明联动。
+
+## 2026-09-09 · 坚决根除短路枚举：基于归一化总控流水线闭环 Case 3 真实大模型解析与消歧超标拦截
+
+- 归一化总控流水线重构治理 (`specimen-adapter.ts`, `openai-compatible-extractor.ts`):
+  1. 坚决废除打补丁式命名短路枚举，全面接入系统原生的 `PropertyKeyNormalizer` 与 `QualitativeNormalizer` 动态解析大模型输出；
+  2. 废除脆弱的 `Number(t.result)` 改为安全正则浮点解析 `/[-+]?[0-9]+(?:\.[0-9]+)?/`，彻底根除带单位字符串（`'1.50 um'`）解析为 `NaN` 导致判定 `- N/A`（未报送）的缺陷；
+  3. 修复批次根元数据（`batchNo` 等）误作为检验项注入的严重污染漏洞，确保表面外观质量声明正确进入定性归一化判定为 `PASS`；
+  4. LangGraph `state.interface.ts` 补充 `resolvedProperties` 去重累加 `reducer`，保证多轮回流重算时对齐项绝不丢失。
+- 质量门禁与端到端实机验证:
+  1. 单测与 E2E: 48 个测试套件 240 个用例 100% 绿灯通过（包括 Case 1~4 端到端生产转换流转）；
+  2. 浏览器实机核验: 真实大模型消歧驱动下，表面粗糙度实测 `1.50 um`，超标判定 `FAIL`，偏差 `+0.70`，外观质量判定 `PASS`，闭环确认。
+
+## 2026-09-09 · 全面根除四维场景暴露缺陷与 PDF 字体编码排版重构
+
+- PDF 矢量排版重构与乱码消灭 (`generate-sample-test-cases.ts`, `pdf-renderer.ts`):
+  1. 彻底废弃残缺 Type0 CJK 结构，升级为标准 PDF 1.4 Standard 14 Type 1 矢量生成引擎，彻底根除 Missing Glyph 豆腐块乱码（`☒`）与文本挤压重叠；
+  2. `pdfjs.getDocument` 配置 `cMapUrl` 与 `cMapPacked: true` 巩固客户端双模防御。
+- 强制检验项补齐与漏斗漏水根除 (`specimen-adapter.ts`, `generate-sample-test-cases.ts`):
+  1. 物理与缓存全面补齐 GB/T 13296 / NB/T 47019.5 强制检验项（压扁、扩口、晶腐、超声、水压），Case 1 人机协同选定牌号后全绿 PASS；
+  2. `specimen-adapter.ts` 支持 `yield_reh` 等屈服强度别名，保全未知力学项流入 Tier 2 语义消歧漏斗。
+- 彻底铲除手写 Mock 假自洽 (`fixtures/scenarios/index.ts`, `four-tier-scenarios.test.ts`):
+  1. 移除内存写死字典，单测统一真实读取磁盘 `.cache/parses/<md5>.json` 物理切片；
+  2. 自动化测试 48 个套件 240 用例全绿；浏览器子代理实机核验通过，确认无乱码且判定全绿 PASS。
+
+## 2026-09-09 · 四维场景矩阵全量端到端对齐真实生产转换链路 (Case 1 ~ 4)
+
+- E2E 生产链路真实性对齐 (`tests/e2e/four-tier-scenarios.test.ts`):
+  1. 彻底根除旧式手写 Mock 预设载荷，全量移除 `getPreset`，Case 1、Case 3、Case 4 统一从 `getScenarioCachedParseResult` 获取高保真真实切片 `BatchSpecimen`；
+  2. 严格通过 `batchSpecimenToCertificateExtract` 转换接口将工作台输入构造成 `CertificateExtract`，与真实生产流转完全同构；
+  3. 闭环断言：Case 1 触发非标牌号阻断并人工修正恢复通过；Case 2/3 经 Tier 2 自愈消歧后分别达成全绿 PASS 与超差 FAIL；Case 4 触发特异项歧义挂起；
+  4. 消除所有脱离生产链路的“测试全绿但现场不可用”假自洽隐患。
+- 质量门禁: 48 个测试套件 240 个测试 100% 绿色通过，`tsc --noEmit` 0 错误。
+
+## 2026-09-09 · 坚守长尾自愈架构底线：彻底剔除 Tier 1 硬编码截胡，Case 2 真实走通 Tier 2 消歧回流闭环
+
+- 架构理念与长尾真实流转守门 (`property-key-normalizer.ts`, `specimen-adapter.ts`, `certificate-normalizer.ts`, `llm-property-resolver.node.ts`):
+  1. 坚决摒弃有限字典硬编码绕过无限长尾的做法，从 Tier 1 字典彻底剔除“表面光洁度”伪已知映射，作为沙箱长尾项真实流入 Tier 2（Node 2.5）；
+  2. 修复未决长尾项数值连续性：`TestRecordSchema` 扩充 `raw_property_name` 与 `display_name`，归一化层防御性保全连续数值，消歧升级定量规则（粗糙度）时自动同步解析 `measured_value_num`，彻底根除因数值缺失判定为 `SKIPPED` 的假跳过；
+  3. 候选规则多源提取与防降级优化：`llm_property_resolver.node.ts` 优先复用当前比对切片规则池，兼容 `FileRuleStore` 兜底；
+  4. 高阶非标力学参数隔离：排除断裂韧度（K1C）被误已知化为常规夏比冲击功，确保长尾高阶项精准触发 `PROPERTY_AMBIGUITY` HITL；
+  5. 真实消歧源断言闭环 (`four-tier-scenarios.test.ts`): Case 2（真实切片与预设）及 Case 3 显式断言 `resolvedProperties` 必须存在且 `source_tier === 'tier2'`，确保证明是由 Tier 2 自愈消歧后达成的 PASS/FAIL 结果。
+- 质量门禁: 48 个测试套件 241 个测试 100% 绿色通过，`tsc --noEmit` 0 错误，`pnpm build` 13/13 路由生产打包全绿通过。
+
 ## 2026-09-09 · Tier 2 大模型长尾消歧真实接入、非静默降级与自学习经验白盒管理
 
 - Tier 2 受限大模型消歧与开销透传 (`llm-property-resolver.service.ts`, `llm-property-resolver.node.ts`):

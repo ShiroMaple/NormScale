@@ -110,6 +110,15 @@ export interface HitlInterruptContext {
   qualitative_details?: QualitativeAmbiguityDetails;
   /** 长尾属性语义歧义详情 (针对 PROPERTY_AMBIGUITY 场景) */
   property_ambiguity_details?: PropertyResolutionCandidate;
+  /** 候选标准指标规则列表 (针对 PROPERTY_AMBIGUITY 等场景，供下拉对齐) */
+  candidate_rules?: Array<{
+    key: string;
+    name: string;
+    category?: string;
+    rule_type?: string;
+    requirement_text?: string;
+    unit?: string;
+  }>;
 }
 
 /** 人工修正与恢复提交数据 */
@@ -216,8 +225,20 @@ export const QualityAuditStateAnnotation = Annotation.Root({
   }),
   /** 待决/长尾属性池 (进入 Tier 2/Tier 3 裁决) */
   unresolvedProperties: Annotation<PropertyResolutionCandidate[] | undefined>(),
-  /** 已完成语义消歧裁决的属性列表 */
-  resolvedProperties: Annotation<PropertyResolutionCandidate[] | undefined>(),
+  /** 已完成语义消歧裁决的属性列表 (累积合并通道) */
+  resolvedProperties: Annotation<PropertyResolutionCandidate[] | undefined>({
+    reducer: (curr, update) => {
+      if (!update || update.length === 0) return curr;
+      if (!curr || curr.length === 0) return update;
+      const merged = [...curr];
+      for (const item of update) {
+        if (!merged.some(m => m.raw_name === item.raw_name)) {
+          merged.push(item);
+        }
+      }
+      return merged;
+    },
+  }),
   /** 最终完整质检核验报告 (包含决策汇总、单项明细与审计轨迹) */
   finalReport: Annotation<AuditReport | undefined>(),
   /** 工作流执行 Token 消耗与开销累加通道 */

@@ -64,6 +64,7 @@ export type WorkflowStreamEvent =
       taskId: string;
       batchNo?: string;
       finalReport: AuditReport;
+      resolvedProperties?: PropertyResolutionCandidate[];
       durationMs?: number;
       tokenUsage?: WorkflowTokenUsage;
     }
@@ -338,6 +339,7 @@ export class WorkflowEngine {
           taskId,
           batchNo,
           finalReport,
+          resolvedProperties: snapshot?.values?.resolvedProperties || resolvedProps || (finalReport as any)?.resolved_properties,
           durationMs: totalDurationMs,
           tokenUsage: finalTokenUsage,
         };

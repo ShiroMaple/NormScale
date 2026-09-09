@@ -8,6 +8,15 @@ import {
 import { StandardOverviewDto } from '@/lib/api-client.ts';
 import { buildGradePool, searchFuzzyGrades, FuzzyGradeItem } from '@/utils/grade-fuzzy-matcher.ts';
 
+export interface CandidateRuleItem {
+  key: string;
+  name: string;
+  category?: string;
+  rule_type?: string;
+  requirement_text?: string;
+  unit?: string;
+}
+
 interface HitlDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -15,6 +24,7 @@ interface HitlDrawerProps {
   taskId: string;
   selectedStandardIds?: string[];
   availableStandards?: StandardOverviewDto[];
+  candidateRules?: CandidateRuleItem[];
   onSubmitResume: (correction: HumanCorrectionInput) => Promise<void>;
   isSubmitting: boolean;
 }
@@ -32,6 +42,7 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
   taskId,
   selectedStandardIds,
   availableStandards,
+  candidateRules,
   onSubmitResume,
   isSubmitting,
 }) => {
@@ -85,6 +96,90 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
   // 场景 4: 定性语义裁定状态
   const [qualitativeVerdict, setQualitativeVerdict] = useState<'PASS' | 'FAIL'>('PASS');
 
+  // 场景 5: 特种属性语义歧义裁定状态
+  const [propertyResolutionMode, setPropertyResolutionMode] = useState<'PROTOCOL_PASS' | 'MAP_STANDARD' | 'REJECT'>('PROTOCOL_PASS');
+
+  // 动态提取当前适用的标准指标条款候选池 (优先使用外部传入 candidateRules，其次使用 hitlContext.candidate_rules)
+  const activeCandidateRules = useMemo<CandidateRuleItem[]>(() => {
+    if (candidateRules && candidateRules.length > 0) {
+      return candidateRules;
+    }
+    if (hitlContext?.candidate_rules && hitlContext.candidate_rules.length > 0) {
+      return hitlContext.candidate_rules;
+    }
+    // 降级通用标准指标
+    return [
+      { key: 'tensile_rm', name: '抗拉强度 Rm', category: 'mechanical', unit: 'MPa', requirement_text: '≥ 520 MPa' },
+      { key: 'yield_strength_rp02', name: '规定塑性延伸强度 Rp0.2', category: 'mechanical', unit: 'MPa', requirement_text: '≥ 205 MPa' },
+      { key: 'elongation_A', name: '断后伸长率 A', category: 'mechanical', unit: '%', requirement_text: '≥ 40 %' },
+      { key: 'hardness', name: '硬度试验 (HRB/HBW)', category: 'mechanical', requirement_text: '硬度指标合格' },
+      { key: 'impact_akv', name: '夏比 V 型缺口冲击功 (KV2)', category: 'mechanical', unit: 'J', requirement_text: '≥ 47 J' },
+      { key: 'flattening_test', name: '压扁试验', category: 'process', requirement_text: '压至两平板间距H合格，无裂纹' },
+      { key: 'flaring_test', name: '扩口试验', category: 'process', requirement_text: '扩口率 ≥ 18% 无裂口' },
+      { key: 'grain_size', name: '晶粒度评级', category: 'metallographic', unit: '级', requirement_text: '评级 ≥ 7 级' },
+      { key: 'intergranular_corrosion', name: '晶间腐蚀试验', category: 'corrosion', requirement_text: '按标准检验无晶间腐蚀倾向' },
+      { key: 'ultrasonic_test', name: '超声检测 (UT)', category: 'ndt', requirement_text: '验收等级 U2 级' },
+      { key: 'eddy_current_test', name: '涡流检测 (ET)', category: 'ndt', requirement_text: '验收等级 E2H 级' },
+      { key: 'pressure_tightness', name: '致密性/水压试验', category: 'ndt', requirement_text: '逐根水压或替代涡流合格' },
+      { key: 'surface_quality', name: '表面外观质量', category: 'surface', requirement_text: '内外表面光洁平整，无裂纹与重皮' },
+      { key: 'surface_roughness', name: '表面粗糙度 (Ra)', category: 'surface', unit: 'μm', requirement_text: '≤ 0.8 μm' },
+    ];
+  }, [candidateRules, hitlContext?.candidate_rules]);
+
+  // 按标准专业分类对候选规则进行结构化分组
+  const groupedRules = useMemo(() => {
+    const groups: Record<string, { label: string; rules: CandidateRuleItem[] }> = {
+      chemical: { label: '化学成分 (Chemical)', rules: [] },
+      mechanical: { label: '力学性能 (Mechanical)', rules: [] },
+      process: { label: '工艺成型 (Process)', rules: [] },
+      metallographic: { label: '金相组织 (Metallographic)', rules: [] },
+      corrosion: { label: '耐腐蚀性能 (Corrosion)', rules: [] },
+      ndt: { label: '无损探伤 (NDT)', rules: [] },
+      surface: { label: '表面与尺寸 (Surface & Dimensions)', rules: [] },
+      additional: { label: '其它标准条款 (Additional)', rules: [] },
+    };
+
+    for (const rule of activeCandidateRules) {
+      const cat = rule.category && rule.category in groups ? rule.category : 'additional';
+      groups[cat]!.rules.push(rule);
+    }
+
+    return Object.entries(groups).filter(([, g]) => g.rules.length > 0);
+  }, [activeCandidateRules]);
+
+  const [selectedTargetPropertyKey, setSelectedTargetPropertyKey] = useState<string>(() => {
+    if (activeCandidateRules.length > 0) {
+      return activeCandidateRules[0]!.key;
+    }
+    return 'tensile_rm';
+  });
+
+  const ambiguousPropName =
+    hitlContext?.property_ambiguity_details?.raw_name ||
+    (hitlContext?.pending_fields && hitlContext.pending_fields[0]) ||
+    '特种非标抗剪切断裂韧度 K1C';
+  const ambiguousPropVal =
+    hitlContext?.property_ambiguity_details?.raw_value !== undefined
+      ? String(hitlContext.property_ambiguity_details.raw_value)
+      : '42.5 MPa·m½';
+  const ambiguousPropCategory =
+    hitlContext?.property_ambiguity_details?.raw_category || 'mechanical';
+  const ambiguousReasoning =
+    hitlContext?.property_ambiguity_details?.reasoning ||
+    hitlContext?.prompt_message ||
+    '大模型意图消歧置信度不足（< 0.60），当前执行标准中无同名指标规则';
+
+  // 当 candidateRules 更新或 hitlContext 建议变更时，智能对齐初始选中项
+  useEffect(() => {
+    const suggestionKey = (hitlContext?.suggestions?.[ambiguousPropName] as string | undefined) ||
+      hitlContext?.property_ambiguity_details?.resolved_key;
+    if (suggestionKey && activeCandidateRules.some(r => r.key === suggestionKey)) {
+      setSelectedTargetPropertyKey(suggestionKey);
+    } else if (activeCandidateRules.length > 0 && !activeCandidateRules.some(r => r.key === selectedTargetPropertyKey)) {
+      setSelectedTargetPropertyKey(activeCandidateRules[0]!.key);
+    }
+  }, [activeCandidateRules, hitlContext?.suggestions, hitlContext?.property_ambiguity_details, ambiguousPropName]);
+
   // 质检说明与依据文本
   const [justification, setJustification] = useState<string>('');
 
@@ -108,12 +203,30 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
           ? '经显微复核与定性文字比对，显微形貌微量偏聚属于正常固溶组织，未见连续网状裂纹，判定符合标准规范。'
           : '定性文字描述存在微观晶间腐蚀隐患，要求第三方权威检测机构复验或作不合格退货处置。'
       );
+    } else if (currentReason === 'PROPERTY_AMBIGUITY') {
+      if (propertyResolutionMode === 'PROTOCOL_PASS') {
+        setJustification(
+          '依据供需双方订货技术协议及工程补充技术条件，该特种非标检验项目系协议增补验证条款，实测数据齐全，质检员核准予以特批放行。'
+        );
+      } else if (propertyResolutionMode === 'MAP_STANDARD') {
+        const targetRule = activeCandidateRules.find(r => r.key === selectedTargetPropertyKey);
+        const targetDesc = targetRule
+          ? `【${targetRule.name}】(${targetRule.key}${targetRule.requirement_text ? `，要求: ${targetRule.requirement_text}` : ''})`
+          : `[${selectedTargetPropertyKey}]`;
+        setJustification(
+          `经质检工程师工程分析与规程复核：认定质保书原始项目【${ambiguousPropName}】在工程性能与检验目的上等效于现行标准指标 ${targetDesc}，准予按标准限值实施核验。`
+        );
+      } else {
+        setJustification(
+          '该特种非标指标缺乏规范准入依据且未经订货技术协议书面认可，不予采纳，作缺项否决退货处置。'
+        );
+      }
     } else {
       setJustification(
         '根据质保书化学成分及供货合同技术协议，人工确认该材料牌号。'
       );
     }
-  }, [currentReason, acceptAlternative, selectedArbitratedStandard, qualitativeVerdict]);
+  }, [currentReason, acceptAlternative, selectedArbitratedStandard, qualitativeVerdict, propertyResolutionMode, selectedTargetPropertyKey, activeCandidateRules, ambiguousPropName]);
 
   // 点击外部收起模糊匹配下拉浮层
   useEffect(() => {
@@ -199,6 +312,20 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
       payload.arbitrated_standard_id = selectedArbitratedStandard;
     } else if (currentReason === 'QUALITATIVE_AMBIGUITY') {
       payload.qualitative_verdict = qualitativeVerdict;
+    } else if (currentReason === 'PROPERTY_AMBIGUITY') {
+      if (propertyResolutionMode === 'PROTOCOL_PASS') {
+        payload.corrected_property_keys = {
+          [ambiguousPropName]: 'special_protocol_item',
+        };
+      } else if (propertyResolutionMode === 'MAP_STANDARD') {
+        payload.corrected_property_keys = {
+          [ambiguousPropName]: selectedTargetPropertyKey,
+        };
+      } else {
+        payload.corrected_property_keys = {
+          [ambiguousPropName]: 'unrecognized_rejected_item',
+        };
+      }
     } else {
       const targetGrade = selectedGrade === 'CUSTOM'
         ? (selectedCustomGradeTarget || customGrade)
@@ -217,6 +344,8 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
         return { label: '多标准互斥仲裁', icon: 'balance' };
       case 'QUALITATIVE_AMBIGUITY':
         return { label: '定性条款语义争议', icon: 'psychology' };
+      case 'PROPERTY_AMBIGUITY':
+        return { label: '特种属性语义歧义裁定', icon: 'tune' };
       default:
         return { label: '材料牌号消歧与确认', icon: 'fingerprint' };
     }
@@ -616,6 +745,150 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
                     className="text-red-600 focus:ring-red-500 h-4 w-4"
                   />
                   <span>存在缺陷/要求复验 (FAIL)</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* 场景 5：特种属性语义歧义裁定 */}
+          {currentReason === 'PROPERTY_AMBIGUITY' && (
+            <div className="space-y-3">
+              <label className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                特种非标检验项目合规处置决策
+              </label>
+
+              {/* 实测未决项目详情看板 */}
+              <div className="p-3.5 rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-on-surface-variant">质保书原始项目:</span>
+                  <span className="font-bold text-on-surface">{ambiguousPropName}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-on-surface-variant">报告测量实测值:</span>
+                  <span className="font-bold text-primary font-mono text-[13px]">{ambiguousPropVal}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-on-surface-variant">所属检验分类:</span>
+                  <span className="text-on-surface font-medium">
+                    {ambiguousPropCategory === 'mechanical' ? '力学性能 (mechanical)' : ambiguousPropCategory}
+                  </span>
+                </div>
+                <div className="border-t border-outline-variant/30 pt-2 text-[12px] text-on-surface-variant leading-relaxed">
+                  <span className="font-bold text-amber-700 dark:text-amber-400">AI 意图诊断: </span>
+                  {ambiguousReasoning}
+                </div>
+              </div>
+
+              {/* 3 种处置决策单选卡片 */}
+              <div className="space-y-2 pt-1">
+                {/* 选项 1: 协议特约放行 */}
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${propertyResolutionMode === 'PROTOCOL_PASS'
+                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-xs'
+                    : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                    }`}
+                >
+                  <input
+                    type="radio"
+                    name="propertyResolutionChoice"
+                    checked={propertyResolutionMode === 'PROTOCOL_PASS'}
+                    onChange={() => setPropertyResolutionMode('PROTOCOL_PASS')}
+                    className="text-emerald-600 focus:ring-emerald-500 h-4 w-4 mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                        认可为供需协议特约合格项 (放行 PASS)
+                      </span>
+                      <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                        推荐
+                      </span>
+                    </div>
+                    <span className="text-[12px] text-on-surface-variant dark:text-outline-variant leading-relaxed block mt-0.5">
+                      确认该指标系订货技术协议增补验证项目，实测数据完整合规，纳入合格放行依据。
+                    </span>
+                  </div>
+                </label>
+
+                {/* 选项 2: 映射至现行标准条款 */}
+                <div
+                  className={`p-3.5 rounded-xl border transition-all ${propertyResolutionMode === 'MAP_STANDARD'
+                    ? 'border-primary bg-primary/5 shadow-xs'
+                    : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                    }`}
+                >
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="propertyResolutionChoice"
+                      checked={propertyResolutionMode === 'MAP_STANDARD'}
+                      onChange={() => setPropertyResolutionMode('MAP_STANDARD')}
+                      className="text-primary focus:ring-primary h-4 w-4 mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                        映射对齐至现行标准指标
+                      </span>
+                      <span className="text-[12px] text-on-surface-variant dark:text-outline-variant leading-relaxed block mt-0.5">
+                        认定该特种非标指标在工程性能上等效于现行标准已有条款，按标准限值实施核验。
+                      </span>
+                    </div>
+                  </label>
+
+                  {propertyResolutionMode === 'MAP_STANDARD' && (
+                    <div className="mt-2.5 pl-7">
+                      <label className="text-[11px] text-on-surface-variant block mb-1 font-medium">
+                        选择现行标准对应指标条款:
+                      </label>
+                      <select
+                        value={selectedTargetPropertyKey}
+                        onChange={e => setSelectedTargetPropertyKey(e.target.value)}
+                        className="w-full text-xs border border-outline-variant dark:border-border-dark rounded-lg bg-surface-container-lowest dark:bg-surface-dark px-3 py-2 text-on-surface dark:text-surface-bright focus:border-primary focus:outline-none"
+                      >
+                        {groupedRules.map(([catKey, group]) => (
+                          <optgroup
+                            key={catKey}
+                            label={group.label}
+                            className="font-bold text-on-surface bg-surface-container-low dark:bg-surface-dark-low"
+                          >
+                            {group.rules.map(rule => (
+                              <option
+                                key={rule.key}
+                                value={rule.key}
+                                className="font-normal text-on-surface dark:text-surface-bright"
+                              >
+                                {rule.name} ({rule.key}){rule.requirement_text ? ` — ${rule.requirement_text}` : (rule.unit ? ` [${rule.unit}]` : '')}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* 选项 3: 不予认可 / 判定无效 */}
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${propertyResolutionMode === 'REJECT'
+                    ? 'border-red-500 bg-red-50/50 dark:bg-red-950/20 shadow-xs'
+                    : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                    }`}
+                >
+                  <input
+                    type="radio"
+                    name="propertyResolutionChoice"
+                    checked={propertyResolutionMode === 'REJECT'}
+                    onChange={() => setPropertyResolutionMode('REJECT')}
+                    className="text-red-600 focus:ring-red-500 h-4 w-4 mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                      不予认可 / 判定无效 (缺项否决 FAIL)
+                    </span>
+                    <span className="text-[12px] text-on-surface-variant dark:text-outline-variant leading-relaxed block mt-0.5">
+                      该非标指标缺乏权威规范依据且未经技术协议认可，不予采纳，作缺项否决处理。
+                    </span>
+                  </div>
                 </label>
               </div>
             </div>

@@ -9,7 +9,7 @@
 
 import type { AdditionalTestItem } from '@/schemas/certificate.schema';
 import type { AuditReport } from '@/schemas/report.schema.ts';
-import type { HitlInterruptContext } from '@/workflow/state.interface.ts';
+import type { HitlInterruptContext, HumanCorrectionInput } from '@/workflow/state.interface.ts';
 
 export type { AdditionalTestItem };
 
@@ -39,12 +39,15 @@ export interface BatchSpecimen {
   verdict: 'UNAUDITED' | 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
   verdictSummary: string;      // 判定依据简述
   hitlReason?: HitlInterruptContext['reason']; // 触发 HITL 挂起的原因
+  hitlFieldCorrection?: HumanCorrectionInput;  // 【字段级 HITL 裁定】质检工程师针对具体歧义字段/牌号的输入纠偏快照 (严禁作为整批终审)
+  hitlCorrection?: HumanCorrectionInput;       // 兼容旧字段别名 (等价于 hitlFieldCorrection)
   // 双轨制判定模型 (Dual-Track Verdict: 系统客观计算与人工复核审批并行，互不抹除)
   systemVerdict?: 'UNAUDITED' | 'PASS' | 'FAIL' | 'MANUAL_REVIEW';   // 系统客观算法判定结论
   systemVerdictSummary?: string;                       // 系统判定规则依据简述
-  humanVerdict?: 'PASS' | 'REJECT' | 'WAIVED' | null;  // 质检工程师人工签认结论 (非必须，不覆盖系统结果)
-  humanVerdictSummary?: string;                        // 人工审批批注或特批放行依据
-  humanVerifiedAt?: string;                            // 人工签认时间戳 (ISO 8601)
+  // 【批次级终审】质检工程师针对整批质保书签发的最终审批盖章结论 (BATCH-LEVEL FINAL REVIEW ONLY, 严禁在字段级 HITL 裁定中自动篡改)
+  humanVerdict?: 'PASS' | 'REJECT' | 'WAIVED' | null;  // 质检工程师整批终审结论 (非必须，不覆盖系统结果)
+  humanVerdictSummary?: string;                        // 质检工程师整批终审批注或拒收原因
+  humanVerifiedAt?: string;                            // 质检工程师整批终审签署时间戳 (ISO 8601)
   auditReport?: AuditReport;                           // 结构化核验报告 (由底层合规引擎直出，支持多标尺追溯与剪刀差)
   ocrConfidence: number;       // 综合 OCR 视觉解析置信度 (0~100)
   gradeMatchConfidence: number;// 材料牌号标准消歧匹配度 (0~100)
@@ -56,9 +59,11 @@ export interface BatchSpecimen {
   mechanical: {
     tensile_rm: string;        // 抗拉强度实测与换算值
     yield_rp02: string;        // 屈服强度实测与换算值
+    yield_reh?: string;        // 上屈服强度 (ReH)
     elongation_a: string;      // 断后伸长率
     hardness?: string;         // 硬度 (HRB/HBW)
     astFormulaNote?: string;   // AST 公式免检提示 (如涡流探伤免做水压)
+    [key: string]: any;
   };
   
   // 模块 C: 工艺与定性条款 (解耦探伤支持)
@@ -71,6 +76,9 @@ export interface BatchSpecimen {
     ndt_ut?: string;           // 超声波检测实测结果 (Ultrasonic Testing)
     grainSize?: string;
     surfaceQuality?: string;
+    hydrostatic?: string;      // 水压试验结果 (Hydrostatic Test)
+    pressureTest?: string;     // 耐压/致密性试验结果
+    [key: string]: any;
   };
   additionalTests?: AdditionalTestItem[]; // 弹性长尾扩展检验项
   testMethods?: Record<string, string>;  // 各检验项目在质保书上明确声明的执行标准字典 (如 { flaring: "GB/T242-2007", flattening: "GB/T246-2017" })

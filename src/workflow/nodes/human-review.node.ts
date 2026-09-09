@@ -53,7 +53,7 @@ export function createHumanReviewNode() {
       if (userResponse.corrected_property_keys) {
         for (const [rawKey, targetKey] of Object.entries(userResponse.corrected_property_keys)) {
           if (rawKey && targetKey) {
-            PropertyKeyNormalizer.registerLearnedAlias(rawKey, targetKey, undefined, undefined, true);
+            PropertyKeyNormalizer.registerLearnedAlias(rawKey, targetKey, undefined, rawKey, true);
             logger.info('WORKFLOW', `[知识沉淀] 质检员确认别名 [${rawKey} -> ${targetKey}] 已沉淀至规则库`);
             collector.addTrace('WORKFLOW', 'info', `[知识沉淀] 别名 [${rawKey} -> ${targetKey}] 已沉淀至规则库`);
           }
