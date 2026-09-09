@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { ParseCacheStore, CachedParseResult } from '../../src/repository/parse-cache-store.ts';
+import { SCENARIO_FIXTURES_META } from '../fixtures/scenarios/index.ts';
 
 describe('ParseCacheStore', () => {
   const testCacheDir = path.join(process.cwd(), '.cache', 'test_parses');
@@ -68,8 +69,9 @@ describe('ParseCacheStore', () => {
   });
 
   it('当磁盘未预先缓存专测场景时，应该通过种子数据自动补齐并持久化落盘', () => {
-    // 使用 Case 2 典型场景的真实 MD5
-    const case2Md5 = '8f64aff4099035363ac96539b96551ba';
+    // 使用 Case 2 典型场景的真实 MD5 (从权威元数据配置动态获取)
+    const case2Meta = SCENARIO_FIXTURES_META.find(m => m.id === 'case2_tier1_to_tier2_pass');
+    const case2Md5 = case2Meta?.md5 || '944f39572b5617186447ca32ff71635b';
     const diskPath = (store as any).getFilePath(case2Md5);
 
     // 初始状态下磁盘该文件绝对不存在
@@ -83,7 +85,8 @@ describe('ParseCacheStore', () => {
     expect(seeded).not.toBeNull();
     expect(seeded?.filename).toBe('case2_tier1_to_tier2_pass.pdf');
     expect(seeded?.sessionDocument.batches[0]?.grade).toBe('06Cr18Ni11Ti');
-    expect(seeded?.sessionDocument.batches[0]?.additionalTests).toHaveLength(2);
+    expect(seeded?.sessionDocument.batches[0]?.additionalTests).toHaveLength(1);
+    expect(seeded?.sessionDocument.batches[0]?.surfaceQuality).toContain('合格');
 
     // 验证此时磁盘上已经成功落盘该 JSON 文件
     expect(fs.existsSync(diskPath)).toBe(true);

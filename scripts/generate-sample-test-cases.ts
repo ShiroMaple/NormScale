@@ -6,58 +6,167 @@ import type { FieldBBox } from '../src/types/bbox.ts';
 import type { CachedParseResult } from '../src/repository/parse-cache-store.ts';
 
 /**
- * 辅助函数：将 UTF-8 字符串转换为 UTF-16BE 大端十六进制字符串 (供 PDF 标准 CJK Type0 字体使用)
+ * 转义 PDF 字符串中的特殊字符
  */
-function toHexUtf16BE(str: string): string {
-  const buf = Buffer.from(str, 'utf16le');
-  for (let i = 0; i < buf.length; i += 2) {
-    const tmp = buf[i]!;
-    buf[i] = buf[i + 1]!;
-    buf[i + 1] = tmp;
-  }
-  return buf.toString('hex').toUpperCase();
+function escapePdfString(str: string): string {
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
 }
 
 /**
- * 辅助函数：构造标准原生支持 CJK 中文字符的矢量 PDF 1.4 格式 Buffer
- * 使用 Adobe Predefined CMap (UniGB-UTF16-H) 与 STSong-Light 规范字体，彻底消除中文乱码
+ * 构造符合 PDF 1.4 规范的工业矢量质保证书 (Mill Test Certificate)
+ * 采用 Standard 14 Type 1 Fonts (Helvetica, Helvetica-Bold) 与 WinAnsiEncoding 编码，
+ * 绝无平台缺失字库风险，绝无方块豆腐块 (Missing Glyph ☒)，排版工整清晰。
  */
-function createMinimalVectorPdf(title: string, lines: string[]): Buffer {
-  const contentStreamLines = [
-    'BT',
-    '/F1 15 Tf',
-    '50 790 Td',
-    `<${toHexUtf16BE(title)}> Tj`,
-    '/F1 10 Tf',
-  ];
+function createMinimalVectorPdf(sc: {
+  title: string;
+  certNo: string;
+  standard: string;
+  grade: string;
+  supplier: string;
+  dimensions: string;
+  heatNo: string;
+  batchNo: string;
+  chemItems: Array<{ el: string; val: string }>;
+  mechItems: Array<{ name: string; val: string; unit: string }>;
+  processLines: string[];
+  specialItem?: { name: string; val: string; unit?: string };
+}): Buffer {
+  const streamLines: string[] = [];
 
-  let currentY = 760;
-  for (const line of lines) {
-    currentY -= 18;
-    contentStreamLines.push(`1 0 0 1 50 ${currentY} Tm`);
-    contentStreamLines.push(`<${toHexUtf16BE(line)}> Tj`);
+  // 1. 页面边框与几何衬底 (A4: 595 x 842 pt)
+  // 深灰工业外边框
+  streamLines.push('0.15 0.20 0.28 RG 1.5 w 30 30 535 782 re S');
+  // 内虚线美化边框
+  streamLines.push('[3 2] 0 d 0.65 0.70 0.76 RG 0.75 w 35 35 525 772 re S [] 0 d');
+
+  // 2. 证书标题与生产商徽章区域 (Y: 745 ~ 800)
+  // 浅蓝灰标题栏背景
+  streamLines.push('0.93 0.95 0.98 rg 36 745 523 60 re f');
+  streamLines.push('0.15 0.20 0.28 RG 1 w 36 745 m 559 745 l S');
+  // 证书大标题 (Helvetica-Bold 15pt)
+  streamLines.push('BT /F2 15 Tf 0.08 0.12 0.22 rg 105 782 Td (MILL TEST CERTIFICATE / QUALITY CERTIFICATE) Tj ET');
+  // 英文与副标题
+  streamLines.push(`BT /F2 10 Tf 0.20 0.28 0.40 rg 140 765 Td (INSPECTION CERTIFICATE EN 10204 3.1 - ${escapePdfString(sc.certNo)}) Tj ET`);
+  streamLines.push('BT /F1 8 Tf 0.40 0.46 0.54 rg 170 750 Td (SPECIAL HIGH-PRESSURE ALLOY & STAINLESS STEEL PIPING CORP.) Tj ET');
+
+  // 3. 元数据信息表格 (Y: 665 ~ 735)
+  streamLines.push('0.96 0.97 0.98 rg 45 665 505 70 re f');
+  streamLines.push('0.80 0.84 0.88 RG 0.75 w 45 665 505 70 re S');
+  streamLines.push('45 718 m 550 718 l 45 695 m 550 695 l S');
+  streamLines.push('210 665 m 210 735 l 380 665 m 380 735 l S');
+
+  // 元数据第 1 行 (Y: 723)
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 50 723 Td (Certificate No: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (${escapePdfString(sc.certNo)}) Tj ET`);
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 215 723 Td (Declared Standard: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (${escapePdfString(sc.standard)}) Tj ET`);
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 385 723 Td (Declared Grade: ) Tj /F2 8.5 Tf 0.15 0.38 0.92 rg (${escapePdfString(sc.grade)}) Tj ET`);
+
+  // 元数据第 2 行 (Y: 703)
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 50 703 Td (Supplier: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (${escapePdfString(sc.supplier)}) Tj ET`);
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 215 703 Td (Dimensions: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (${escapePdfString(sc.dimensions)}) Tj ET`);
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 385 703 Td (Heat No: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (${escapePdfString(sc.heatNo)}) Tj ET`);
+
+  // 元数据第 3 行 (Y: 673)
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 50 673 Td (Batch / Lot No: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (${escapePdfString(sc.batchNo)}) Tj ET`);
+  streamLines.push('BT /F2 8.5 Tf 0.10 0.15 0.25 rg 215 673 Td (Delivery Condition: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (Solution Annealed & Pickled) Tj ET');
+  streamLines.push('BT /F2 8.5 Tf 0.10 0.15 0.25 rg 385 673 Td (Issue Date: ) Tj /F1 8.5 Tf 0.15 0.15 0.15 rg (2026-09-07) Tj ET');
+
+  // 4. 一、化学成分表 (Y: 590 ~ 650)
+  streamLines.push('BT /F2 9.5 Tf 0.08 0.12 0.22 rg 45 652 Td (1. CHEMICAL COMPOSITION (Heat Analysis, %):) Tj ET');
+  const chemTableTop = 645;
+  const chemTableHeight = 44;
+  streamLines.push(`0.80 0.84 0.88 RG 0.75 w 45 ${chemTableTop - chemTableHeight} 505 ${chemTableHeight} re S`);
+  streamLines.push(`0.93 0.95 0.98 rg 45 ${chemTableTop - 20} 505 20 re f`);
+  streamLines.push(`45 ${chemTableTop - 20} m 550 ${chemTableTop - 20} l S`);
+
+  const chemColWidth = 505 / sc.chemItems.length;
+  sc.chemItems.forEach((c, idx) => {
+    const colX = 45 + idx * chemColWidth;
+    if (idx > 0) {
+      streamLines.push(`${colX} ${chemTableTop - chemTableHeight} m ${colX} ${chemTableTop} l S`);
+    }
+    const textX = colX + chemColWidth / 2 - 6;
+    streamLines.push(`BT /F2 8 Tf 0.20 0.25 0.35 rg ${textX} ${chemTableTop - 14} Td (${escapePdfString(c.el)}) Tj ET`);
+    streamLines.push(`BT /F1 8 Tf 0.05 0.10 0.20 rg ${colX + 5} ${chemTableTop - 34} Td (${escapePdfString(c.val)}) Tj ET`);
+  });
+
+  // 5. 二、力学性能表 (Y: 505 ~ 575)
+  const mechSectionTop = 575;
+  streamLines.push(`BT /F2 9.5 Tf 0.08 0.12 0.22 rg 45 ${mechSectionTop} Td (2. MECHANICAL PROPERTIES & TENSILE TEST (Room Temp):) Tj ET`);
+  const mechTableTop = mechSectionTop - 7;
+  const mechTableHeight = 46;
+  streamLines.push(`0.80 0.84 0.88 RG 0.75 w 45 ${mechTableTop - mechTableHeight} 505 ${mechTableHeight} re S`);
+  streamLines.push(`0.93 0.95 0.98 rg 45 ${mechTableTop - 22} 505 22 re f`);
+  streamLines.push(`45 ${mechTableTop - 22} m 550 ${mechTableTop - 22} l S`);
+
+  const mechTotalCols = sc.mechItems.length + (sc.specialItem ? 1 : 0);
+  const mechColWidth = 505 / mechTotalCols;
+  sc.mechItems.forEach((m, idx) => {
+    const colX = 45 + idx * mechColWidth;
+    if (idx > 0) {
+      streamLines.push(`${colX} ${mechTableTop - mechTableHeight} m ${colX} ${mechTableTop} l S`);
+    }
+    streamLines.push(`BT /F2 7.5 Tf 0.20 0.25 0.35 rg ${colX + 6} ${mechTableTop - 15} Td (${escapePdfString(m.name)}) Tj ET`);
+    streamLines.push(`BT /F1 8.5 Tf 0.05 0.10 0.20 rg ${colX + 8} ${mechTableTop - 36} Td (${escapePdfString(`${m.val} ${m.unit}`)}) Tj ET`);
+  });
+
+  if (sc.specialItem) {
+    const colX = 45 + sc.mechItems.length * mechColWidth;
+    streamLines.push(`${colX} ${mechTableTop - mechTableHeight} m ${colX} ${mechTableTop} l S`);
+    streamLines.push(`0.98 0.95 0.88 rg ${colX} ${mechTableTop - mechTableHeight} ${mechColWidth} ${mechTableHeight} re f`);
+    streamLines.push(`BT /F2 7.5 Tf 0.65 0.35 0.05 rg ${colX + 6} ${mechTableTop - 15} Td (${escapePdfString(sc.specialItem.name)}) Tj ET`);
+    streamLines.push(`BT /F2 8.5 Tf 0.55 0.25 0.05 rg ${colX + 8} ${mechTableTop - 36} Td (${escapePdfString(`${sc.specialItem.val} ${sc.specialItem.unit || ''}`)}) Tj ET`);
   }
-  contentStreamLines.push('ET');
 
-  const streamContent = contentStreamLines.join('\n');
+  // 6. 三、工艺性能与无损探伤检验结论 (Y: 385 ~ 495)
+  const procSectionTop = 495;
+  streamLines.push(`BT /F2 9.5 Tf 0.08 0.12 0.22 rg 45 ${procSectionTop} Td (3. TECHNOLOGICAL & NON-DESTRUCTIVE INSPECTION RESULTS:) Tj ET`);
+  const procTableTop = procSectionTop - 7;
+  const procTableHeight = 104;
+  streamLines.push(`0.80 0.84 0.88 RG 0.75 w 45 ${procTableTop - procTableHeight} 505 ${procTableHeight} re S`);
+  streamLines.push(`0.98 0.98 0.99 rg 45 ${procTableTop - procTableHeight} 505 ${procTableHeight} re f`);
+
+  // 逐行打印工艺与无损项目
+  let procY = procTableTop - 15;
+  for (const pLine of sc.processLines) {
+    streamLines.push(`BT /F1 8 Tf 0.15 0.20 0.28 rg 55 ${procY} Td (${escapePdfString(pLine)}) Tj ET`);
+    procY -= 13.5;
+  }
+
+  // 7. 四、综合质检评定结论与签署盖章 (Y: 260 ~ 365)
+  const verdictTop = 368;
+  streamLines.push(`0.96 0.97 0.98 rg 45 ${verdictTop - 75} 505 75 re f`);
+  streamLines.push(`0.80 0.84 0.88 RG 0.75 w 45 ${verdictTop - 75} 505 75 re S`);
+  streamLines.push(`BT /F2 9.5 Tf 0.08 0.12 0.22 rg 55 ${verdictTop - 18} Td (4. QUALITY INSPECTION VERDICT & RELEASE:) Tj ET`);
+  streamLines.push(`BT /F1 8 Tf 0.25 0.30 0.38 rg 55 ${verdictTop - 34} Td (We hereby certify that the material described above has been manufactured and tested in accordance) Tj ET`);
+  streamLines.push(`BT /F1 8 Tf 0.25 0.30 0.38 rg 55 ${verdictTop - 46} Td (with the technical requirements of the declared standard and purchase contract specifications.) Tj ET`);
+  streamLines.push(`BT /F2 8.5 Tf 0.10 0.15 0.25 rg 55 ${verdictTop - 64} Td (Certified Inspector: Zhang Jianhua       Quality Supervisor: Li Zhenguo       Code: NS-VALID-2026) Tj ET`);
+
+  // 红色模拟质检合格印章
+  streamLines.push('0.85 0.15 0.15 RG 1.5 w 440 300 90 44 re S');
+  streamLines.push('BT /F2 9 Tf 0.85 0.15 0.15 rg 453 329 Td (QA ACCEPTED) Tj ET');
+  streamLines.push('BT /F2 7 Tf 0.85 0.15 0.15 rg 450 312 Td (MILL TEST PASSED) Tj ET');
+
+  const streamContent = streamLines.join('\n');
   const streamLength = Buffer.byteLength(streamContent, 'utf8');
 
+  // 构造规范标准 PDF 1.4 对象树
   const objects: string[] = [];
   objects.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj');
   objects.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj');
   objects.push(
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 6 0 R >>\nendobj'
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj'
   );
-  // Type0 font for Simplified Chinese (STSong-Light with UniGB-UTF16-H)
-  objects.push(
-    '4 0 obj\n<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UTF16-H /DescendantFonts [5 0 R] >>\nendobj'
-  );
-  objects.push(
-    '5 0 obj\n<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> /DW 1000 >>\nendobj'
-  );
+  // Standard 14 Helvetica
+  objects.push('4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj');
+  // Standard 14 Helvetica-Bold
+  objects.push('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj');
+  // Content stream
   objects.push(`6 0 obj\n<< /Length ${streamLength} >>\nstream\n${streamContent}\nendstream\nendobj`);
 
-  let header = '%PDF-1.4\n';
+  const header = '%PDF-1.4\n';
   const offsets: number[] = [];
   let currentOffset = Buffer.byteLength(header, 'utf8');
 
@@ -80,7 +189,7 @@ function createMinimalVectorPdf(title: string, lines: string[]): Buffer {
 }
 
 /**
- * 辅助函数：构造高保真 SVG 质保证书渲染图 (转 Base64 供前端原位展示)
+ * 辅助函数：构造高保真中英文 SVG 质保证书矢量渲染图 (供前端原位高保真展示)
  */
 function createCertificateSvg(params: {
   title: string;
@@ -93,9 +202,10 @@ function createCertificateSvg(params: {
   batchNo: string;
   chemItems: Array<{ el: string; val: string }>;
   mechItems: Array<{ name: string; val: string; unit: string }>;
-  specialItem?: { name: string; val: string; unit?: string; statusNote?: string };
+  processLines: string[];
+  specialItem?: { name: string; val: string; unit?: string };
 }): string {
-  const { title, certNo, standard, grade, supplier, dimensions, heatNo, batchNo, chemItems, mechItems, specialItem } = params;
+  const { title, certNo, standard, grade, supplier, dimensions, heatNo, batchNo, chemItems, mechItems, processLines, specialItem } = params;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1130" width="800" height="1130" style="background:#ffffff; font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',sans-serif;">
   <rect x="20" y="20" width="760" height="1090" fill="#ffffff" stroke="#1e293b" stroke-width="2" rx="4"/>
@@ -164,27 +274,25 @@ function createCertificateSvg(params: {
     `;
   })() : ''}
 
-  <!-- 工艺与无损检验汇总 -->
+  <!-- 工艺与无损检验汇总 (严格包含执行标准强制检验项) -->
   <rect x="40" y="405" width="720" height="24" fill="#f1f5f9" stroke="#cbd5e1"/>
-  <text x="50" y="421" font-size="11" font-weight="bold" fill="#1e293b">三、工艺性能与无损探伤检验结论</text>
-  <rect x="40" y="429" width="720" height="60" fill="#ffffff" stroke="#cbd5e1"/>
-  <text x="55" y="452" font-size="10" fill="#334155">压扁试验 (Flattening): <tspan font-weight="bold" fill="#15803d">合格 OK (无裂纹)</tspan></text>
-  <text x="320" y="452" font-size="10" fill="#334155">扩口试验 (Flaring): <tspan font-weight="bold" fill="#15803d">合格 OK (扩口率 20%)</tspan></text>
-  <text x="550" y="452" font-size="10" fill="#334155">晶间腐蚀 (IGC Method E): <tspan font-weight="bold" fill="#15803d">合格 OK</tspan></text>
-  <text x="55" y="475" font-size="10" fill="#334155">涡流探伤 (Eddy Current ET): <tspan font-weight="bold" fill="#15803d">PASS (E3H 等级)</tspan></text>
-  <text x="320" y="475" font-size="10" fill="#334155">超声探伤 (Ultrasonic UT): <tspan font-weight="bold" fill="#15803d">PASS (U2 等级)</tspan></text>
-  <text x="550" y="475" font-size="10" fill="#334155">水压试验 (Hydrostatic): <tspan font-weight="bold" fill="#15803d">免做 (AST 涡流替代)</tspan></text>
+  <text x="50" y="421" font-size="11" font-weight="bold" fill="#1e293b">三、工艺性能与无损探伤检验结论 (Mandatory &amp; NDT Results)</text>
+  <rect x="40" y="429" width="720" height="146" fill="#ffffff" stroke="#cbd5e1"/>
+  ${processLines.map((line, idx) => {
+    const y = 448 + idx * 20;
+    return `<text x="55" y="${y}" font-size="10" fill="#334155"><tspan font-weight="bold" fill="#15803d">● </tspan>${escapeXml(line)}</text>`;
+  }).join('')}
 
   <!-- 签章与结论 -->
-  <rect x="40" y="510" width="720" height="90" fill="#fafafa" stroke="#cbd5e1" rx="4"/>
-  <text x="55" y="535" font-size="11" font-weight="bold" fill="#0f172a">综合质检判定结论：</text>
-  <text x="55" y="558" font-size="10" fill="#475569">本批产品严格按照采购合同及执行技术标准进行检验，各项指标实测结果如上记录所示。</text>
-  <text x="55" y="580" font-size="10" fill="#64748b">检验员 (Inspector): 张建华 · 审核主任 (Supervisor): 李振国 · 质保系统防伪校验码: NS-VALID-2026</text>
+  <rect x="40" y="588" width="720" height="80" fill="#fafafa" stroke="#cbd5e1" rx="4"/>
+  <text x="55" y="612" font-size="11" font-weight="bold" fill="#0f172a">综合质检判定结论：</text>
+  <text x="55" y="634" font-size="10" fill="#475569">本批产品严格按照采购合同及执行技术标准进行检验，各项指标实测结果如上记录所示，准予出厂。</text>
+  <text x="55" y="654" font-size="10" fill="#64748b">检验员 (Inspector): 张建华 · 审核主任 (Supervisor): 李振国 · 防伪校验码: NS-VALID-2026</text>
 
   <!-- 红色印章模拟 -->
-  <circle cx="680" cy="555" r="35" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="6,2"/>
-  <text x="680" y="550" text-anchor="middle" font-size="10" font-weight="bold" fill="#dc2626">质检合格章</text>
-  <text x="680" y="565" text-anchor="middle" font-size="8" fill="#dc2626">QA PASSED</text>
+  <circle cx="680" cy="628" r="35" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="6,2"/>
+  <text x="680" y="623" text-anchor="middle" font-size="10" font-weight="bold" fill="#dc2626">质检合格章</text>
+  <text x="680" y="638" text-anchor="middle" font-size="8" fill="#dc2626">QA PASSED</text>
 </svg>`;
 }
 
@@ -198,21 +306,21 @@ function escapeXml(unsafe: string): string {
 }
 
 /**
- * 四维场景定义
+ * 四维场景规范定义 (严格补齐全部强制检验项)
  */
 const SCENARIOS = [
   {
     id: 'case1_tier1_hitl_unknown_grade',
-    title: '[用例1] Tier1-HITL-未收录非标牌号',
+    title: '[Case 1] Tier1-HITL-Unknown Grade SUS 304H-SpecialX',
     filename: 'case1_tier1_hitl_unknown_grade.pdf',
     standard: 'GB/T 13296-2023',
     grade: 'SUS 304H-SpecialX',
     certNo: 'MTC-2026-CASE1-UNK',
     batchNo: 'BATCH-2026-01-UNK',
-    supplier: '无锡某特种不锈钢管件制造厂',
-    dimensions: 'Φ25.0 × 2.0 × 6000mm',
+    supplier: 'Wuxi Special Stainless Steel Tube Corp.',
+    dimensions: 'OD 25.0mm x WT 2.0mm x L 6000mm',
     heatNo: 'H-CASE1-991',
-    description: '声明未收录的特种非标牌号 (SUS 304H-SpecialX)，在归一化阶段即识别为牌号异常，直接触发 LangGraph interrupt() 挂起并唤起人机协同抽屉。',
+    description: '声明未收录的特种非标牌号 (SUS 304H-SpecialX)，在归一化阶段即识别为牌号异常，直接触发 LangGraph interrupt() 挂起并唤起人机协同抽屉。人工指定等效国标牌号 06Cr19Ni10 后恢复执行，全部强制检验项齐全合格全绿通过。',
     tag: 'Tier1-HITL',
     expectedOutcome: 'AWAITING_HUMAN_REVIEW',
     chemItems: [
@@ -220,25 +328,44 @@ const SCENARIOS = [
       { el: 'P', val: '0.026' }, { el: 'S', val: '0.002' }, { el: 'Cr', val: '18.25' }, { el: 'Ni', val: '8.45' }
     ],
     mechItems: [
-      { name: '抗拉强度 Rm', val: '570', unit: 'MPa' },
-      { name: '屈服强度 ReH', val: '250', unit: 'MPa' },
-      { name: '伸长率 A', val: '45.0', unit: '%' },
-      { name: '硬度 HRB', val: '80', unit: 'HRB' }
+      { name: 'Tensile Strength Rm', val: '570', unit: 'MPa' },
+      { name: 'Yield Strength ReH', val: '250', unit: 'MPa' },
+      { name: 'Elongation A', val: '45.0', unit: '%' },
+      { name: 'Hardness HRB', val: '80', unit: 'HRB' }
     ],
-    additionalTests: [] as any[],
+    processLines: [
+      'Flattening Test (GB/T 246): PASS OK - H=(1+e)t/(e+t/D), No cracks observed',
+      'Flaring Test (GB/T 242): PASS OK - Flaring rate 20%, No cracking or tearing',
+      'Intergranular Corrosion (GB/T 4334 Method E): PASS OK - No corrosion trend detected',
+      'Ultrasonic Testing UT (GB/T 5777): PASS OK - Acceptance Class U2 passed',
+      'Hydrostatic Pressure Test (GB/T 241): PASS OK - 20.0 MPa, Held for 10s, No leakage',
+      'Surface Quality (GB/T 13296): PASS OK - Sound & smooth without cracks, scabs or folds'
+    ],
+    additionalTests: [
+      {
+        key: 'pressure_tightness',
+        name: '液压致密性试验',
+        category: 'ndt',
+        standard: 'GB/T 241',
+        result: '20.0 MPa 稳压 10s 无渗漏合格',
+        value_num: 20.0,
+        unit: 'MPa',
+        conclusion: 'PASS',
+      }
+    ],
   },
   {
     id: 'case2_tier1_to_tier2_pass',
-    title: '[用例2] Tier1-Tier2-通过-长尾光洁度达标',
+    title: '[Case 2] Tier1-to-Tier2-PASS Long-tail Roughness Compliant',
     filename: 'case2_tier1_to_tier2_pass.pdf',
     standard: 'NB/T 47019.5-2021',
     grade: '06Cr18Ni11Ti',
     certNo: 'MTC-2026-CASE2-PASS',
     batchNo: 'BATCH-2026-02-PASS',
-    supplier: '浙江某特种承压合金管业有限公司',
-    dimensions: 'Φ19.0 × 1.5 × 6000mm',
+    supplier: 'Zhejiang Special Alloy Pipe Co., Ltd.',
+    dimensions: 'OD 19.0mm x WT 1.5mm x L 6000mm',
     heatNo: 'H-CASE2-401',
-    description: '常规化学与力学性能齐全，包含长尾项目「表面光洁度 0.33 μm」。Tier 1 秒级出大盘；Tier 2 语义对齐至标准粗糙度 Ra <= 0.8 μm，增量核验达标，平滑全绿。',
+    description: '常规化学与力学性能齐全合规，包含长尾项目「表面光洁度 0.33 μm」。Tier 1 秒级出大盘；Tier 2 语义对齐至标准粗糙度 Ra <= 0.8 μm，增量核验达标，平滑全绿。',
     tag: 'Tier2-通过',
     expectedOutcome: 'PASS',
     chemItems: [
@@ -247,35 +374,44 @@ const SCENARIOS = [
       { el: 'Ni', val: '10.20' }, { el: 'Ti', val: '0.350' }, { el: 'N', val: '0.010' }
     ],
     mechItems: [
-      { name: '抗拉强度 Rm', val: '560', unit: 'MPa' },
-      { name: '规定延伸 Rp0.2', val: '240', unit: 'MPa' },
-      { name: '伸长率 A', val: '42.0', unit: '%' },
-      { name: '硬度 HRB', val: '82', unit: 'HRB' }
+      { name: 'Tensile Strength Rm', val: '560', unit: 'MPa' },
+      { name: 'Yield Strength Rp0.2', val: '240', unit: 'MPa' },
+      { name: 'Elongation A', val: '42.0', unit: '%' },
+      { name: 'Hardness HRB', val: '82', unit: 'HRB' }
     ],
-    specialItem: { name: '表面光洁度', val: '0.33', unit: 'μm', statusNote: '对齐至 Ra<=0.8 达标' },
+    processLines: [
+      'Flattening Test (GB/T 246): PASS OK - Sound without cracking',
+      'Flaring Test (GB/T 242): PASS OK - Flare angle 60 deg, rate 20%',
+      'Grain Size Rating (GB/T 6394): PASS OK - Grain size 7.5 class',
+      'Intergranular Corrosion (GB/T 4334 Method E): PASS OK - Sound without crack',
+      'Ultrasonic Testing UT (GB/T 5777): PASS OK - Class U2 Acceptance passed',
+      'Hydrostatic Test (GB/T 241): PASS OK - 20.0 MPa 10s pressure holding without leakage',
+      'Surface Quality (NB/T 47019.5): PASS OK - Inner & outer surfaces smooth, no cracks or folds'
+    ],
+    specialItem: { name: 'Surface Finish', val: '0.33', unit: 'um' },
     additionalTests: [
       {
         key: '表面光洁度',
         name: '表面光洁度',
         category: 'process',
         standard: 'NB/T 47019.5-2021',
-        result: '0.33 μm',
+        result: '0.33 um',
         value_num: 0.33,
-        unit: 'μm',
+        unit: 'um',
         conclusion: 'PASS',
       }
     ],
   },
   {
     id: 'case3_tier1_to_tier2_fail',
-    title: '[用例3] Tier1-Tier2-超标-长尾光洁度超差',
+    title: '[Case 3] Tier1-to-Tier2-FAIL Roughness Exceeds Limit',
     filename: 'case3_tier1_to_tier2_fail.pdf',
     standard: 'NB/T 47019.5-2021',
     grade: '06Cr18Ni11Ti',
     certNo: 'MTC-2026-CASE3-FAIL',
     batchNo: 'BATCH-2026-03-FAIL',
-    supplier: '江苏某换热系统承压管件实业公司',
-    dimensions: 'Φ19.0 × 1.5 × 6000mm',
+    supplier: 'Jiangsu Heat Exchange Alloy Tube Industries',
+    dimensions: 'OD 19.0mm x WT 1.5mm x L 6000mm',
     heatNo: 'H-CASE3-772',
     description: '常规项全部合规，长尾字段为「表面光洁度 1.50 μm」。Tier 2 对齐至标准粗糙度 Ra，因 1.50 > 0.8 μm 增量核验超标超差，判定为 FAIL 报警。',
     tag: 'Tier2-超标',
@@ -286,35 +422,44 @@ const SCENARIOS = [
       { el: 'Ni', val: '10.20' }, { el: 'Ti', val: '0.350' }, { el: 'N', val: '0.010' }
     ],
     mechItems: [
-      { name: '抗拉强度 Rm', val: '560', unit: 'MPa' },
-      { name: '规定延伸 Rp0.2', val: '240', unit: 'MPa' },
-      { name: '伸长率 A', val: '42.0', unit: '%' },
-      { name: '硬度 HRB', val: '82', unit: 'HRB' }
+      { name: 'Tensile Strength Rm', val: '560', unit: 'MPa' },
+      { name: 'Yield Strength Rp0.2', val: '240', unit: 'MPa' },
+      { name: 'Elongation A', val: '42.0', unit: '%' },
+      { name: 'Hardness HRB', val: '82', unit: 'HRB' }
     ],
-    specialItem: { name: '表面光洁度', val: '1.50', unit: 'μm', statusNote: '超标 (标准限值<=0.8)' },
+    processLines: [
+      'Flattening Test (GB/T 246): PASS OK - Sound without cracking',
+      'Flaring Test (GB/T 242): PASS OK - Flare angle 60 deg, rate 20%',
+      'Grain Size Rating (GB/T 6394): PASS OK - Grain size 7.5 class',
+      'Intergranular Corrosion (GB/T 4334 Method E): PASS OK - Sound without crack',
+      'Ultrasonic Testing UT (GB/T 5777): PASS OK - Class U2 Acceptance passed',
+      'Hydrostatic Test (GB/T 241): PASS OK - 20.0 MPa 10s pressure holding without leakage',
+      'Surface Quality (NB/T 47019.5): PASS OK - Inner & outer surfaces smooth, no cracks or folds'
+    ],
+    specialItem: { name: 'Surface Finish', val: '1.50', unit: 'um' },
     additionalTests: [
       {
         key: '表面光洁度',
         name: '表面光洁度',
         category: 'process',
         standard: 'NB/T 47019.5-2021',
-        result: '1.50 μm',
+        result: '1.50 um',
         value_num: 1.50,
-        unit: 'μm',
+        unit: 'um',
         conclusion: 'FAIL',
       }
     ],
   },
   {
     id: 'case4_tier1_to_tier2_hitl',
-    title: '[用例4] Tier1-Tier2-HITL-特种指标语义歧义',
+    title: '[Case 4] Tier1-to-Tier2-HITL Special Indicator Ambiguity',
     filename: 'case4_tier1_to_tier2_hitl.pdf',
     standard: 'NB/T 47019.5-2021',
     grade: '06Cr18Ni11Ti',
     certNo: 'MTC-2026-CASE4-AMB',
     batchNo: 'BATCH-2026-04-AMB',
-    supplier: '苏州某特种核电承压装备厂',
-    dimensions: 'Φ15.0 × 0.8 × 6000mm',
+    supplier: 'Suzhou Nuclear Power Pressure Equipment Co.',
+    dimensions: 'OD 15.0mm x WT 0.8mm x L 6000mm',
     heatNo: 'H-CASE4-338',
     description: '常规项合规，包含非标特异力学项目「特种非标微区抗剪切断裂韧度K1C: 85」。标准切片中无剪切规则，Tier 2 置信度不足，触发行内 HITL 审核卡片。',
     tag: 'Tier2-HITL',
@@ -325,12 +470,21 @@ const SCENARIOS = [
       { el: 'Ni', val: '10.20' }, { el: 'Ti', val: '0.350' }, { el: 'N', val: '0.010' }
     ],
     mechItems: [
-      { name: '抗拉强度 Rm', val: '560', unit: 'MPa' },
-      { name: '规定延伸 Rp0.2', val: '240', unit: 'MPa' },
-      { name: '伸长率 A', val: '42.0', unit: '%' },
-      { name: '硬度 HRB', val: '82', unit: 'HRB' }
+      { name: 'Tensile Strength Rm', val: '560', unit: 'MPa' },
+      { name: 'Yield Strength Rp0.2', val: '240', unit: 'MPa' },
+      { name: 'Elongation A', val: '42.0', unit: '%' },
+      { name: 'Hardness HRB', val: '82', unit: 'HRB' }
     ],
-    specialItem: { name: '特种微区抗剪韧度K1C', val: '85', unit: 'MPa·m^1/2', statusNote: '歧义项挂起' },
+    processLines: [
+      'Flattening Test (GB/T 246): PASS OK - Sound without cracking',
+      'Flaring Test (GB/T 242): PASS OK - Flare angle 60 deg, rate 20%',
+      'Grain Size Rating (GB/T 6394): PASS OK - Grain size 7.5 class',
+      'Intergranular Corrosion (GB/T 4334 Method E): PASS OK - Sound without crack',
+      'Ultrasonic Testing UT (GB/T 5777): PASS OK - Class U2 Acceptance passed',
+      'Hydrostatic Test (GB/T 241): PASS OK - 20.0 MPa 10s pressure holding without leakage',
+      'Surface Quality (NB/T 47019.5): PASS OK - Inner & outer surfaces smooth, no cracks or folds'
+    ],
+    specialItem: { name: 'Shear Toughness K1C', val: '85', unit: 'MPa.m^1/2' },
     additionalTests: [
       {
         key: '特种非标微区抗剪切断裂韧度K1C',
@@ -347,7 +501,7 @@ const SCENARIOS = [
 ];
 
 async function main() {
-  console.log('[Script] 正在生成四维分层核验场景矢量 PDF 与结构化缓存...');
+  console.log('[Script] 正在生成全新工业级标准矢量 PDF 与权威结构化缓存...');
 
   const publicSamplesDir = path.resolve(process.cwd(), 'public/samples');
   const cacheUploadsDir = path.resolve(process.cwd(), '.cache/uploads');
@@ -378,15 +532,18 @@ async function main() {
     ];
 
     if (sc.specialItem) {
-      textLines.push(`Special Inspection: ${sc.specialItem.name}: ${sc.specialItem.val} ${sc.specialItem.unit || ''}`);
+      textLines.push(`Special Item: ${sc.specialItem.name}: ${sc.specialItem.val} ${sc.specialItem.unit || ''}`);
     }
 
+    textLines.push('----------------------------------------------------------------------');
+    textLines.push('Technological & Non-Destructive Inspection:');
+    sc.processLines.forEach(l => textLines.push(`  ${l}`));
     textLines.push('----------------------------------------------------------------------');
     textLines.push('Quality Verdict: Fully Tested according to Contract Technical Specifications.');
     textLines.push('Certified Inspector: Zhang Jianhua    Supervisor: Li Zhenguo');
 
-    // 1. 生成矢量 PDF Buffer
-    const pdfBuffer = createMinimalVectorPdf(sc.title, textLines);
+    // 1. 生成符合 PDF 1.4 标准的矢量 PDF Buffer
+    const pdfBuffer = createMinimalVectorPdf(sc);
     const md5 = crypto.createHash('md5').update(pdfBuffer).digest('hex');
 
     // 2. 写入 public/samples/ 与 .cache/uploads/
@@ -404,7 +561,7 @@ async function main() {
     if (!fs.existsSync(docPreDir)) fs.mkdirSync(docPreDir, { recursive: true });
     fs.writeFileSync(path.join(docPreDir, 'text.txt'), textLines.join('\n'), 'utf8');
 
-    // 5. 构建 SessionDocument 与 BatchSpecimen
+    // 5. 构建与执行标准严格对应的 SessionDocument 与 BatchSpecimen
     const batchSpecimen: BatchSpecimen = {
       batchNo: sc.batchNo,
       subBatchIndex: 1,
@@ -432,19 +589,24 @@ async function main() {
       mechanical: {
         tensile_rm: sc.mechItems.find(m => m.name.includes('Rm'))?.val || '560',
         yield_rp02: sc.mechItems.find(m => m.name.includes('ReH') || m.name.includes('Rp0.2'))?.val || '240',
-        elongation_a: sc.mechItems.find(m => m.name.includes('伸长率'))?.val || '42.0',
-        hardness: sc.mechItems.find(m => m.name.includes('硬度'))?.val || '82 HRB',
+        yield_reh: sc.mechItems.find(m => m.name.includes('ReH'))?.val || undefined,
+        elongation_a: sc.mechItems.find(m => m.name.includes('Elongation') || m.name.includes('伸长率'))?.val || '42.0',
+        hardness: sc.mechItems.find(m => m.name.includes('Hardness') || m.name.includes('硬度'))?.val || '82 HRB',
       },
       process: {
         flattening: '合格 OK (未见裂纹)',
-        flaring: '合格 OK',
-        intergranularCorrosion: '合格 OK (E法)',
+        flaring: '合格 OK (扩口率 20%)',
+        grainSize: '7.5',
+        intergranularCorrosion: '合格 OK (E法无倾向)',
         ndt_et: '合格 OK (E3H 等级)',
         ndt_ut: '合格 OK (U2 等级)',
         ndt: '合格 OK / 合格 OK',
+        hydrostatic: '20 MPa 稳压 10s 无渗漏合格',
+        pressureTest: '20 MPa 稳压 10s 无渗漏合格',
+        surfaceQuality: '内外表面光洁平整合格',
       },
       additionalTests: sc.additionalTests as any,
-      surfaceQuality: '合格 OK',
+      surfaceQuality: '内外表面光洁平整合格',
     };
 
     const sessionDocument: SessionDocument = {
@@ -462,8 +624,8 @@ async function main() {
 
     const bboxes: FieldBBox[] = [
       { id: 'header_cert_no', page: 1, x: 50, y: 120, w: 200, h: 20, label: '证书编号', category: 'meta' },
-      { id: 'header_std', page: 1, x: 320, y: 120, w: 200, h: 20, label: '执行标准', category: 'meta' },
-      { id: 'header_grade', page: 1, x: 580, y: 120, w: 150, h: 20, label: '材料牌号', category: 'meta' },
+      { id: 'header_std', page: 1, x: 215, y: 120, w: 200, h: 20, label: '执行标准', category: 'meta' },
+      { id: 'header_grade', page: 1, x: 385, y: 120, w: 150, h: 20, label: '材料牌号', category: 'meta' },
     ];
 
     const cachedParseResult: CachedParseResult = {
@@ -509,7 +671,8 @@ async function main() {
     console.log(`  ✓ 已生成: ${sc.filename} (MD5: ${md5})`);
   }
 
-  console.log('[Script] 全部四维测试用例 PDF 与结构化缓存生成完毕！');
+  console.log('\n[Script] 全部四维测试用例 PDF 与结构化切片缓存生成完毕！元数据摘要：');
+  console.log(JSON.stringify(generatedList, null, 2));
 }
 
 main().catch(err => {

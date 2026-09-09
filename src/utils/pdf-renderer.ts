@@ -92,7 +92,11 @@ export async function renderPdfAndExtractText(file: File | Blob): Promise<PdfPre
     if (!pdfjs) return { pages: [], isTextBased: false, pageCount: 0 };
 
     const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+    const loadingTask = pdfjs.getDocument({
+      data: arrayBuffer,
+      cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+      cMapPacked: true,
+    });
     const pdf = await loadingTask.promise;
     const numPages = pdf.numPages;
     const pageImageUrls: string[] = [];
