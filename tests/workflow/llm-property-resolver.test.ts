@@ -7,9 +7,18 @@ import { LlmPropertyResolverService, LlmResolutionResult } from '@/workflow/serv
 describe('LLM Property Resolver (Tier 2 语义消歧与双模流转测试)', () => {
   const ruleStore = new FileRuleStore();
 
+  const noKeyService = new LlmPropertyResolverService({
+    id: 'no-key-test',
+    name: 'No Key Test',
+    provider: 'none',
+    baseUrl: 'https://none',
+    model: 'none',
+    apiKey: '',
+  });
+
   it('未配置 API Key 时非静默降级：长尾项目 (表面光洁度) 命中本地规则并打标 is_degraded: true', async () => {
-    // 默认 service 未配置有效 key，自动走降级分支
-    const resolver = createLlmPropertyResolverNode(ruleStore);
+    // 显式无 Key service，测试纯离线降级分支
+    const resolver = createLlmPropertyResolverNode(ruleStore, noKeyService);
 
     const mockState: Partial<QualityAuditState> = {
       options: {
@@ -64,7 +73,7 @@ describe('LLM Property Resolver (Tier 2 语义消歧与双模流转测试)', () 
   });
 
   it('未配置 API Key 时非静默降级：未知力学非标指标触发 PROPERTY_AMBIGUITY 人机协同挂起', async () => {
-    const resolver = createLlmPropertyResolverNode(ruleStore);
+    const resolver = createLlmPropertyResolverNode(ruleStore, noKeyService);
 
     const mockState: Partial<QualityAuditState> = {
       options: {
@@ -322,5 +331,77 @@ describe('LLM Property Resolver (Tier 2 语义消歧与双模流转测试)', () 
     // 验证 Trace 记录降级警告
     const trace = update.traces?.find(t => t.message.includes('降级告警'));
     expect(trace).toBeDefined();
+  });
+
+  it('启发式边界加严：proc_hydraulic (液压试验) 绝不误匹配粗糙度 (杜绝 hydRAulic 包含 RA 陷阱)', async () => {
+    const resolver = createLlmPropertyResolverNode(ruleStore, noKeyService);
+
+    const mockState: Partial<QualityAuditState> = {
+      options: {
+        forcedStandardId: 'NB/T 47019.5-2021',
+        forcedGradeKey: 'S32168',
+      },
+      normalizedCert: {
+        header: {
+          certificate_no: 'HYDRAULIC-TEST-CERT',
+          declared_standard: 'NB/T 47019.5-2021',
+          declared_grade: 'S32168',
+        },
+        test_records: [
+          {
+            category: 'process',
+            property_key: 'proc_hydraulic',
+            measured_value_raw: '20 MPa 稳压 10s 无渗漏合格',
+            measured_value_num: 20,
+            unit: 'MPa',
+          },
+        ],
+      },
+      unresolvedProperties: [
+        {
+          raw_name: 'proc_hydraulic',
+          raw_value: '20 MPa 稳压 10s 无渗漏合格',
+          raw_category: 'process',
+          unit: 'MPa',
+          source_tier: 'tier1',
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const update = await resolver(mockState as QualityAuditState);
+
+    // 验证 resolvedProperties 中绝不包含 surface_roughness
+    const matchedRoughness = update.resolvedProperties?.find(r => r.resolved_key === 'surface_roughness');
+    expect(matchedRoughness).toBeUndefined();
+
+    // 验证 normalizedCert 中 proc_hydraulic 绝不会被覆写为 surface_roughness
+    expect(update.normalizedCert?.test_records[0]?.property_key).not.toBe('surface_roughness');
+  });
+
+  it('LlmPropertyResolverService 密钥解析：从环境变量名解析真实 Token', () => {
+    const prevKey = process.env.KIMI_API_KEY;
+    try {
+      process.env.KIMI_API_KEY = 'sk-test-real-kimi-token';
+
+      // 模拟默认通过 config.json 读取 apiKey: "KIMI_API_KEY" 的情况
+      const service = new LlmPropertyResolverService({
+        id: 'standard',
+        name: '标准配置',
+        provider: 'Moonshot',
+        baseUrl: 'https://api.moonshot.cn/v1',
+        model: 'kimi-k2.7-code',
+        apiKey: 'KIMI_API_KEY',
+      });
+
+      expect(service.getResolvedApiKey()).toBe('sk-test-real-kimi-token');
+      expect(service.hasValidApiKey()).toBe(true);
+    } finally {
+      if (prevKey !== undefined) {
+        process.env.KIMI_API_KEY = prevKey;
+      } else {
+        delete process.env.KIMI_API_KEY;
+      }
+    }
   });
 });

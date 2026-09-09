@@ -57,7 +57,11 @@ export class LlmPropertyResolverService {
    */
   private loadActiveConfig(): void {
     try {
-      const configPath = path.resolve(process.cwd(), 'config/app-config.json');
+      let configPath = path.resolve(process.cwd(), 'config.json');
+      if (!fs.existsSync(configPath)) {
+        configPath = path.resolve(process.cwd(), 'config/app-config.json');
+      }
+
       if (fs.existsSync(configPath)) {
         const raw = fs.readFileSync(configPath, 'utf8');
         const parsed: AppConfig = JSON.parse(raw);
@@ -72,15 +76,15 @@ export class LlmPropertyResolverService {
         }
       }
     } catch (err: unknown) {
-      logger.warn('WORKFLOW', `[LlmPropertyResolverService] 加载 app-config.json 异常: ${String(err)}`);
+      logger.warn('WORKFLOW', `[LlmPropertyResolverService] 加载配置文件异常: ${String(err)}`);
     }
 
     // 环境变量优先覆盖
-    const envKey = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY;
+    const envKey = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY;
     const envBaseUrl = process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL;
     const envModel = process.env.OPENAI_MODEL || process.env.LLM_MODEL;
 
-    if (envKey) {
+    if (envKey && (process.env.OPENAI_API_KEY || process.env.LLM_API_KEY)) {
       this.activeConfig = {
         id: 'env-config',
         name: 'Environment LLM Config',
@@ -90,14 +94,48 @@ export class LlmPropertyResolverService {
         apiKey: envKey,
       };
     }
+
+    logger.info(
+      'WORKFLOW',
+      `[LlmPropertyResolverService] 配置装配就绪: model=${this.activeConfig?.model || 'none'}, provider=${this.activeConfig?.provider || 'none'}, hasValidKey=${this.hasValidApiKey()}`
+    );
+  }
+
+  /**
+   * 解析并获取当前活跃环境下的真实 API Token (支持环境变量名映射与 sk- 直通)
+   */
+  public getResolvedApiKey(): string {
+    if (!this.activeConfig) return '';
+    const envKeyName = this.activeConfig.apiKey?.trim();
+    // 1. 若配置项本身指定了环境变量名 (如 'KIMI_API_KEY')
+    const keyFromEnv = (envKeyName && process.env[envKeyName]) ||
+      process.env.KIMI_API_KEY ||
+      process.env.MOONSHOT_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.LLM_API_KEY;
+
+    if (keyFromEnv && keyFromEnv.trim().length > 0) {
+      return keyFromEnv.trim();
+    }
+
+    // 2. 若配置中的 apiKey 本身是合法的真实 token 字符串 (sk- 开头) 或单元测试 mock-key 以外的真实 key
+    if (envKeyName && envKeyName.startsWith('sk-')) {
+      return envKeyName;
+    }
+
+    // 3. 兼容单元测试中传入的显式非占位 key (如 'valid-test-key')
+    if (envKeyName && !['KIMI_API_KEY', 'OPENAI_API_KEY', 'sk-placeholder', 'YOUR_API_KEY', 'mock-key'].includes(envKeyName)) {
+      return envKeyName;
+    }
+
+    return '';
   }
 
   /**
    * 检查当前环境是否具备可调用的有效 API Key
    */
   public hasValidApiKey(): boolean {
-    if (!this.activeConfig) return false;
-    const key = this.activeConfig.apiKey?.trim();
+    const key = this.getResolvedApiKey();
     if (!key) return false;
     if (key === 'sk-placeholder' || key === 'YOUR_API_KEY' || key === 'mock-key') return false;
     return true;
@@ -119,7 +157,8 @@ export class LlmPropertyResolverService {
     standardId?: string,
     gradeKey?: string
   ): Promise<LlmResolutionResult> {
-    if (!this.hasValidApiKey() || !this.activeConfig) {
+    const resolvedKey = this.getResolvedApiKey();
+    if (!this.hasValidApiKey() || !this.activeConfig || !resolvedKey) {
       return {
         success: false,
         error: 'MISSING_OR_INVALID_API_KEY',
@@ -138,7 +177,7 @@ export class LlmPropertyResolverService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.activeConfig.apiKey}`,
+          'Authorization': `Bearer ${resolvedKey}`,
         },
         body: JSON.stringify({
           model: this.activeConfig.model,
@@ -153,7 +192,7 @@ export class LlmPropertyResolverService {
               content: prompt,
             },
           ],
-          temperature: 0.1,
+          temperature: 1, // Kimi 及主流推理模型严格要求 temperature: 1
           response_format: { type: 'json_object' },
         }),
         signal: controller.signal,

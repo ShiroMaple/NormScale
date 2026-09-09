@@ -10,6 +10,7 @@ import { PerformanceProfiler } from '../logger/profiler.ts';
 import { SessionDocument, BatchSpecimen } from '../types/session.ts';
 import { buildDynamicExtractionPrompt } from './prompt-builder.ts';
 import { ConfidenceEvaluator } from '../engine/confidence-evaluator.ts';
+import { PropertyKeyNormalizer } from '../normalizer/property-key-normalizer.ts';
 
 export interface LlmConfigItem {
   id: string;
@@ -506,65 +507,125 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
         },
       ];
 
-    const batches: BatchSpecimen[] = batchesData.map((b: any, idx: number) => ({
-      batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),
-      subBatchIndex: idx + 1,
-      certificateNo: header.certificate_no || header.certificateNo || '',
-      constructionNo: header.construction_number || header.constructionNo || '',
-      productName: header.material_product_name || header.productName || '',
-      grade: header.declared_grade || header.declaredGrade || '',
-      standard: header.declared_standard || header.declaredStandard || '',
-      supplier: header.supplier_name || header.supplierName || '',
-      dimensions: header.dimensions || b.dimensions || '',
-      heatNo: header.heat_number || header.heatNo || '',
-      packNo: header.heat_treatment_lot_number || header.packNo || '',
-      deliveryState: header.delivery_state || header.deliveryState || '',
-      verdict: 'UNAUDITED',
-      verdictSummary: '大模型结构化提取完成，待合规比对',
-      ocrConfidence: ConfidenceEvaluator.calculateOcrConfidence({
-        certificateNo: header.certificate_no || header.certificateNo || '',
+    const batches: BatchSpecimen[] = batchesData.map((b: any, idx: number) => {
+      // 依托 PropertyKeyNormalizer 规范解构检验指标键名，彻底消除蛇形/驼峰等异构命名不匹配
+      const processObj: any = {
+        flattening: '',
+        flaring: '',
+        intergranularCorrosion: '',
+        grainSize: '',
+        ndt_et: '',
+        ndt_ut: '',
+        ndt: '',
+        surfaceQuality: '',
+      };
+      let resolvedSurfaceQuality = '';
+
+      if (b.process && typeof b.process === 'object') {
+        for (const [key, val] of Object.entries(b.process)) {
+          if (val === undefined || val === null || String(val).trim() === '') continue;
+          const valStr = String(val);
+          const norm = PropertyKeyNormalizer.normalize(key, 'process', { measuredRaw: valStr });
+          switch (norm.property_key) {
+            case 'surface_quality':
+              processObj.surfaceQuality = valStr;
+              resolvedSurfaceQuality = valStr;
+              break;
+            case 'intergranular_corrosion':
+              processObj.intergranularCorrosion = valStr;
+              break;
+            case 'grain_size':
+              processObj.grainSize = valStr;
+              break;
+            case 'flattening_test':
+              processObj.flattening = valStr;
+              break;
+            case 'flaring_test':
+              processObj.flaring = valStr;
+              break;
+            case 'eddy_current_test':
+              processObj.ndt_et = valStr;
+              break;
+            case 'ultrasonic_test':
+              processObj.ndt_ut = valStr;
+              break;
+            default:
+              processObj[key] = valStr;
+              break;
+          }
+        }
+      }
+
+      // 检查批次根级属性 (如大模型直接将 surface_quality 挂在 batch 顶层)
+      for (const [key, val] of Object.entries(b)) {
+        if (key === 'chemical' || key === 'mechanical' || key === 'process' || key === 'additionalTests' || key === 'additional_tests') continue;
+        if (val === undefined || val === null || typeof val === 'object' || String(val).trim() === '') continue;
+        const norm = PropertyKeyNormalizer.normalize(key, 'process', { measuredRaw: String(val) });
+        if (norm.property_key === 'surface_quality' && !resolvedSurfaceQuality) {
+          processObj.surfaceQuality = String(val);
+          resolvedSurfaceQuality = String(val);
+        }
+      }
+
+      // ndt 汇总与兼容
+      if (!processObj.ndt && (processObj.ndt_et || processObj.ndt_ut)) {
+        processObj.ndt = [processObj.ndt_et, processObj.ndt_ut].filter(Boolean).join(' / ');
+      } else if (!processObj.ndt && b.process?.ndt) {
+        processObj.ndt = String(b.process.ndt);
+      }
+
+      return {
         batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),
+        subBatchIndex: idx + 1,
+        certificateNo: header.certificate_no || header.certificateNo || '',
+        constructionNo: header.construction_number || header.constructionNo || '',
+        productName: header.material_product_name || header.productName || '',
         grade: header.declared_grade || header.declaredGrade || '',
-        supplier: header.supplier_name || header.supplierName || '',
         standard: header.declared_standard || header.declaredStandard || '',
+        supplier: header.supplier_name || header.supplierName || '',
+        dimensions: header.dimensions || b.dimensions || '',
+        heatNo: header.heat_number || header.heatNo || '',
+        packNo: header.heat_treatment_lot_number || header.packNo || '',
+        deliveryState: header.delivery_state || header.deliveryState || '',
+        verdict: 'UNAUDITED',
+        verdictSummary: '大模型结构化提取完成，待合规比对',
+        ocrConfidence: ConfidenceEvaluator.calculateOcrConfidence({
+          certificateNo: header.certificate_no || header.certificateNo || '',
+          batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),
+          grade: header.declared_grade || header.declaredGrade || '',
+          supplier: header.supplier_name || header.supplierName || '',
+          standard: header.declared_standard || header.declaredStandard || '',
+          chemical: Array.isArray(b.chemical) ? b.chemical : [],
+          mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
+          process: processObj,
+          additionalTests: b.additional_tests || b.additionalTests || [],
+        } as any),
+        gradeMatchConfidence: ConfidenceEvaluator.calculateGradeMatchConfidence(
+          header.declared_grade || header.declaredGrade || '',
+          header.declared_standard || header.declaredStandard || ''
+        ),
         chemical: Array.isArray(b.chemical) ? b.chemical : [],
         mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
-        process: b.process || {},
-        additionalTests: b.additional_tests || b.additionalTests || [],
-      } as any),
-      gradeMatchConfidence: ConfidenceEvaluator.calculateGradeMatchConfidence(
-        header.declared_grade || header.declaredGrade || '',
-        header.declared_standard || header.declaredStandard || ''
-      ),
-      chemical: Array.isArray(b.chemical) ? b.chemical : [],
-      mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
-      process: {
-        flattening: b.process?.flattening || '',
-        flaring: b.process?.flaring || '',
-        intergranularCorrosion: b.process?.intergranularCorrosion || b.process?.intergranular_corrosion || '',
-        grainSize: b.process?.grainSize || b.process?.grain_size || '',
-        ndt_et: b.process?.ndt_et || (b.process?.ndt && b.process.ndt.includes('涡流') ? b.process.ndt : (b.process?.ndt || '')),
-        ndt_ut: b.process?.ndt_ut || (b.process?.ndt && b.process.ndt.includes('超声') ? b.process.ndt : ''),
-        ndt: b.process?.ndt || (b.process?.ndt_et && b.process?.ndt_ut ? `${b.process.ndt_et} / ${b.process.ndt_ut}` : (b.process?.ndt_et || b.process?.ndt_ut || '')),
-      },
-      additionalTests: Array.isArray(b.additional_tests)
-        ? b.additional_tests.map((item: any) => ({
-          key: String(item.key || `test_${Math.random().toString(36).slice(2, 7)}`),
-          name: String(item.name || item.key || '附加检验项目'),
-          category: item.category || 'process',
-          standard: item.standard || '',
-          result: String(item.result || item.value || ''),
-          value_num: typeof item.value_num === 'number' ? item.value_num : null,
-          unit: item.unit || '',
-          conclusion: item.conclusion || 'PASS',
-        }))
-        : (Array.isArray(b.additionalTests) ? b.additionalTests : []),
-      testMethods: (b.test_methods && typeof b.test_methods === 'object') ? b.test_methods : ((b.testMethods && typeof b.testMethods === 'object') ? b.testMethods : undefined),
-      surfaceQuality: b.surfaceQuality || b.process?.surfaceQuality || '',
-      reportNo: `QA-${Date.now().toString().slice(-8)}`,
-      sha256Hash: `SHA256-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
-      inspector: 'Auto-AI-Inspector',
-    }));
+        process: processObj,
+        additionalTests: Array.isArray(b.additional_tests)
+          ? b.additional_tests.map((item: any) => ({
+            key: String(item.key || `test_${Math.random().toString(36).slice(2, 7)}`),
+            name: String(item.name || item.key || '附加检验项目'),
+            category: item.category || 'process',
+            standard: item.standard || '',
+            result: String(item.result || item.value || ''),
+            value_num: typeof item.value_num === 'number' ? item.value_num : null,
+            unit: item.unit || '',
+            conclusion: item.conclusion || 'PASS',
+          }))
+          : (Array.isArray(b.additionalTests) ? b.additionalTests : []),
+        testMethods: (b.test_methods && typeof b.test_methods === 'object') ? b.test_methods : ((b.testMethods && typeof b.testMethods === 'object') ? b.testMethods : undefined),
+        surfaceQuality: resolvedSurfaceQuality,
+        reportNo: `QA-${Date.now().toString().slice(-8)}`,
+        sha256Hash: `SHA256-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+        inspector: 'Auto-AI-Inspector',
+      };
+    });
 
     const pagesList = pages || [];
 

@@ -196,6 +196,8 @@ export class CertificateNormalizer {
       category: propRes.category,
       property_key: propRes.property_key,
       sub_property: propRes.sub_property,
+      display_name: propRes.display_name,
+      raw_property_name: item.raw_property_name,
       measured_value_raw: String(item.raw_value ?? ''),
       test_method_standard: item.raw_test_method,
     };
@@ -265,6 +267,17 @@ export class CertificateNormalizer {
       record.qualitative_result = qualRes.qualitative_result;
       if (qualRes.claimed_level) {
         record.measured_level_claimed = qualRes.claimed_level;
+      }
+      // 对于未识别长尾项，若原始值中包含连续数值（如 0.33, 1.50, 20），同时提取数值和单位备用
+      if (item.raw_value !== undefined && item.raw_value !== null) {
+        const rawStr = String(item.raw_value).trim();
+        const numMatch = rawStr.match(/[-+]?[0-9]+(?:\.[0-9]+)?/);
+        if (numMatch && !isNaN(parseFloat(numMatch[0]))) {
+          record.measured_value_num = parseFloat(numMatch[0]);
+          if (item.raw_unit) {
+            record.unit = item.raw_unit;
+          }
+        }
       }
     }
 

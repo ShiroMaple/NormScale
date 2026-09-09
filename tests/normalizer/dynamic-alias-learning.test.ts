@@ -84,8 +84,8 @@ describe('动态别名自学习与质检经验反哺闭环测试 (Phase 4)', () 
     const batchNoRound1 = 'BATCH-R1';
     const batchNoRound2 = 'BATCH-R2';
 
-    // 构造包含未知力学项目的载荷
-    const customPropName = '特约微区拉伸极限极限强度';
+    // 构造包含未知力学项目的载荷 (高特异性非标项，大模型无法擅自对齐，触发 HITL)
+    const customPropName = '特种非标微区抗剪切断裂韧度K1C';
     const payloadRound1 = {
       header: {
         certificate_no: 'CERT-LOOP-01',
@@ -144,5 +144,5 @@ describe('动态别名自学习与质检经验反哺闭环测试 (Phase 4)', () 
     expect(tsItem).toBeDefined();
     expect(tsItem?.actual_value_text).toContain('560');
     expect(tsItem?.status).toBe('PASS');
-  });
+  }, 15000);
 });

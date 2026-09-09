@@ -118,6 +118,24 @@ export class ComplianceEngine {
       for (const rec of certificate.test_records) {
         if (!evaluatedPropertyKeys.has(rec.property_key)) {
           unmatchedRecords.push(rec);
+
+          // 核心治理：若特种非标项被质检工程师在 HITL 中裁定为不予认可/缺项否决，强制计入 itemResults 触发系统一票否决
+          if ((rec as any).is_rejected || rec.property_key === 'unrecognized_rejected_item') {
+            itemResults.push({
+              rule_id: `UNRECOGNIZED_REJECTED_${rec.property_key}`,
+              property_key: rec.property_key,
+              display_name: rec.display_name || rec.raw_property_name || '特种非标指标',
+              category: rec.category,
+              status: 'FAIL',
+              requirement_level: 'MANDATORY',
+              standard_requirement_text: '未经认可特种非标指标',
+              actual_value_text: rec.measured_value_raw || '--',
+              message: (rec as any).waiver_notes || '该特种非标指标经质检工程师裁定不予认可，按缺项否决处理',
+            });
+            if (collector) {
+              collector.addTrace('ENGINE', 'warn', `[特种非标否决] ${rec.display_name || rec.raw_property_name}: 质检工程师裁定不予认可，触发系统一票否决`);
+            }
+          }
         }
       }
       if (unmatchedRecords.length > 0 && collector) {
@@ -233,6 +251,24 @@ export class ComplianceEngine {
       for (const rec of certificate.test_records) {
         if (!evaluatedPropertyKeys.has(rec.property_key)) {
           unmatchedRecords.push(rec);
+
+          // 核心治理：若特种非标项被质检工程师在 HITL 中裁定为不予认可/缺项否决，强制计入 itemResults 触发系统一票否决
+          if ((rec as any).is_rejected || rec.property_key === 'unrecognized_rejected_item') {
+            itemResults.push({
+              rule_id: `UNRECOGNIZED_REJECTED_${rec.property_key}`,
+              property_key: rec.property_key,
+              display_name: rec.display_name || rec.raw_property_name || '特种非标指标',
+              category: rec.category,
+              status: 'FAIL',
+              requirement_level: 'MANDATORY',
+              standard_requirement_text: '未经认可特种非标指标',
+              actual_value_text: rec.measured_value_raw || '--',
+              message: (rec as any).waiver_notes || '该特种非标指标经质检工程师裁定不予认可，按缺项否决处理',
+            });
+            if (collector) {
+              collector.addTrace('ENGINE', 'warn', `[特种非标否决] ${rec.display_name || rec.raw_property_name}: 质检工程师裁定不予认可，触发系统一票否决`);
+            }
+          }
         }
       }
 

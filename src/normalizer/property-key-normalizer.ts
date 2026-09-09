@@ -125,7 +125,7 @@ export class PropertyKeyNormalizer {
       raw_alias: rawAlias,
       property_key: targetPropertyKey,
       category: inferredCategory,
-      display_name: displayName || targetPropertyKey,
+      display_name: displayName || (['special_protocol_item', 'unrecognized_rejected_item'].includes(targetPropertyKey) ? rawAlias : targetPropertyKey),
       learned_at: new Date().toISOString(),
       source: 'human_confirmed',
       source_cert_no: sourceCertNo || existing?.source_cert_no,
@@ -411,7 +411,12 @@ export class PropertyKeyNormalizer {
     }
 
     // (e) 冲击功 (Impact Absorbed Energy, AKV, KV2)
-    if (upperStr.includes('冲击') || upperStr.includes('AKV') || upperStr.includes('CHARPY')) {
+    // 注意：排除高阶非标力学参数（如断裂韧度 K1C、冲击韧度等长尾），交由 Tier 2 语义消歧/HITL
+    if (
+      !upperStr.includes('韧度') &&
+      !upperStr.includes('K1C') &&
+      (upperStr.includes('冲击') || upperStr.includes('AKV') || upperStr.includes('CHARPY'))
+    ) {
       return {
         raw_property_name: rawName,
         property_key: 'impact_absorbed_energy',
@@ -491,7 +496,7 @@ export class PropertyKeyNormalizer {
         is_known: true,
       };
     }
-    if (upperStr.includes('水压') || upperStr.includes('液压') || upperStr.includes('HYDROSTATIC')) {
+    if (upperStr.includes('水压') || upperStr.includes('液压') || upperStr.includes('HYDROSTATIC') || upperStr.includes('HYDRAULIC')) {
       return {
         raw_property_name: rawName,
         property_key: 'hydraulic_test',
@@ -500,7 +505,13 @@ export class PropertyKeyNormalizer {
         is_known: true,
       };
     }
-    if (upperStr.includes('致密性') || upperStr.includes('承压') || upperStr.includes('PRESSURETIGHTNESS')) {
+    if (
+      upperStr.includes('致密性') ||
+      upperStr.includes('承压') ||
+      upperStr.includes('PRESSURETIGHTNESS') ||
+      upperStr.includes('PRESSURETEST') ||
+      upperStr.includes('PRESSURE_TEST')
+    ) {
       return {
         raw_property_name: rawName,
         property_key: 'pressure_tightness',
@@ -511,12 +522,11 @@ export class PropertyKeyNormalizer {
     }
 
     // 7. 表面质量与几何尺寸
-    // (a) 表面粗糙度 (特异性优先，定量属性)
+    // (a) 表面粗糙度 (现行国家/行业标准法定规范词，定量属性)
     if (
-      /^(ROUGHNESS|RA|RZ|RQ|表面粗糙度|粗糙度|光洁度)/i.test(upperStr) ||
+      /^(ROUGHNESS|RA|RZ|RQ|表面粗糙度|粗糙度)/i.test(upperStr) ||
       upperStr.includes('粗糙度') ||
       upperStr.includes('ROUGHNESS') ||
-      upperStr.includes('光洁度') ||
       upperStr === 'RA' ||
       upperStr === 'RZ'
     ) {
@@ -531,7 +541,12 @@ export class PropertyKeyNormalizer {
     }
 
     // (b) 表面外观质量 (定性属性)
-    if (upperStr.includes('表面') || upperStr.includes('SURFACE') || upperStr.includes('外观')) {
+    // 注意：非标历史别名（如“表面光洁度”/finish）绝不在 Tier 1 字典提前已知化，交由 Tier 2 语义消歧
+    if (
+      !upperStr.includes('光洁') &&
+      !upperStr.includes('FINISH') &&
+      (upperStr.includes('表面') || upperStr.includes('SURFACE') || upperStr.includes('外观'))
+    ) {
       // 若伴随量纲或实测纯数值上下文，进行量纲感知纠偏
       if (context) {
         const cleanUnit = (context.unit || '').trim().toLowerCase();

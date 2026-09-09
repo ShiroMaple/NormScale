@@ -32,6 +32,12 @@ export function createDecisionAggregatorNode() {
 
     finalReport.audit_traces = collector.getTraces();
     finalReport.performance_metrics = collector.getPerformanceMetrics();
+    if (state.resolvedProperties && state.resolvedProperties.length > 0) {
+      (finalReport as any).resolved_properties = state.resolvedProperties;
+    }
+    if (state.humanCorrection) {
+      (finalReport as any).human_correction = state.humanCorrection;
+    }
 
     logger.info(
       'WORKFLOW',

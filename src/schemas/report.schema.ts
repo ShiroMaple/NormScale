@@ -154,5 +154,6 @@ export const AuditReportSchema = z.object({
   standard_compliance_verdict: z.enum(['PASS', 'FAIL', 'MANUAL_REVIEW']).optional(),
   agreement_compliance_verdict: z.enum(['PASS', 'FAIL', 'MANUAL_REVIEW', 'NOT_APPLICABLE']).optional(),
   statutory_risk_flag: z.boolean().optional(),
-});
+  resolved_properties: z.array(z.any()).optional(),
+}).passthrough();
 export type AuditReport = z.infer<typeof AuditReportSchema>;

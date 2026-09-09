@@ -71,6 +71,8 @@ export const TestRecordSchema = z.object({
   category: RuleCategorySchema.describe('检验技术类别 (chemical, mechanical, process, metallographic, corrosion, ndt, geometry)'),
   property_key: z.string().describe('指标唯一键名 (如 C, Si, Mn, P, S, Cr, Ni, Mo, Ti, Rm, Rp0.2, A, hardness, flattening, flaring, intergranularCorrosion, grainSize, ndt_et, ndt_ut)'),
   sub_property: z.string().optional().describe('子属性标尺/分项标号 (如 HRB, HBW, HV1, Rp0.2)'),
+  display_name: z.string().optional().describe('规范化展示名'),
+  raw_property_name: z.string().optional().describe('原始单据提取属性名'),
   sample_type: z.string().optional().describe('取样分析类型 (如 melt_analysis 熔炼分析, product_analysis 成品分析)'),
   sample_direction: z.string().optional().describe('试样截取方向 (如 longitudinal 纵向, transverse 横向)'),
   test_temperature_c: z.number().optional().describe('试验环境温度 (摄氏度 ℃，如 20, 350, -40)'),
@@ -81,7 +83,7 @@ export const TestRecordSchema = z.object({
   qualitative_result: z.string().optional().describe('定性试验结论 (如 PASS, FAIL, QUALIFIED, 合格, 无裂纹)'),
   measured_level_claimed: z.string().optional().describe('质保书声称的技术等级 (如 U2 超声二级, E3H 涡流等级, 7.0级 晶粒度)'),
   conclusion_text: z.string().optional().describe('检验结论或报告补充说明文本'),
-});
+}).passthrough();
 export type TestRecord = z.infer<typeof TestRecordSchema>;
 
 

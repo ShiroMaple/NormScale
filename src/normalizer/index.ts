@@ -37,3 +37,4 @@ export * from './property-key-normalizer';
 export * from './qualitative-normalizer';
 export * from './dimension-normalizer';
 export * from './certificate-normalizer';
+export * from './specimen-adapter';

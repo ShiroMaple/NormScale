@@ -1,4 +1,5 @@
 import { IRuleStore } from '../../repository/rule-store.interface.ts';
+import { FileRuleStore } from '../../repository/file-rule-store.ts';
 import { QualityAuditState, PropertyResolutionCandidate, HitlInterruptContext, WorkflowTokenUsage } from '../state.interface.ts';
 import { getSafeCollector } from '../trace-helper.ts';
 import { logger } from '../../logger/index.ts';
@@ -46,9 +47,27 @@ export function createLlmPropertyResolverNode(
       const declaredGrade = options?.forcedGradeKey || normalizedCert.header.declared_grade;
 
       let candidateRules: CandidateRuleItem[] = [];
-      if (ruleStore && declaredStd && declaredGrade) {
+      const store = ruleStore || new FileRuleStore();
+
+      if (state.compositeSlice?.evaluation_rules && state.compositeSlice.evaluation_rules.length > 0) {
+        candidateRules = state.compositeSlice.evaluation_rules.map(r => ({
+          key: r.property_key,
+          name: r.display_name,
+          category: r.category,
+          rule_type: r.rule_type,
+          unit: (r.criteria as Record<string, unknown>)?.['unit'] as string | undefined,
+        }));
+      } else if (state.matchedSlice?.evaluation_rules && state.matchedSlice.evaluation_rules.length > 0) {
+        candidateRules = state.matchedSlice.evaluation_rules.map(r => ({
+          key: r.property_key,
+          name: r.display_name,
+          category: r.category,
+          rule_type: r.rule_type,
+          unit: (r.criteria as Record<string, unknown>)?.['unit'] as string | undefined,
+        }));
+      } else if (declaredStd && declaredGrade) {
         try {
-          const slice = await ruleStore.resolveRuleSlice(declaredStd, declaredGrade);
+          const slice = await store.resolveRuleSlice(declaredStd, declaredGrade);
           if (slice && Array.isArray(slice.evaluation_rules)) {
             candidateRules = slice.evaluation_rules.map(r => ({
               key: r.property_key,
@@ -106,13 +125,25 @@ export function createLlmPropertyResolverNode(
 
                 // 同步升级 normalizedCert.test_records 中对应的记录
                 const targetIndex = updatedRecords.findIndex(
-                  r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key
+                  r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key || (r as any).raw_property_name === prop.raw_name
                 );
                 if (targetIndex >= 0 && updatedRecords[targetIndex]) {
+                  const currRec = updatedRecords[targetIndex]!;
+                  let numVal = currRec.measured_value_num;
+                  if (numVal === undefined || numVal === null) {
+                    const rawText = String(currRec.measured_value_raw ?? prop.raw_value ?? '').trim();
+                    const numMatch = rawText.match(/[-+]?[0-9]+(?:\.[0-9]+)?/);
+                    if (numMatch && !isNaN(parseFloat(numMatch[0]))) {
+                      numVal = parseFloat(numMatch[0]);
+                    }
+                  }
                   updatedRecords[targetIndex] = {
-                    ...updatedRecords[targetIndex]!,
+                    ...currRec,
                     property_key: targetRule.key,
                     category: targetRule.category as any,
+                    display_name: targetRule.name,
+                    measured_value_num: numVal,
+                    unit: currRec.unit || targetRule.unit,
                   };
                 }
 
@@ -155,7 +186,8 @@ export function createLlmPropertyResolverNode(
         ambiguousList = [];
 
         for (const prop of unresolvedProperties) {
-          const rawUpper = prop.raw_name.toUpperCase().replace(/[\s\-_]/g, '');
+          const rawName = prop.raw_name;
+          const rawUpper = rawName.toUpperCase().replace(/[\s\-_]/g, '');
           let bestMatch: (typeof candidateRules)[0] | undefined;
           let bestConfidence = 0.5;
           let reasoning = '本地启发式未在标准候选规则中找到强相关项';
@@ -164,9 +196,11 @@ export function createLlmPropertyResolverNode(
             const candKeyUpper = candidate.key.toUpperCase();
             const candNameUpper = candidate.name.toUpperCase();
 
-            // 粗糙度特异性 (含光洁度)
+            // 粗糙度特异性 (含光洁度): 加严词边界正则，杜绝在 HYDRAULIC 等单词内部误判 RA
+            const isRoughnessWordMatch = /(?:^|[^A-Za-z0-9])(RA|RZ|ROUGHNESS|SURFACE_FINISH|FINISH)(?:[^A-Za-z0-9]|$)/i.test(rawName);
+            const isRoughnessCnMatch = rawName.includes('粗糙') || rawName.includes('光洁');
             if (
-              (rawUpper.includes('粗糙') || rawUpper.includes('光洁') || rawUpper.includes('ROUGH') || rawUpper.includes('RA') || rawUpper.includes('RZ')) &&
+              (isRoughnessCnMatch || isRoughnessWordMatch) &&
               (candKeyUpper.includes('ROUGH') || candNameUpper.includes('粗糙度') || candNameUpper.includes('光洁度'))
             ) {
               bestMatch = candidate;
@@ -175,9 +209,11 @@ export function createLlmPropertyResolverNode(
               break;
             }
 
-            // 尺寸规格
+            // 尺寸规格: 加严词边界，杜绝子串冲突
+            const isDimensionWordMatch = /(?:^|[^A-Za-z0-9])(OD|WT|DIMENSION)(?:[^A-Za-z0-9]|$)/i.test(rawName);
+            const isDimensionCnMatch = rawName.includes('外径') || rawName.includes('壁厚') || rawName.includes('尺寸');
             if (
-              (rawUpper.includes('外径') || rawUpper.includes('壁厚') || rawUpper.includes('尺寸') || rawUpper.includes('OD') || rawUpper.includes('WT')) &&
+              (isDimensionCnMatch || isDimensionWordMatch) &&
               (candKeyUpper.includes('DIMENSION') || candNameUpper.includes('尺寸'))
             ) {
               bestMatch = candidate;
@@ -186,9 +222,11 @@ export function createLlmPropertyResolverNode(
               break;
             }
 
-            // 晶粒度
+            // 晶粒度: 加严词边界
+            const isGrainWordMatch = /(?:^|[^A-Za-z0-9])(GRAIN|GRAIN_?SIZE)(?:[^A-Za-z0-9]|$)/i.test(rawName);
+            const isGrainCnMatch = rawName.includes('晶粒');
             if (
-              (rawUpper.includes('晶粒') || rawUpper.includes('GRAIN')) &&
+              (isGrainCnMatch || isGrainWordMatch) &&
               (candKeyUpper.includes('GRAIN') || candNameUpper.includes('晶粒度'))
             ) {
               bestMatch = candidate;
@@ -197,8 +235,8 @@ export function createLlmPropertyResolverNode(
               break;
             }
 
-            // 包含名称匹配
-            if (candNameUpper.includes(rawUpper) || rawUpper.includes(candNameUpper)) {
+            // 包含名称匹配 (要求长度至少为 3，避免单字母短词虚假匹配)
+            if (rawUpper.length >= 3 && (candNameUpper.includes(rawUpper) || rawUpper.includes(candNameUpper))) {
               bestMatch = candidate;
               bestConfidence = 0.88;
               reasoning = `[本地规则降级] 字面语义高度重合匹配至标准规则 [${candidate.name}]`;
@@ -220,13 +258,25 @@ export function createLlmPropertyResolverNode(
             resolvedList.push(resolvedItem);
 
             const targetIndex = updatedRecords.findIndex(
-              r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key
+              r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key || (r as any).raw_property_name === prop.raw_name
             );
             if (targetIndex >= 0 && updatedRecords[targetIndex]) {
+              const currRec = updatedRecords[targetIndex]!;
+              let numVal = currRec.measured_value_num;
+              if (numVal === undefined || numVal === null) {
+                const rawText = String(currRec.measured_value_raw ?? prop.raw_value ?? '').trim();
+                const numMatch = rawText.match(/[-+]?[0-9]+(?:\.[0-9]+)?/);
+                if (numMatch && !isNaN(parseFloat(numMatch[0]))) {
+                  numVal = parseFloat(numMatch[0]);
+                }
+              }
               updatedRecords[targetIndex] = {
-                ...updatedRecords[targetIndex]!,
+                ...currRec,
                 property_key: bestMatch.key,
                 category: bestMatch.category as any,
+                display_name: bestMatch.name,
+                measured_value_num: numVal,
+                unit: currRec.unit || bestMatch.unit,
               };
             }
 
@@ -258,6 +308,7 @@ export function createLlmPropertyResolverNode(
             pending_fields: [criticalAmbiguous.raw_name],
             suggestions: criticalAmbiguous.resolved_key ? { [criticalAmbiguous.raw_name]: criticalAmbiguous.resolved_key } : undefined,
             property_ambiguity_details: criticalAmbiguous,
+            candidate_rules: candidateRules,
           };
           collector.addTrace('WORKFLOW', 'warn', `[人机协同请求] 字段 ${criticalAmbiguous.raw_name} 存在歧义，挂起等待复核`);
         }
