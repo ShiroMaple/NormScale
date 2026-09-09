@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { LlmConfigItem, AppConfig } from '@/extractor/openai-compatible-extractor.ts';
+import { LearnedAliasEntry } from '@/normalizer/property-key-normalizer.ts';
 
 export const AdminConsole: React.FC = () => {
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
@@ -9,6 +10,58 @@ export const AdminConsole: React.FC = () => {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [activeLogFilter, setActiveLogFilter] = useState<string>('ALL');
+
+  // 控制台子面板切换: 大模型配置 vs 自学习别名白盒知识库
+  const [consoleTab, setConsoleTab] = useState<'llm_config' | 'learned_aliases'>('llm_config');
+  const [aliases, setAliases] = useState<LearnedAliasEntry[]>([]);
+  const [aliasesLoading, setAliasesLoading] = useState<boolean>(false);
+  const [aliasSearch, setAliasSearch] = useState<string>('');
+  const [aliasCategoryFilter, setAliasCategoryFilter] = useState<string>('ALL');
+
+  // 拉取自学习别名白盒数据
+  const fetchAliases = useCallback(async () => {
+    setAliasesLoading(true);
+    try {
+      const res = await fetch('/api/admin/learned-aliases');
+      const data = await res.json();
+      if (data.success && data.data?.aliases) {
+        setAliases(data.data.aliases);
+      }
+    } catch (err: any) {
+      console.error('拉取自学习别名失败:', err);
+    } finally {
+      setAliasesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (consoleTab === 'learned_aliases') {
+      fetchAliases();
+    }
+  }, [consoleTab, fetchAliases]);
+
+  // 执行自学习别名操作 (撤销、恢复、删除)
+  const handleAliasAction = async (action: 'revoke' | 'restore' | 'delete', id?: string) => {
+    if (!id) return;
+    try {
+      const res = await fetch('/api/admin/learned-aliases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const actionLabel = action === 'revoke' ? '撤销' : action === 'restore' ? '恢复' : '物理删除';
+        setFeedback({ message: `条目已成功${actionLabel}，内存与磁盘已同步更新`, type: 'success' });
+        setTimeout(() => setFeedback(null), 3000);
+        fetchAliases();
+      } else {
+        setFeedback({ message: data.error || '操作失败', type: 'error' });
+      }
+    } catch (err: any) {
+      setFeedback({ message: `操作异常: ${err.message}`, type: 'error' });
+    }
+  };
 
   // 拉取服务端 config.json
   const fetchConfig = useCallback(async () => {
@@ -158,7 +211,242 @@ export const AdminConsole: React.FC = () => {
         </div>
       </div>
 
-      {isLoading ? (
+      {/* 控制台子面板切换 Tab */}
+      <div className="flex items-center gap-2 border-b border-outline-variant/40 pb-2">
+        <button
+          type="button"
+          onClick={() => setConsoleTab('llm_config')}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            consoleTab === 'llm_config'
+              ? 'bg-primary text-on-primary shadow-xs'
+              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base">neurology</span>
+          <span>大模型路由与参数设置</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setConsoleTab('learned_aliases')}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            consoleTab === 'learned_aliases'
+              ? 'bg-primary text-on-primary shadow-xs'
+              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base">auto_fix</span>
+          <span>动态别名白盒知识库</span>
+          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+            consoleTab === 'learned_aliases' ? 'bg-white/20 text-white' : 'bg-surface-container-highest dark:bg-surface-dark-highest text-on-surface-variant'
+          }`}>
+            {aliases.length}
+          </span>
+        </button>
+      </div>
+
+      {consoleTab === 'learned_aliases' ? (
+        /* 白盒自学习别名知识库面板 */
+        <div className="space-y-4">
+          {/* 指标与过滤检索条 */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-3.5 shadow-xs">
+              <span className="text-[11px] text-on-surface-variant font-medium">已沉淀映射总数</span>
+              <div className="text-xl font-bold text-on-surface dark:text-surface-bright font-mono mt-0.5">{aliases.length}</div>
+            </div>
+            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-3.5 shadow-xs">
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">当前活跃生效中</span>
+              <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+                {aliases.filter(a => a.status !== 'revoked').length}
+              </div>
+            </div>
+            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-3.5 shadow-xs">
+              <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">已人工撤销条目</span>
+              <div className="text-xl font-bold text-amber-600 dark:text-amber-400 font-mono mt-0.5">
+                {aliases.filter(a => a.status === 'revoked').length}
+              </div>
+            </div>
+            <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-3.5 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] text-on-surface-variant font-medium">知识飞轮状态</span>
+                <div className="text-xs font-bold text-primary dark:text-primary-fixed-dim mt-0.5">Tier 1 秒级直通已启用</div>
+              </div>
+              <button
+                type="button"
+                onClick={fetchAliases}
+                disabled={aliasesLoading}
+                className="p-1.5 rounded-lg border border-outline-variant/50 hover:bg-surface-container-high cursor-pointer text-on-surface-variant"
+                title="刷新列表"
+              >
+                <span className={`material-symbols-outlined text-base ${aliasesLoading ? 'animate-spin' : ''}`}>refresh</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 搜索与过滤工具栏 */}
+          <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-1 max-w-md">
+              <span className="material-symbols-outlined text-on-surface-variant text-base">search</span>
+              <input
+                type="text"
+                value={aliasSearch}
+                onChange={e => setAliasSearch(e.target.value)}
+                placeholder="搜索原始非标名称、标准规则键名或类别..."
+                className="w-full bg-transparent border-none text-xs text-on-surface dark:text-surface-bright focus:outline-none"
+              />
+              {aliasSearch && (
+                <button
+                  type="button"
+                  onClick={() => setAliasSearch('')}
+                  className="text-on-surface-variant hover:text-on-surface text-xs cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-on-surface-variant text-[11px]">大类筛选:</span>
+              <select
+                value={aliasCategoryFilter}
+                onChange={e => setAliasCategoryFilter(e.target.value)}
+                className="border border-outline-variant/60 dark:border-border-dark rounded-lg bg-surface-container-low dark:bg-surface-dark-low py-1 px-2 text-xs text-on-surface dark:text-surface-bright focus:outline-none"
+              >
+                <option value="ALL">全部大类</option>
+                <option value="chemical">化学成分 (chemical)</option>
+                <option value="mechanical">力学性能 (mechanical)</option>
+                <option value="surface">表面粗糙/外观 (surface)</option>
+                <option value="metallographic">金相晶粒度 (metallographic)</option>
+                <option value="geometric">几何尺寸 (geometric)</option>
+                <option value="process">工艺性能 (process)</option>
+                <option value="ndt">无损检测 (ndt)</option>
+                <option value="other">其他非标 (other)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 表格呈现 */}
+          <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark text-[11px] text-on-surface-variant font-bold">
+                    <th className="px-3.5 py-2.5">质保书原始非标表述 (Raw Alias)</th>
+                    <th className="px-3.5 py-2.5">对齐标准规则键名 (Target Key)</th>
+                    <th className="px-3.5 py-2.5">检验大类</th>
+                    <th className="px-3.5 py-2.5">来源质保书/用例</th>
+                    <th className="px-3.5 py-2.5">沉淀时间</th>
+                    <th className="px-3.5 py-2.5">状态</th>
+                    <th className="px-3.5 py-2.5 text-right">白盒操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/30 dark:divide-border-dark">
+                  {aliasesLoading ? (
+                    <tr>
+                      <td colSpan={7} className="px-3.5 py-8 text-center text-on-surface-variant">
+                        <span className="material-symbols-outlined text-xl animate-spin text-primary mr-1 align-middle">progress_activity</span>
+                        <span>正在加载自学习别名知识库...</span>
+                      </td>
+                    </tr>
+                  ) : aliases.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-3.5 py-8 text-center text-on-surface-variant">
+                        <span className="material-symbols-outlined text-2xl text-on-surface-variant/60 mb-1 block">inbox</span>
+                        <span>暂无自学习别名沉淀。当质检工程师在 HITL 抽屉确认非标映射时，将自动沉淀至此处。</span>
+                      </td>
+                    </tr>
+                  ) : (
+                    aliases
+                      .filter(item => {
+                        const matchCat = aliasCategoryFilter === 'ALL' || item.category === aliasCategoryFilter;
+                        const matchSearch =
+                          !aliasSearch ||
+                          item.raw_alias.toLowerCase().includes(aliasSearch.toLowerCase()) ||
+                          item.property_key.toLowerCase().includes(aliasSearch.toLowerCase()) ||
+                          (item.display_name && item.display_name.toLowerCase().includes(aliasSearch.toLowerCase()));
+                        return matchCat && matchSearch;
+                      })
+                      .map(item => {
+                        const isRevoked = item.status === 'revoked';
+                        return (
+                          <tr
+                            key={item.id || item.raw_alias}
+                            className={`hover:bg-surface-container-high/40 transition-colors ${
+                              isRevoked ? 'opacity-60 bg-surface-container-high/20' : ''
+                            }`}
+                          >
+                            <td className="px-3.5 py-2.5 font-bold font-mono text-on-surface dark:text-surface-bright">
+                              {item.raw_alias}
+                            </td>
+                            <td className="px-3.5 py-2.5 font-mono text-primary dark:text-primary-fixed-dim">
+                              {item.property_key}
+                              {item.display_name && item.display_name !== item.property_key && (
+                                <span className="text-[10px] text-on-surface-variant ml-1">({item.display_name})</span>
+                              )}
+                            </td>
+                            <td className="px-3.5 py-2.5">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-container-high font-mono">
+                                {item.category}
+                              </span>
+                            </td>
+                            <td className="px-3.5 py-2.5 text-on-surface-variant font-mono text-[11px]">
+                              {item.source_cert_no || '质检员人工确认'}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-on-surface-variant text-[11px] font-mono">
+                              {item.learned_at ? new Date(item.learned_at).toLocaleString() : '-'}
+                            </td>
+                            <td className="px-3.5 py-2.5">
+                              {isRevoked ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold">
+                                  已撤销 (失效)
+                                </span>
+                              ) : (
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold">
+                                  生效中 (Tier 1)
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-right space-x-2">
+                              {isRevoked ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAliasAction('restore', item.id)}
+                                  className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
+                                >
+                                  恢复生效
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAliasAction('revoke', item.id)}
+                                  className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-bold cursor-pointer"
+                                  title="撤销后该别名不再参与 Tier 1 自动判定"
+                                >
+                                  撤销映射
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`确定彻底删除别名 [${item.raw_alias}] 吗？`)) {
+                                    handleAliasAction('delete', item.id);
+                                  }
+                                }}
+                                className="text-xs text-red-500 hover:underline cursor-pointer"
+                              >
+                                删除
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : isLoading ? (
         <div className="h-64 flex flex-col items-center justify-center text-on-surface-variant gap-2 text-xs">
           <span className="material-symbols-outlined text-3xl animate-spin text-primary">progress_activity</span>
           <span>正在拉取系统配置...</span>

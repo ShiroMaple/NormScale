@@ -30,12 +30,15 @@ export interface NormalizationContext {
 
 /** 动态自学习别名字典条目 */
 export interface LearnedAliasEntry {
+  id?: string;
   raw_alias: string;
   property_key: string;
   category: RuleCategory;
   display_name?: string;
   learned_at?: string;
   source?: 'human_confirmed' | 'llm_auto_promoted';
+  source_cert_no?: string;
+  status?: 'active' | 'revoked';
 }
 
 /**
@@ -83,7 +86,12 @@ export class PropertyKeyNormalizer {
           for (const item of parsed) {
             if (item.raw_alias && item.property_key) {
               const cleanKey = item.raw_alias.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '');
-              this.learnedAliasesMap.set(cleanKey, item);
+              const entry: LearnedAliasEntry = {
+                ...item,
+                id: item.id || `alias_${Buffer.from(cleanKey).toString('hex').substring(0, 12)}`,
+                status: item.status || 'active',
+              };
+              this.learnedAliasesMap.set(cleanKey, entry);
             }
           }
         }
@@ -102,21 +110,26 @@ export class PropertyKeyNormalizer {
     targetPropertyKey: string,
     category?: RuleCategory,
     displayName?: string,
-    persist: boolean = true
-  ): void {
+    persist: boolean = true,
+    sourceCertNo?: string
+  ): LearnedAliasEntry {
     if (!this.isInitialized) {
       this.initLearnedAliases();
     }
 
     const cleanKey = rawAlias.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '');
     const inferredCategory = category || this.inferCategoryFromPropertyKey(targetPropertyKey);
+    const existing = this.learnedAliasesMap.get(cleanKey);
     const entry: LearnedAliasEntry = {
+      id: existing?.id || `alias_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       raw_alias: rawAlias,
       property_key: targetPropertyKey,
       category: inferredCategory,
       display_name: displayName || targetPropertyKey,
       learned_at: new Date().toISOString(),
       source: 'human_confirmed',
+      source_cert_no: sourceCertNo || existing?.source_cert_no,
+      status: 'active',
     };
 
     this.learnedAliasesMap.set(cleanKey, entry);
@@ -124,6 +137,71 @@ export class PropertyKeyNormalizer {
     if (persist) {
       this.saveLearnedAliasesToFile();
     }
+
+    return entry;
+  }
+
+  /**
+   * 获取所有已沉淀自学习别名（用于白盒化审阅与管理）
+   */
+  public static listAllLearnedAliases(): LearnedAliasEntry[] {
+    if (!this.isInitialized) {
+      this.initLearnedAliases();
+    }
+    return Array.from(this.learnedAliasesMap.values());
+  }
+
+  /**
+   * 撤销指定的已学习别名（软撤销，状态变为 revoked，不参与 Tier 1 判定）
+   */
+  public static revokeLearnedAlias(idOrAlias: string): boolean {
+    if (!this.isInitialized) {
+      this.initLearnedAliases();
+    }
+    for (const [cleanKey, item] of this.learnedAliasesMap.entries()) {
+      if (item.id === idOrAlias || item.raw_alias === idOrAlias || cleanKey === idOrAlias.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '')) {
+        item.status = 'revoked';
+        this.learnedAliasesMap.set(cleanKey, item);
+        this.saveLearnedAliasesToFile();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 恢复被撤销的已学习别名（重新激活为 active）
+   */
+  public static restoreLearnedAlias(idOrAlias: string): boolean {
+    if (!this.isInitialized) {
+      this.initLearnedAliases();
+    }
+    for (const [cleanKey, item] of this.learnedAliasesMap.entries()) {
+      if (item.id === idOrAlias || item.raw_alias === idOrAlias || cleanKey === idOrAlias.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '')) {
+        item.status = 'active';
+        this.learnedAliasesMap.set(cleanKey, item);
+        this.saveLearnedAliasesToFile();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 物理删除指定的自学习别名记录
+   */
+  public static deleteLearnedAlias(idOrAlias: string): boolean {
+    if (!this.isInitialized) {
+      this.initLearnedAliases();
+    }
+    for (const [cleanKey, item] of this.learnedAliasesMap.entries()) {
+      if (item.id === idOrAlias || item.raw_alias === idOrAlias || cleanKey === idOrAlias.toUpperCase().replace(/[\s\-_/():（）\[\]]/g, '')) {
+        this.learnedAliasesMap.delete(cleanKey);
+        this.saveLearnedAliasesToFile();
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -222,7 +300,7 @@ export class PropertyKeyNormalizer {
       this.initLearnedAliases();
     }
     const learned = this.learnedAliasesMap.get(upperStr);
-    if (learned) {
+    if (learned && learned.status !== 'revoked') {
       return {
         raw_property_name: rawName,
         property_key: learned.property_key,

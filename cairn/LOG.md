@@ -4,6 +4,18 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-09 · Tier 2 大模型长尾消歧真实接入、非静默降级与自学习经验白盒管理
+
+- Tier 2 受限大模型消歧与开销透传 (`llm-property-resolver.service.ts`, `llm-property-resolver.node.ts`):
+  1. 封闭候选池与受限提示词：以标准切片规则池为候选集调用大模型结构化消歧；
+  2. 0.85 严格置信度红线：>=0.85 升级回流 Tier 1 重算（Case 2/3），<0.85 挂起 HITL（Case 4）；
+  3. 真实 Token 捕获并累加至状态机 `tokenUsage`，流式透传至 Session 开销大盘。
+- 非静默降级防线与前端可视化感知 (`WaterfallWorkbench.tsx`, `state.interface.ts`):
+  1. 未配 Key、超时或异常时平滑降级至本地启发式规则，矩阵行贴附「本地规则降级」徽标，Trace 记录 WARN 告警。
+- 知识飞轮白盒化管理 (`property-key-normalizer.ts`, `admin/learned-aliases/route.ts`, `AdminConsole.tsx`):
+  1. 管理控制台新增「动态别名白盒知识库」专区，表格展示沉淀别名，支持一键审阅、撤销与物理删除，内存与磁盘秒级联动。
+- 质量门禁: 48 个测试套件 238 个测试 100% 绿色通过，`tsc --noEmit` 0 错误。详见 `cairn/langgraph-orchestration-and-fixtures.md`。
+
 ## 2026-09-08 · 首页专测矩阵原件载入待处理队列与按需缓存种子双模流转
 
 - 专测原件装载与统一流转流水线 (`WaterfallWorkbench.tsx`):

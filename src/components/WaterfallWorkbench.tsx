@@ -211,6 +211,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     stage: 'idle' | 'tier1_evaluating' | 'tier1_ready' | 'tier2_resolving' | 'hitl_pending' | 'completed' | 'error';
     report?: AuditReport;
     pendingProperties?: PropertyResolutionCandidate[];
+    resolvedProperties?: PropertyResolutionCandidate[];
     hitlContext?: HitlInterruptContext;
     error?: string;
     taskId?: string;
@@ -1506,6 +1507,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   stage: 'completed',
                   report: data.finalReport,
                   pendingProperties: [],
+                  resolvedProperties: data.resolvedProperties || [],
                   taskId: data.taskId,
                 },
               }));
@@ -1596,6 +1598,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                   stage: 'completed',
                   report: data.finalReport,
                   pendingProperties: [],
+                  resolvedProperties: prev[batch.batchNo]?.resolvedProperties || [],
                   taskId: data.taskId,
                 },
               }));
@@ -4484,6 +4487,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                       };
                     }
 
+                    // 检查是否属于 Tier 2 消歧产出的指标
+                    const currentBatchPres = batchPresentationMap[currentBatch.batchNo];
+                    const matchedResolved = currentBatchPres?.resolvedProperties?.find(
+                      rp => rp.resolved_key === item.property_key
+                    );
+
+                    if (!detailTag && matchedResolved) {
+                      if (matchedResolved.is_degraded) {
+                        detailTag = {
+                          label: '本地规则降级',
+                          color: 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700',
+                        };
+                      } else {
+                        detailTag = {
+                          label: 'AI意图对齐',
+                          color: 'bg-indigo-100 dark:bg-indigo-950/70 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700',
+                        };
+                      }
+                    }
+
                     const measuredDisplay = item.actual_value_text
                       || (item.measured_value_num !== null && item.measured_value_num !== undefined ? String(item.measured_value_num) : (item.measured_value_raw || '--'));
 
@@ -4563,7 +4586,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                     }
 
                     // 组织【判定逻辑 / 审核说明】：装入完整判定逻辑阐述 (item.message)
-                    const logicExplanation = item.message || (isPass ? '实测数据符合标准技术规范要求' : '实测数据未满足标准要求');
+                    let logicExplanation = item.message || (isPass ? '实测数据符合标准技术规范要求' : '实测数据未满足标准要求');
+                    if (matchedResolved) {
+                      if (matchedResolved.is_degraded) {
+                        logicExplanation = `[本地规则降级] 字段 [${matchedResolved.raw_name}] 经本地启发式规则对齐；${logicExplanation}`;
+                      } else {
+                        logicExplanation = `[AI意图对齐: ${matchedResolved.model_name || '大模型'}] ${matchedResolved.reasoning}；${logicExplanation}`;
+                      }
+                    }
 
                     return {
                       id: item.rule_id || `rule_${item.property_key}_${idx}`,

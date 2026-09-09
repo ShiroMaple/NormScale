@@ -73,6 +73,10 @@ export interface PropertyResolutionCandidate {
   confidence: number;
   reasoning?: string;
   is_standard_rule?: boolean;
+  /** 是否属于模型调用失败后的本地启发式降级产物 */
+  is_degraded?: boolean;
+  /** 负责对齐的大模型名称 (如 'deepseek-v3', 'moonshot-v1') */
+  model_name?: string;
 }
 
 /** 人机协同 (HITL) 中断挂起上下文 */

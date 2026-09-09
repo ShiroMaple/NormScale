@@ -1,7 +1,8 @@
 import { IRuleStore } from '../../repository/rule-store.interface.ts';
-import { QualityAuditState, PropertyResolutionCandidate, HitlInterruptContext } from '../state.interface.ts';
+import { QualityAuditState, PropertyResolutionCandidate, HitlInterruptContext, WorkflowTokenUsage } from '../state.interface.ts';
 import { getSafeCollector } from '../trace-helper.ts';
 import { logger } from '../../logger/index.ts';
+import { LlmPropertyResolverService, CandidateRuleItem } from '../services/llm-property-resolver.service.ts';
 
 /**
  * ============================================================================
@@ -11,11 +12,18 @@ import { logger } from '../../logger/index.ts';
  * 职责：
  * 针对 Tier 1 确定性规则无法高置信匹配的长尾属性 (unresolvedProperties)，
  * 从当前执行标准切片的合法规则池中提取封闭候选集，执行受限意图对齐与语义消歧：
- * 1. 置信度 >= 0.85：自动升级为规范检验项并合并入 normalizedCert；
- * 2. 置信度 < 0.85：打标进入待决池，并根据策略触发人机协同 (HITL) 中断挂起。
+ * 1. 优先调用大模型 (OpenAI 兼容协议) 进行受限语义推理与置信度评分；
+ * 2. 置信度 >= 0.85：自动升级为规范检验项并合并入 normalizedCert (回流 Tier 1 重算数值)；
+ * 3. 置信度 < 0.85：打标进入待决池，并根据策略触发人机协同 (HITL) 中断挂起；
+ * 4. 健壮防线：未配置 Key、网络超时或模型报错时，非静默降级至本地启发式规则，并在前端与 Trace 显著打标。
  * ============================================================================
  */
-export function createLlmPropertyResolverNode(ruleStore?: IRuleStore) {
+export function createLlmPropertyResolverNode(
+  ruleStore?: IRuleStore,
+  customService?: LlmPropertyResolverService
+) {
+  const resolverService = customService || new LlmPropertyResolverService();
+
   return async function llmPropertyResolverNode(state: QualityAuditState): Promise<Partial<QualityAuditState>> {
     const { unresolvedProperties, normalizedCert, options, humanCorrection } = state;
     const collector = getSafeCollector(state);
@@ -37,7 +45,7 @@ export function createLlmPropertyResolverNode(ruleStore?: IRuleStore) {
       const declaredStd = options?.forcedStandardId || normalizedCert.header.declared_standard;
       const declaredGrade = options?.forcedGradeKey || normalizedCert.header.declared_grade;
 
-      let candidateRules: Array<{ key: string; name: string; category: string; rule_type: string; unit?: string }> = [];
+      let candidateRules: CandidateRuleItem[] = [];
       if (ruleStore && declaredStd && declaredGrade) {
         try {
           const slice = await ruleStore.resolveRuleSlice(declaredStd, declaredGrade);
@@ -55,108 +63,190 @@ export function createLlmPropertyResolverNode(ruleStore?: IRuleStore) {
         }
       }
 
-      const resolvedList: PropertyResolutionCandidate[] = [];
-      const ambiguousList: PropertyResolutionCandidate[] = [];
+      let resolvedList: PropertyResolutionCandidate[] = [];
+      let ambiguousList: PropertyResolutionCandidate[] = [];
       const updatedRecords = [...normalizedCert.test_records];
+      let stepTokenUsage: WorkflowTokenUsage | undefined;
+      let usedLlm = false;
 
-      // 2. 逐项执行语义匹配推断 (先执行受限启发式语义消歧，兼具离线安全与毫秒级延迟)
-      for (const prop of unresolvedProperties) {
-        const rawUpper = prop.raw_name.toUpperCase().replace(/[\s\-_]/g, '');
-        let bestMatch: (typeof candidateRules)[0] | undefined;
-        let bestConfidence = 0.5;
-        let reasoning = '未在标准候选规则中找到强相关项';
-
-        // (a) 在切片候选规则池中精确/语义相似度检索
-        for (const candidate of candidateRules) {
-          const candKeyUpper = candidate.key.toUpperCase();
-          const candNameUpper = candidate.name.toUpperCase();
-
-          // 粗糙度特异性 (含光洁度)
-          if (
-            (rawUpper.includes('粗糙') || rawUpper.includes('光洁') || rawUpper.includes('ROUGH') || rawUpper.includes('RA') || rawUpper.includes('RZ')) &&
-            (candKeyUpper.includes('ROUGH') || candNameUpper.includes('粗糙度') || candNameUpper.includes('光洁度'))
-          ) {
-            bestMatch = candidate;
-            bestConfidence = 0.95;
-            reasoning = `质保书字段 [${prop.raw_name}] 匹配标准粗糙度定量规则 [${candidate.name}]`;
-            break;
-          }
-
-          // 尺寸规格
-          if (
-            (rawUpper.includes('外径') || rawUpper.includes('壁厚') || rawUpper.includes('尺寸') || rawUpper.includes('OD') || rawUpper.includes('WT')) &&
-            (candKeyUpper.includes('DIMENSION') || candNameUpper.includes('尺寸'))
-          ) {
-            bestMatch = candidate;
-            bestConfidence = 0.92;
-            reasoning = `质保书几何规格字段匹配标准尺寸规则 [${candidate.name}]`;
-            break;
-          }
-
-          // 晶粒度
-          if (
-            (rawUpper.includes('晶粒') || rawUpper.includes('GRAIN')) &&
-            (candKeyUpper.includes('GRAIN') || candNameUpper.includes('晶粒度'))
-          ) {
-            bestMatch = candidate;
-            bestConfidence = 0.95;
-            reasoning = `质保书字段 [${prop.raw_name}] 匹配金相晶粒度标准规则 [${candidate.name}]`;
-            break;
-          }
-
-          // 包含名称匹配
-          if (candNameUpper.includes(rawUpper) || rawUpper.includes(candNameUpper)) {
-            bestMatch = candidate;
-            bestConfidence = 0.88;
-            reasoning = `字面语义高度重合匹配至标准规则 [${candidate.name}]`;
-            break;
-          }
-        }
-
-        // 判定裁决分支
-        if (bestMatch && bestConfidence >= 0.85) {
-          const resolvedItem: PropertyResolutionCandidate = {
-            ...prop,
-            source_tier: 'tier2',
-            resolved_key: bestMatch.key,
-            resolved_category: bestMatch.category,
-            confidence: bestConfidence,
-            reasoning,
-            is_standard_rule: true,
-          };
-          resolvedList.push(resolvedItem);
-
-          // 同步升级 normalizedCert.test_records 中对应的记录
-          const targetIndex = updatedRecords.findIndex(
-            r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key
+      // 2. 尝试调用真实大模型服务进行受限候选集意图裁决
+      if (resolverService.hasValidApiKey()) {
+        try {
+          const llmRes = await resolverService.resolveProperties(
+            unresolvedProperties,
+            candidateRules,
+            declaredStd,
+            declaredGrade
           );
-          if (targetIndex >= 0 && updatedRecords[targetIndex]) {
-            updatedRecords[targetIndex] = {
-              ...updatedRecords[targetIndex]!,
-              property_key: bestMatch.key,
-              category: bestMatch.category as any,
-            };
+
+          if (llmRes.success && Array.isArray(llmRes.resolutions) && llmRes.resolutions.length > 0) {
+            usedLlm = true;
+            stepTokenUsage = llmRes.tokenUsage;
+            const modelName = llmRes.modelName || resolverService.getModelName();
+
+            for (const prop of unresolvedProperties) {
+              const matchedRes = llmRes.resolutions.find(r => r.raw_name === prop.raw_name);
+              const targetRule = matchedRes?.resolved_key
+                ? candidateRules.find(c => c.key === matchedRes.resolved_key)
+                : undefined;
+
+              if (targetRule && matchedRes && matchedRes.confidence >= 0.85) {
+                const resolvedItem: PropertyResolutionCandidate = {
+                  ...prop,
+                  source_tier: 'tier2',
+                  resolved_key: targetRule.key,
+                  resolved_category: targetRule.category,
+                  confidence: matchedRes.confidence,
+                  reasoning: matchedRes.reasoning || `通过大模型 (${modelName}) 意图对齐至标准规则 [${targetRule.name}]`,
+                  is_standard_rule: true,
+                  is_degraded: false,
+                  model_name: modelName,
+                };
+                resolvedList.push(resolvedItem);
+
+                // 同步升级 normalizedCert.test_records 中对应的记录
+                const targetIndex = updatedRecords.findIndex(
+                  r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key
+                );
+                if (targetIndex >= 0 && updatedRecords[targetIndex]) {
+                  updatedRecords[targetIndex] = {
+                    ...updatedRecords[targetIndex]!,
+                    property_key: targetRule.key,
+                    category: targetRule.category as any,
+                  };
+                }
+
+                collector.addTrace(
+                  'WORKFLOW',
+                  'info',
+                  `[大模型消歧成功] ${prop.raw_name} -> ${targetRule.name} (置信度 ${(matchedRes.confidence * 100).toFixed(0)}%, 模型: ${modelName})`
+                );
+                logger.info('WORKFLOW', `[LLM Property Resolver] 大模型 (${modelName}) 成功将 [${prop.raw_name}] 对齐至 [${targetRule.name}]`);
+              } else {
+                ambiguousList.push({
+                  ...prop,
+                  confidence: matchedRes?.confidence ?? 0.5,
+                  reasoning: matchedRes?.reasoning || '大模型评估当前标准无匹配规则或置信度不足',
+                  is_standard_rule: false,
+                  is_degraded: false,
+                  model_name: modelName,
+                });
+                logger.warn('WORKFLOW', `[LLM Property Resolver] 字段 [${prop.raw_name}] 大模型置信度较低或未匹配，保留于待决池`);
+              }
+            }
+          } else {
+            logger.warn('WORKFLOW', `[LLM Property Resolver] 模型请求返回未成功: ${llmRes.error || '未知原因'}，准备平滑降级`);
+          }
+        } catch (llmErr: unknown) {
+          logger.warn('WORKFLOW', `[LLM Property Resolver] 模型调用出现异常: ${String(llmErr)}，准备平滑降级`);
+        }
+      }
+
+      // 3. 若大模型未启用、未配置 Key 或执行失败：非静默降级为本地启发式规则
+      if (!usedLlm) {
+        collector.addTrace(
+          'WORKFLOW',
+          'warn',
+          `[Tier 2 降级告警] 未检测到有效大模型配置或调用失败，已自动非静默降级至本地启发式规则处理`
+        );
+        logger.warn('WORKFLOW', `[LLM Property Resolver] 非静默降级至本地启发式规则匹配 (Token 消耗为 0)`);
+
+        resolvedList = [];
+        ambiguousList = [];
+
+        for (const prop of unresolvedProperties) {
+          const rawUpper = prop.raw_name.toUpperCase().replace(/[\s\-_]/g, '');
+          let bestMatch: (typeof candidateRules)[0] | undefined;
+          let bestConfidence = 0.5;
+          let reasoning = '本地启发式未在标准候选规则中找到强相关项';
+
+          for (const candidate of candidateRules) {
+            const candKeyUpper = candidate.key.toUpperCase();
+            const candNameUpper = candidate.name.toUpperCase();
+
+            // 粗糙度特异性 (含光洁度)
+            if (
+              (rawUpper.includes('粗糙') || rawUpper.includes('光洁') || rawUpper.includes('ROUGH') || rawUpper.includes('RA') || rawUpper.includes('RZ')) &&
+              (candKeyUpper.includes('ROUGH') || candNameUpper.includes('粗糙度') || candNameUpper.includes('光洁度'))
+            ) {
+              bestMatch = candidate;
+              bestConfidence = 0.95;
+              reasoning = `[本地规则降级] 质保书字段 [${prop.raw_name}] 匹配标准粗糙度定量规则 [${candidate.name}]`;
+              break;
+            }
+
+            // 尺寸规格
+            if (
+              (rawUpper.includes('外径') || rawUpper.includes('壁厚') || rawUpper.includes('尺寸') || rawUpper.includes('OD') || rawUpper.includes('WT')) &&
+              (candKeyUpper.includes('DIMENSION') || candNameUpper.includes('尺寸'))
+            ) {
+              bestMatch = candidate;
+              bestConfidence = 0.92;
+              reasoning = `[本地规则降级] 质保书几何规格字段匹配标准尺寸规则 [${candidate.name}]`;
+              break;
+            }
+
+            // 晶粒度
+            if (
+              (rawUpper.includes('晶粒') || rawUpper.includes('GRAIN')) &&
+              (candKeyUpper.includes('GRAIN') || candNameUpper.includes('晶粒度'))
+            ) {
+              bestMatch = candidate;
+              bestConfidence = 0.95;
+              reasoning = `[本地规则降级] 质保书字段 [${prop.raw_name}] 匹配金相晶粒度标准规则 [${candidate.name}]`;
+              break;
+            }
+
+            // 包含名称匹配
+            if (candNameUpper.includes(rawUpper) || rawUpper.includes(candNameUpper)) {
+              bestMatch = candidate;
+              bestConfidence = 0.88;
+              reasoning = `[本地规则降级] 字面语义高度重合匹配至标准规则 [${candidate.name}]`;
+              break;
+            }
           }
 
-          collector.addTrace('WORKFLOW', 'info', `[语义裁决成功] ${prop.raw_name} -> ${bestMatch.name} (置信度 ${(bestConfidence * 100).toFixed(0)}%)`);
-          logger.info('WORKFLOW', `[LLM Property Resolver] 成功将 [${prop.raw_name}] 对齐至 [${bestMatch.name}] (${reasoning})`);
-        } else {
-          // 置信度不足，进入待决/歧义列表
-          ambiguousList.push({
-            ...prop,
-            confidence: bestConfidence,
-            reasoning,
-            is_standard_rule: false,
-          });
-          logger.warn('WORKFLOW', `[LLM Property Resolver] 字段 [${prop.raw_name}] 语义置信度较低 (${(bestConfidence * 100).toFixed(0)}%)，保留于待决池`);
+          if (bestMatch && bestConfidence >= 0.85) {
+            const resolvedItem: PropertyResolutionCandidate = {
+              ...prop,
+              source_tier: 'tier2',
+              resolved_key: bestMatch.key,
+              resolved_category: bestMatch.category,
+              confidence: bestConfidence,
+              reasoning,
+              is_standard_rule: true,
+              is_degraded: true,
+            };
+            resolvedList.push(resolvedItem);
+
+            const targetIndex = updatedRecords.findIndex(
+              r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key
+            );
+            if (targetIndex >= 0 && updatedRecords[targetIndex]) {
+              updatedRecords[targetIndex] = {
+                ...updatedRecords[targetIndex]!,
+                property_key: bestMatch.key,
+                category: bestMatch.category as any,
+              };
+            }
+
+            collector.addTrace('WORKFLOW', 'info', `[本地启发式对齐成功] ${prop.raw_name} -> ${bestMatch.name} (降级生效)`);
+          } else {
+            ambiguousList.push({
+              ...prop,
+              confidence: bestConfidence,
+              reasoning,
+              is_standard_rule: false,
+              is_degraded: true,
+            });
+          }
         }
       }
 
       let hitlContext: HitlInterruptContext | undefined = state.hitlContext;
 
-      // 3. 若存在重大歧义项且此前未挂起，触发 HITL 人机协同中断
+      // 4. 若存在重大歧义项且此前未挂起，触发 HITL 人机协同中断
       if (!hitlContext && ambiguousList.length > 0 && !humanCorrection) {
-        // 优先定位属于力学或化学等核心检验大类的歧义字段，置信度不足时挂起人机协同
         const criticalAmbiguous = ambiguousList.find(
           item => item.raw_category === 'mechanical' || item.raw_category === 'chemical'
         );
@@ -181,6 +271,7 @@ export function createLlmPropertyResolverNode(ruleStore?: IRuleStore) {
         resolvedProperties: resolvedList,
         unresolvedProperties: ambiguousList.length > 0 ? ambiguousList : undefined,
         hitlContext,
+        tokenUsage: stepTokenUsage,
         traces: collector.getTraces(),
         workflowStatus: hitlContext ? 'awaiting_human_review' : 'retrieving_standard',
       };

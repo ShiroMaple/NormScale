@@ -142,6 +142,19 @@ authoring_mode: ai_generated
   1. 无论本地是否存在解析缓存，文件均进入待处理队列（已存在时高亮选中并 Toast 提示防重），保证与用户自行上传的质保书具备 100% 同构的生命周期（支持切图预览、真实 File 重新解析等）；
   2. 服务端 `ParseCacheStore` 内置种子按需补齐（Seeding on Demand）：当读取对应场景 MD5 缓存未命中时，自动从场景配置生成权威种子并落盘写入 `.cache/parses/${md5}.json`，实现无 API Key 离线演示秒级复原与在线真模型重新解析无缝共存。
 
+### 3.5 Tier 2 大模型受限消歧与非静默降级双模体系 (Constrained LLM & Non-Silent Fallback)
+- **封闭候选池受限调用**：以当前批次执行标准切片的全部规则项作为唯一合法选项，通过 `LlmPropertyResolverService` 发起 OpenAI 兼容 REST 请求；
+- **严格 0.85 置信度红线**：
+  - $\ge 0.85$ 自动升级回流 Tier 1 重算（Case 2 表面光洁度 0.33 μm 判定 PASS，Case 3 1.50 μm 判定 FAIL）；
+  - $< 0.85$ 严禁强行对齐，转交 Tier 3 行内卡片挂起（Case 4 剪切断裂韧度）；
+- **非静默降级防线**：未配置 Key、超时或异常时自动转入本地启发式规则，前端矩阵行贴附「本地规则降级」徽标，Trace 记录 WARN 告警；
+- **真实 Token 与耗时透传**：捕获官方 `prompt_tokens` 与 `completion_tokens`，累加至状态机 `tokenUsage` 并流式广播。
+
+### 3.6 自学习经验飞轮白盒化审阅与撤销架构 (Whitebox Learned Aliases Governance)
+- **数据结构强化**：`LearnedAliasEntry` 扩充 `id`、`source_cert_no`、`status: 'active' | 'revoked'`；
+- **白盒管理中枢**：在系统控制台 (`AdminConsole.tsx`) 开辟「动态别名白盒知识库」面板，表格化呈现已沉淀条目，提供一键撤销（软失效）、恢复生效与物理删除功能；
+- **双层同步机制**：`PropertyKeyNormalizer` 内存倒排索引与持久化文件 `user_learned_aliases.json` 秒级联动，被撤销条目即刻不再生效。
+
 ---
 
 ## 4. 踩坑与经验沉淀 (Lessons Learned)
@@ -160,4 +173,10 @@ authoring_mode: ai_generated
 - **现象**：点击专测卡片一键装载直接报错“未找到指定文档的解析缓存”，且即使成功读取也因缺少真实 `File` 对象导致后续“重新解析”无法触发；
 - **根因**：原有一键载入设计跳过了真实文件处理流水线，直接尝试从后端拉取预解析 JSON，一旦开发者本地 `.cache/` 未初始化即抛红，且内存无二进制流；
 - **沉淀**：测试资产必须遵循与生产一致的入流管线（Treat Test Fixtures as First-Class Uploaded Files）。通过抓取静态资产还原物理 `File` 对象，配合服务端种子按需补齐，彻底消除了离线演练与实测执行之间的鸿沟。
+
+### 4.4 静态启发式冒充大模型与沉淀黑盒化带来的失控隐患
+- **现象**：系统对外宣传具备大模型长尾语义裁决与经验进化，但底层实为固定规则代码，且历史学习数据无管理入口；
+- **根因**：早期为了追求单测通过与离线速度而使用了轻量占位，后续未及时暴露模型与白盒管理；
+- **沉淀**：工业级系统必须坚持透明性（Transparency）。模型调用必须真实计费、真实可控，降级必须显式标识不可欺骗用户；自学习沉淀资产必须提供可视化白盒审阅与撤销能力，防止人为误判污染整个生产规则库。
+
 
