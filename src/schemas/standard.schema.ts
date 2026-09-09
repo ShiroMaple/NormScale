@@ -274,6 +274,14 @@ export const StandardMetaSchema = z.object({
 });
 export type StandardMeta = z.infer<typeof StandardMetaSchema>;
 
+// 校验标准正文文本条款（章节条文文本定义）
+export const StandardClauseSchema = z.object({
+  clause_id: z.string(),
+  title: z.string(),
+  text: z.string(),
+});
+export type StandardClause = z.infer<typeof StandardClauseSchema>;
+
 // 校验整个标准规则库文件（兼容顶层复合 JSON 结构）
 export const StandardRuleSetSchema = z.object({
   '$schema': z.string().optional(),
@@ -281,5 +289,7 @@ export const StandardRuleSetSchema = z.object({
   global_dimension_tolerance_tables: z.record(z.any()).optional(),
   grade_rules: z.array(GradeRuleSchema).default([]),
   slices: z.array(SpecificationSliceSchema).default([]),
+  clauses: z.array(StandardClauseSchema).optional(),
 });
 export type StandardRuleSet = z.infer<typeof StandardRuleSetSchema>;
+

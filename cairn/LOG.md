@@ -4,6 +4,26 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-09 · 标准规则库加载主键与别名解耦及下拉列表重复问题修复
+
+- 仓储与列表渲染解耦治理 (`file-rule-store.ts`, `StandardExplorer.tsx`, `file-rule-store.test.ts`):
+  1. 根因定位：此前为支持目录名（`NB_T_47019_5_2021`）及去点号容错，将别名 key 直接存入 `standardsMap`，导致 `listAvailableStandards()` 遍历时将同一标准实体多次推入返回数组；
+  2. 实体与别名分离：引入 `standardAliasesMap` 专门存储别名至主标准 ID 的重定向索引，`standardsMap` 严格仅存规范主实体，新增 `getStandardEntry()` 统一解析，标准装载计数精准回归为 2；
+  3. 端侧纵深防护：前端 `StandardExplorer` 在收到标准清单后增加 `Set` 防御性去重，彻底消除重名 Option；
+  4. 质量门禁与测试：`pnpm typecheck` 严格模式 0 错误；`file-rule-store.test.ts` 新增重复性与别名双向解析断言，全量 49 个套件 246 项单测 100% 绿灯通过。
+
+## 2026-09-09 · 标准规则库 (data/standards) 与前端标准库 (StandardExplorer) 动态数据联动落地
+
+- 标准库全链路动态化与零文件系统锁定 (`StandardExplorer.tsx`, `route.ts`, `api-client.ts`, `file-rule-store.ts`):
+  1. 静态数据彻底肃清：完全移除 `StandardExplorer` 内硬编码静态 `PRESET_SLICES`，接入服务端真实标准数据；
+  2. 仓储契约与解耦路由：新增 `GET /api/standards/[standardId]` 动态路由，直接对接 `IRuleStore.getCompleteStandard()`，隔离底层存储并建立点号/下划线防御性别名索引；
+  3. 交互与自适应 Tab：支持顶部下拉切换标准、左侧依据 `structure_type` 动态分类过滤与模糊检索，右侧自适应呈现【化学成分】、【力学性能】、【工艺与探伤】、【动态公式与长尾】及【标准文本条款】；
+  4. 缓存与性能：`apiClient` 集成模块级内存缓存 `standardDetailCache`，同标准二次切换毫秒级瞬时响应。
+- 质量门禁与端到端自动化测试:
+  1. 静态检查：`pnpm typecheck`（`tsc --noEmit`）严格模式 0 错误；
+  2. 单元测试闭环：新增 `tests/api/standards-detail-route.test.ts`（4/4 通过），全量 49 个套件、245 项单测 100% 绿灯通过。
+- 详情沉淀: 详见 [`cairn/architecture.md`](cairn/architecture.md)。
+
 ## 2026-09-09 · HITL 字段级裁定与批次级终审权责解耦及非标否决一票穿透
 
 - 权责边界与命名体系治理 (`WaterfallWorkbench.tsx`, `session.ts`, `core.ts`):

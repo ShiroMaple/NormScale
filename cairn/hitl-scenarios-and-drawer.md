@@ -15,7 +15,7 @@ contains:
   - procedure
   - lesson
 created: "2026-08-28"
-updated: "2026-09-01"
+updated: "2026-09-09"
 related:
   - cairn/dual-track-verdict.md
   - cairn/multi-standard-engine.md
@@ -178,11 +178,28 @@ authoring_mode: ai_generated
   1. **规则池分级动态投递**：`WaterfallWorkbench` 提取批次标准规则库（或 `llm-property-resolver` 在 `hitlContext` 中打包候选规则池），按化学成分、力学性能、工艺成型、金相组织、耐腐蚀、无损探伤、尺寸与表面等专业分类结构化（`<optgroup>`）下发至抽屉；
   2. **决策说明动态联动**：质检审批说明依据所选处置决策自动联动生成合规文案，并提供标准条款说明预览。
 
-### 踩坑 8：HITL 人工裁定项在全景比对矩阵中丢失 (2026-09-09 补充)
-- **现象**：质检员在 HITL 中裁定将非标项认可为供需协议特约合格项放行（PASS）后，比对矩阵大表中完全找不到该项目，仅显示标准行项目。
-- **根因**：比对矩阵生成逻辑原先仅遍历标准内的 `item_results`，特约放行项被视为标准外指标归入 `unmatched_certificate_records`，未在前端做全景统一纳管渲染；且改写内部键（如 `special_protocol_item`）后丢失了原始提取名称。
+### 踩坑 8：HITL 人工裁定项在全景比对矩阵中丢失与内部键泄露 (2026-09-09 补充)
+- **现象**：质检员在 HITL 中裁定将非标项认可为供需协议特约合格项放行（PASS）后，比对矩阵大表中找不到该项目；修复后在矩阵中项目名称又显示为英文内部标识 `special_protocol_item`，而非质保书原件上的 `Shear Toughness K1C`。
+- **根因**：
+  1. 比对矩阵原先仅遍历标准内的 `item_results`，特约放行项被视为标准外指标归入 `unmatched_certificate_records`；
+  2. 归一化自学习在调用 `PropertyKeyNormalizer.registerLearnedAlias` 时未传入 `displayName`，导致知识库将内部标识存为了 `display_name`；重新核验时返回了英文内部键。
 - **架构规范**：
   1. **全景比对矩阵全量纳管**：`WaterfallWorkbench` 统一整合标准比对项与未匹配/额外报送项（包括特约放行项、特种非标否决项、常规额外报送项），特约放行项清晰展示原始项目名、实测值、`✓ PASS`（徽标：`协议特约放行`）及质检员审批依据；
-  2. **原始项目名全生命周期反查**：在归一化节点保留 `raw_property_name` 与 `display_name`，或前端结合 `hitlCorrection.corrected_property_keys` 进行反查还原，确保工业质保书原始项目名永不丢失。
+  2. **Sentinel 内部键强隔离与五级名称反查**：自学习入库门禁强制将 sentinel 键的 `display_name` 锁定为 `rawAlias`；前端构建五级反查网（原件字段名优先 ➔ 非 sentinel 显示名 ➔ `hitlFieldCorrection` 逆向映射 ➔ 中断上下文 ➔ 批次原始测试项数值反查），坚决杜绝内部标识暴露给用户。
+
+### 踩坑 9：HITL 字段级裁定越权篡改整批人工终审 (2026-09-09 补充)
+- **现象**：质检员在 HITL 抽屉中对具体字段（如 `Shear Toughness K1C`）进行裁定后，步骤 3 右上角【人工复核:】卡片中的【审批通过 ✓ APPROVE】被强制高亮选中，状态旗帜错误显示为“人机双重核准放行”。
+- **根因**：
+  1. 权责混淆：`handleResolveHitl` 在恢复流转时，越权将批次级的 `humanVerdict` 赋值为 `'PASS'`，并将字段级的条款说明误当作了批次级的终审批注 `humanVerdictSummary`；
+  2. 变量命名缺乏物理隔离：字段纠偏快照与批次终审结论在词义上未做隔离，导致后续维护者产生概念幻觉。
+- **架构规范**：
+  1. **权责彻底解耦 (Separation of Powers)**：HITL 抽屉仅负责解决未决指标的数据与条款纠偏，**严禁在此处触碰批次终审**！恢复流转后批次终审必须保持 `humanVerdict: null`（未复核），必须由质检工程师审阅完全表后手动终审；
+  2. **变量命名强区隔**：批次级终审严格约束为 `humanVerdict`（标注 `BATCH-LEVEL FINAL REVIEW ONLY`）；字段级 HITL 输入纠偏快照统一为 `hitlFieldCorrection`，抽屉说明仅作为该单项指标的 `waiver_notes` 存证，互不污染。
+
+### 踩坑 10：特种非标缺项否决未穿透导致系统假放行 (2026-09-09 补充)
+- **现象**：质检员在 HITL 抽屉中对特种非标项选择【不予认可 / 判定无效（缺项否决 FAIL）】后，全景矩阵中虽然显示了红色 `✗ FAIL`，但系统判定与状态旗帜依然判定为全项合规与放行。
+- **根因**：规则引擎 `AuditEngine` 在计算决策汇总 `AuditSummary` 时，仅统计了标准内置的规则项；位于 `unmatchedRecords` 中被人工标记为 `is_rejected = true` 的项未被计入 `fail_count`，导致规则引擎计算出的 `overall_status` 仍然是 `'PASS'`。
+- **架构规范**：
+  - **非标否决一票穿透 (Strict Gatekeeping)**：在规则引擎（`core.ts`）中，凡带有 `is_rejected === true` 或 `property_key === 'unrecognized_rejected_item'` 的项，强制作为一条 `status: 'FAIL'`、`requirement_level: 'MANDATORY'` 的规则项计入 `itemResults`，使 `buildSummary` 自动累加 `fail_count` 并将 `overall_status` 强制置为 `'FAIL'`；前端工作台联动将 `sysVerdict` 置为 `FAIL`，状态看板红底警示“系统判定: FAIL 一票否决”，流转置为“系统已拦截待处置”，彻底杜绝假放行。
 
 

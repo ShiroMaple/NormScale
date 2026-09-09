@@ -1,6 +1,10 @@
 import { AuditReport } from '@/schemas/report.schema.ts';
 import { HitlInterruptContext, HumanCorrectionInput, WorkflowOptions, PropertyResolutionCandidate, WorkflowTokenUsage } from '@/workflow/state.interface.ts';
 import { RawCertificatePayload } from '@/extractor/extractor.interface.ts';
+import { StandardRuleSet, SpecificationSlice, StandardMeta, StandardClause } from '@/schemas/standard.schema.ts';
+
+export type StandardDetailDto = StandardRuleSet;
+export type { SpecificationSlice, StandardMeta, StandardClause };
 
 export interface StandardSliceOverviewDto {
   spec_key: string;
@@ -98,6 +102,8 @@ export interface AuditStreamCallbacks {
  * 前端 API 交互客户端 (Type-Safe Frontend API Client)
  * ============================================================================
  */
+const standardDetailCache = new Map<string, StandardDetailDto>();
+
 export const apiClient = {
   /** 获取标准规则库概览 */
   async getStandards(): Promise<{ total_standards: number; total_slices: number; standards: StandardOverviewDto[] }> {
@@ -106,6 +112,20 @@ export const apiClient = {
     if (!json.success) throw new Error(json.error || '获取标准列表失败');
     return json.data;
   },
+
+  /** 获取特定标准的完整明细规则 (含内存缓存) */
+  async getStandardDetail(standardId: string, bypassCache = false): Promise<StandardDetailDto> {
+    if (!bypassCache && standardDetailCache.has(standardId)) {
+      return standardDetailCache.get(standardId)!;
+    }
+    const encoded = encodeURIComponent(standardId);
+    const res = await fetch(`/api/standards/${encoded}`, { cache: 'no-store' });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || `获取标准 [${standardId}] 详情失败`);
+    standardDetailCache.set(standardId, json.data);
+    return json.data;
+  },
+
 
   /** 获取预设测试样本列表 */
   async getSamples(): Promise<PresetSampleDto[]> {

@@ -1,11 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export interface StandardClause {
-  clause_id: string;
-  title: string;
-  text: string;
-}
+import { StandardClause } from '../schemas/standard.schema';
+
+export type { StandardClause };
 
 export class ClauseStore {
   private baseDir: string;

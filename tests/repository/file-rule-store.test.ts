@@ -9,14 +9,36 @@ describe('FileRuleStore 规则检索仓库测试', () => {
     ruleStore = new FileRuleStore();
   });
 
-  it('正确列出收录的所有标准与切片概览', async () => {
+  it('正确列出收录的所有标准与切片概览，且无重复标准', async () => {
     const list = await ruleStore.listAvailableStandards();
-    expect(list.length).toBeGreaterThanOrEqual(1);
+    expect(list.length).toBe(2);
+
+    const standardIds = list.map(s => s.standard_id);
+    expect(new Set(standardIds).size).toBe(standardIds.length);
 
     const gbt = list.find(s => s.standard_id === 'GB/T 13296-2023');
     expect(gbt).toBeDefined();
     expect(gbt?.slice_count).toBe(31);
     expect(gbt?.status).toBe('CURRENT');
+
+    const nbt = list.find(s => s.standard_id === 'NB/T 47019.5-2021');
+    expect(nbt).toBeDefined();
+    expect(nbt?.slice_count).toBe(5);
+  });
+
+  it('支持通过标准目录名别名或官方标准代号统一解析切片与完整标准', async () => {
+    // 目录名别名 NB_T_47019_5_2021
+    const sliceFromFolder = await ruleStore.resolveRuleSlice('NB_T_47019_5_2021', 'S30408');
+    expect(sliceFromFolder).toBeDefined();
+
+    // 官方代号 NB/T 47019.5-2021
+    const sliceFromOfficial = await ruleStore.resolveRuleSlice('NB/T 47019.5-2021', 'S30408');
+    expect(sliceFromOfficial).toBeDefined();
+    expect(sliceFromFolder?.spec_key).toBe(sliceFromOfficial?.spec_key);
+
+    const completeFromFolder = await ruleStore.getCompleteStandard('NB_T_47019_5_2021');
+    expect(completeFromFolder).toBeDefined();
+    expect(completeFromFolder?.standard_meta.standard_id).toBe('NB/T 47019.5-2021');
   });
 
   it('支持根据主牌号精确解析切片 (如 06Cr19Ni10, 06Cr17Ni12Mo2, 10Cr17)', async () => {

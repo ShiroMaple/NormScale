@@ -171,7 +171,9 @@ export default function DashboardPage() {
         )}
 
         {/* 视图 3：国家标准知识库与规格切片浏览器 */}
-        {activeTab === 'standards' && <StandardExplorer />}
+        {activeTab === 'standards' && (
+          <StandardExplorer initialStandardId={standardsData?.standards[0]?.standard_id} />
+        )}
 
         {/* 视图 4：系统管理与运维配置控制台 */}
         {activeTab === 'admin' && <AdminConsole />}

@@ -46,6 +46,10 @@ authoring_mode: ai_generated
   - `IRuleStore` 接口定义了 `resolveRuleSlice`、`getStandardMeta`、`getCompleteStandard` 与 `listAvailableStandards` 契约。
   - 当前实现 `FileRuleStore`：基于模块化目录（`data/standards/<STD>/slices/*.json`），通过内存倒排索引提供 $O(1)$ 级别别名（如 SUS304 $\to$ S30408）秒级路由（$<0.1\text{ms}$）。
   - 后续可通过接口平滑替换为 `PostgresRuleStore` / `SqliteRuleStore`，上层引擎零侵入。
+- **标准库前端视图（StandardExplorer）100% 动态数据联动**：
+  - 彻底肃清前端静态硬编码 Mock 数据，统一通过 `GET /api/standards`（概览大盘）与 `GET /api/standards/[standardId]`（切片与条文全量明细）直接联动 `IRuleStore`；
+  - 交互架构：顶部通过标准下拉选择器（Select / Combobox）切换标准，左侧依据切片 `structure_type` 动态分类过滤（奥氏体、双相、铁素体等），右侧以自适应 Tab（化学成分、力学性能、工艺探伤、动态公式、文本条款）呈现细分规则与数量徽章；
+  - 架构遵循零文件系统锁定（Zero-Filesystem-Lockin）原则，前端与 API 路由层完全面向 `IRuleStore` 接口编程，为后续平滑迁移至数据库存储提供坚实保障。
 - **阶梯几何尺寸公差表（DimensionToleranceTable）**：独立抽象《GB/T 13296-2023》表 1（最小壁厚）与表 2（公称壁厚），由 `tolerance-evaluator` 依据工艺与口径动态求得允许极值。
 
 ### 3. 通用材料元模型设计（Universal Meta-Schema）

@@ -45,7 +45,7 @@
 
 1. **[已解决] 工业 PDF 与扫描件物理 BBox 定位与视觉放大方案**：已全面落地。矢量 PDF 通过客户端 PDF.js 提取 Token 百分比坐标并由 `BBoxAnchorMatcher` 自动回溯匹配，无矢量文本的扫描件规划由后端 PaddleOCR 生成统一 `tokens.json`；前端 100% 消费标准 `bboxes` 并在步骤 2 支持鼠标 Hover 150% 聚光灯聚焦放大与视窗平滑滚动。
 2. **[已解决] 质保书双标准/多标准引用的叠加裁决与透明追溯**：已全面闭环落地。纯函数合成器 `composeMultiStandardSlices()` 泛化支持 $N \ge 2$ 份标准叠加，全量并集+严苛交集，输出带 `composite_trace` 的 `CompositeSlice`；引擎支持多标尺独立裁决与加严剪刀差责任归因；放行仲裁矩阵 `resolveFinalDisposition` 规范化 7 种流转处置；工作台步骤 3 全景比对大表与综合判定看板已端到端接通并 100% 测试通过。
-3. **标准知识库浏览器入口形态**：标准知识库采用“顶部导航 Tab 切换独立页面”，还是“主看板内唤出右侧全屏 Drawer/Modal”？
+3. **[已解决] 标准知识库浏览器形态与数据联动**：已全面落地。顶部导航设置独立【标准库】视图，前端组件 `StandardExplorer` 彻底移除硬编码静态切片，基于 `IRuleStore` 与 `GET /api/standards/[standardId]` 动态渲染，支持两级标准与牌号联动、组织类型过滤、自适应 Tab 与条款检索。
 4. **DocEx 联调协议字段对齐**：DocEx 抽取端点输出结构是否严格以 NormScale 的 `RawCertificatePayload` 契约为准？
 5. **标准规则库存储演进触发点**：当前通过 Repository 接口层隔离文件系统，当标准数量超过多少（如 > 100 部）或引入多用户在线规则编辑时触发数据库存储插件化切换？
 6. **[引擎与前端全景矩阵已闭环] 采购技术协议与标准优先级调度体系（Technical Agreement Priority & Override Hierarchy）**：

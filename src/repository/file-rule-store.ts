@@ -7,6 +7,7 @@ import {
   StandardMetaSchema,
   StandardRuleSet,
   StandardRuleSetSchema,
+  StandardClause,
   GradeRule,
 } from '../schemas/standard.schema';
 import { IRuleStore, StandardOverview } from './rule-store.interface';
@@ -18,13 +19,19 @@ import {
   SliceWithStandardMeta,
 } from '../engine/multi-standard-composer';
 
+interface StandardEntry {
+  meta: StandardMeta;
+  slices: Map<string, SpecificationSlice>; // routingKey -> slice
+  uniqueSlices: SpecificationSlice[];
+  clauses?: StandardClause[];
+}
+
 export class FileRuleStore implements IRuleStore {
   private baseDir: string;
-  private standardsMap: Map<string, {
-    meta: StandardMeta;
-    slices: Map<string, SpecificationSlice>; // routingKey -> slice
-    uniqueSlices: SpecificationSlice[];
-  }> = new Map();
+  // 规范化标准 ID -> 标准条目 (唯一主键)
+  private standardsMap: Map<string, StandardEntry> = new Map();
+  // 别名/目录名/无点号变体 -> 规范化标准 ID (用于别名路由解析)
+  private standardAliasesMap: Map<string, string> = new Map();
   private initialized = false;
 
   constructor(baseDir?: string) {
@@ -55,11 +62,38 @@ export class FileRuleStore implements IRuleStore {
   }
 
   /**
+   * 根据标准代号或别名（支持带/不带点号、下划线目录名等变体）解析标准条目
+   */
+  private getStandardEntry(standardId: string): StandardEntry | undefined {
+    const norm = this.normalizeStandardId(standardId);
+    let entry = this.standardsMap.get(norm);
+    if (entry) return entry;
+
+    const canonicalId = this.standardAliasesMap.get(norm);
+    if (canonicalId) {
+      entry = this.standardsMap.get(canonicalId);
+      if (entry) return entry;
+    }
+
+    const dotless = norm.replace(/\./g, '');
+    entry = this.standardsMap.get(dotless);
+    if (entry) return entry;
+
+    const dotlessCanonical = this.standardAliasesMap.get(dotless);
+    if (dotlessCanonical) {
+      return this.standardsMap.get(dotlessCanonical);
+    }
+
+    return undefined;
+  }
+
+  /**
    * 扫描文件系统，构建内存倒排索引
    */
   public async reload(): Promise<void> {
     await PerformanceProfiler.profileAsync('REPOSITORY', '构建标准规则库内存倒排索引', async () => {
       this.standardsMap.clear();
+      this.standardAliasesMap.clear();
 
       if (!fs.existsSync(this.baseDir)) {
         this.initialized = true;
@@ -121,11 +155,34 @@ export class FileRuleStore implements IRuleStore {
         }
       }
 
-      this.standardsMap.set(normStdId, {
+      const clausesPath = path.join(dirPath, 'clauses.json');
+      let clauses: StandardClause[] | undefined = undefined;
+      if (fs.existsSync(clausesPath)) {
+        try {
+          clauses = JSON.parse(fs.readFileSync(clausesPath, 'utf8'));
+        } catch (e) {
+          console.warn(`[FileRuleStore] 读取条款文件异常: ${clausesPath}`, e);
+        }
+      }
+
+      const entry = {
         meta,
         slices: slicesMap,
         uniqueSlices,
-      });
+        clauses,
+      };
+
+      this.standardsMap.set(normStdId, entry);
+
+      // 防御性别名映射：若文件夹名称或无点号变体与标准代号不同，一并建立别名映射
+      const folderNorm = this.normalizeStandardId(path.basename(dirPath));
+      if (folderNorm && folderNorm !== normStdId) {
+        this.standardAliasesMap.set(folderNorm, normStdId);
+      }
+      const dotlessNorm = normStdId.replace(/\./g, '');
+      if (dotlessNorm && dotlessNorm !== normStdId) {
+        this.standardAliasesMap.set(dotlessNorm, normStdId);
+      }
     } catch (err) {
       console.error(`[FileRuleStore] 加载模块化标准失败: ${dirPath}`, err);
     }
@@ -143,7 +200,7 @@ export class FileRuleStore implements IRuleStore {
       const normStdId = this.normalizeStandardId(meta.standard_id);
 
       // 如果已有模块化加载，优先使用模块化
-      if (this.standardsMap.has(normStdId)) return;
+      if (this.getStandardEntry(normStdId)) return;
 
       const slicesMap = new Map<string, SpecificationSlice>();
       const uniqueSlices: SpecificationSlice[] = [];
@@ -184,6 +241,11 @@ export class FileRuleStore implements IRuleStore {
         slices: slicesMap,
         uniqueSlices,
       });
+
+      const dotlessNorm = normStdId.replace(/\./g, '');
+      if (dotlessNorm && dotlessNorm !== normStdId) {
+        this.standardAliasesMap.set(dotlessNorm, normStdId);
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       logger.warn('REPOSITORY', `[FileRuleStore] 跳过非标准文件或解析异常: ${filePath} (${errMsg})`);
@@ -216,10 +278,9 @@ export class FileRuleStore implements IRuleStore {
 
   public async resolveRuleSlice(standardId: string, routingKey: string): Promise<SpecificationSlice | undefined> {
     await this.ensureInitialized();
-    const normStdId = this.normalizeStandardId(standardId);
-    const standardEntry = this.standardsMap.get(normStdId);
+    const standardEntry = this.getStandardEntry(standardId);
     if (!standardEntry) {
-      logger.debug('REPOSITORY', `未找到标准代号: [${standardId}] (标准化后: ${normStdId})`);
+      logger.debug('REPOSITORY', `未找到标准代号: [${standardId}]`);
       return undefined;
     }
 
@@ -263,14 +324,12 @@ export class FileRuleStore implements IRuleStore {
 
   public async getStandardMeta(standardId: string): Promise<StandardMeta | undefined> {
     await this.ensureInitialized();
-    const normStdId = this.normalizeStandardId(standardId);
-    return this.standardsMap.get(normStdId)?.meta;
+    return this.getStandardEntry(standardId)?.meta;
   }
 
   public async getCompleteStandard(standardId: string): Promise<StandardRuleSet | undefined> {
     await this.ensureInitialized();
-    const normStdId = this.normalizeStandardId(standardId);
-    const standardEntry = this.standardsMap.get(normStdId);
+    const standardEntry = this.getStandardEntry(standardId);
     if (!standardEntry) return undefined;
 
     // 转换切片为兼容的 grade_rules
@@ -291,14 +350,19 @@ export class FileRuleStore implements IRuleStore {
       standard_meta: standardEntry.meta,
       grade_rules: gradeRules,
       slices: standardEntry.uniqueSlices,
+      clauses: standardEntry.clauses,
     };
   }
 
   public async listAvailableStandards(): Promise<StandardOverview[]> {
     await this.ensureInitialized();
     const result: StandardOverview[] = [];
+    const seenStandardIds = new Set<string>();
 
-    for (const [, entry] of this.standardsMap.entries()) {
+    for (const entry of this.standardsMap.values()) {
+      if (seenStandardIds.has(entry.meta.standard_id)) continue;
+      seenStandardIds.add(entry.meta.standard_id);
+
       result.push({
         standard_id: entry.meta.standard_id,
         standard_name: entry.meta.standard_name,
