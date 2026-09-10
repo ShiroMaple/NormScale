@@ -4207,7 +4207,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                         // 2. 动态计算当前批次包含的分类列表 (仅保留有数据的分类)
                         const categoriesInBatch = [
-                          { key: 'all', label: '解析数据总览', count: allExtractItems.length },
+                          { key: 'all', label: '质保书实测项', count: allExtractItems.length },
                           { key: 'chemical', label: '化学成分', count: allExtractItems.filter(i => i.category === 'chemical').length },
                           { key: 'mechanical', label: '力学性能', count: allExtractItems.filter(i => i.category === 'mechanical').length },
                           { key: 'process', label: '工艺性能', count: allExtractItems.filter(i => i.category === 'process').length },
@@ -5071,9 +5071,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 }
 
                 const issueItems = complianceMatrixItems.filter(i => i.status === 'FAIL' || i.status === 'HITL');
+                const missingCount = complianceMatrixItems.filter(i => (i as any).detailTag?.label === '缺项漏检').length;
+                const traceCount = complianceMatrixItems.filter(i => i.id === 'custom_construction_no' || i.id === 'custom_heat_no').length;
+                const alignedCount = complianceMatrixItems.length - missingCount - traceCount;
 
-                const STEP3_TABS = [
-                  { key: 'all', label: '全部比对项', count: complianceMatrixItems.length },
+                const STEP3_TABS: Array<{ key: string; label: string; count: number; tooltip?: string }> = [
+                  {
+                    key: 'all',
+                    label: '全部比对项',
+                    count: complianceMatrixItems.length,
+                    tooltip: `全部比对项 (${complianceMatrixItems.length}) = 实测对齐 (${alignedCount}) + 标准缺漏检 (${missingCount}) + 工程追溯参考 (${traceCount})`,
+                  },
                   { key: 'issues', label: '问题项', count: issueItems.length },
                   { key: 'chemical', label: '化学成分', count: complianceMatrixItems.filter(i => i.category === 'chemical').length },
                   { key: 'mechanical', label: '力学性能', count: complianceMatrixItems.filter(i => i.category === 'mechanical').length },
@@ -5602,6 +5610,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 key={tab.key}
                                 type="button"
                                 onClick={() => setStep3Category(tab.key)}
+                                title={tab.tooltip}
                                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${isActive
                                   ? (isIssueTabWithProblems
                                     ? 'bg-red-600 text-white shadow-xs'
@@ -5612,6 +5621,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                   }`}
                               >
                                 <span>{tab.label}</span>
+                                {tab.key === 'all' && tab.tooltip && (
+                                  <span
+                                    className="material-symbols-outlined text-[12px] opacity-70 hover:opacity-100 transition-opacity -ml-0.5"
+                                    title={tab.tooltip}
+                                  >
+                                    info
+                                  </span>
+                                )}
                                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isActive
                                   ? 'bg-white/20 text-white'
                                   : (isIssueTabWithProblems
