@@ -27,5 +27,11 @@ export * from './trace-collector';
 
 /**
  * 全局共享的领域日志器默认单例
+ * 挂载至 globalThis.__normscale_logger__，确保 Next.js App Router 模块热重载或跨 Chunk 不会丢失日志缓冲与活跃连接
  */
-export const logger = new DefaultDomainLogger();
+const globalForLogger = globalThis as unknown as {
+  __normscale_logger__?: DefaultDomainLogger;
+};
+
+export const logger = globalForLogger.__normscale_logger__ ?? new DefaultDomainLogger();
+globalForLogger.__normscale_logger__ = logger;

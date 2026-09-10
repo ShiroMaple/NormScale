@@ -3,6 +3,9 @@
     "version": "1.1.0",
     "description": "工业 MTC 质保书通用提取 Schema V2: 探伤解耦 (ET/UT) 与弹性扩展支持"
   },
+  "logging": {
+    "level": "debug"
+  },
   "llm": {
     "timeoutMs": 60000,
     "maxRetries": 2,

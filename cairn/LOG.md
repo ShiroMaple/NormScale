@@ -4,6 +4,32 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-10 · 系统管理顶部容器移除、内外双滚动条消除与日志正倒序双模治理
+
+- 页面空间与滚动布局重构 (`AdminConsole.tsx`, `SystemLogViewer.tsx`, `page.tsx`):
+  1. 消除冗余卡片：移除顶部“系统管理与运行参数配置”多余容器，将 Tab 导航与右侧状态反馈/保存按钮合一作为顶层 Header，释放纵向视觉空间；
+  2. 彻底治愈双滚动条：外层容器重构为 `h-full flex flex-col overflow-hidden`，终端视窗采用 `flex-1 min-h-0` 自适应垂直填满屏幕，全屏仅保留暗色终端内部唯一的平滑滚动条；
+  3. 日志排序与智能对齐：新增正序（从旧到新流式追加）与倒序（最新日志置顶第一行）自由一键切换；
+  4. 激活感知与自动滚底：通过 `isActive` 状态监听在初始装载及切回管理页时自动精准吸底（正序模式）或吸顶（倒序模式）；
+  5. 验证就绪：`tsc --noEmit` 0 错误，Vitest 258/258 全绿，无头浏览器真机实测截屏验证顶部容器移除、无多余外层滚动条及排序切换平滑。
+
+## 2026-09-10 · 客户端 Webpack 打包 Node fs/path 模块隔离与全量构建闭环
+
+- 客户端构建隔离与种子回退加固 (`next.config.ts`, `default-logger.ts`, `scenarios/index.ts`):
+  1. 根治构建报错：`WaterfallWorkbench` 引用质检分析链路导致 `logger` 间接进入客户端 bundle，Next.js Webpack 无法解析 `fs`；在 `next.config.ts` 注入 `!isServer -> resolve.fallback: { fs: false, path: false }`；
+  2. 运行时双重守卫：`default-logger.ts` 中针对文件读写追加 `typeof window === 'undefined'` 与方法存在性校验，防止浏览器执行异常；
+  3. 种子缓存容灾回退：`scenarios/index.ts` 补齐 Case 2 无磁盘缓存时的种子结构，恢复自动补齐与持久化机制；
+  4. 验证就绪：`tsc --noEmit` 0 错误，`next build` 编译成功生成 14 个路由（1191ms），全量单测 52 套件 / 258 项 100% 绿灯。
+
+## 2026-09-10 · 系统日志全链路持久化、热重载隔离与前端 Keep-Alive 治理落地
+
+- 日志基础设施加固与协同闭环 (`next.config.ts`, `config.json`, `default-logger.ts`, `route.ts`, `page.tsx`):
+  1. 根治误触重编译：`next.config.ts` Webpack 配置 `watchOptions.ignored` 彻底忽略 `.cache/**` 与 `config.json`，阻断质检落盘触发开发服务器悄默重启；
+  2. 级别持久化至配置：`config.json` 扩充 `"logging": { "level": "..." }`，动态调级同步回写，日志器启动自动装载；
+  3. 全局单例与磁盘流：`logger` 挂载至 `globalThis` 防重载实例化，并追加流至 `.cache/logs/system.log`（保留启动预填）；
+  4. 前端视图保活：`AdminConsole` 启用 CSS `hidden` 保活，切到工作台期间 SSE 保持连接，切回毫秒级呈现完整轨迹；
+  5. 验证就绪：`tsc --noEmit` 0 错误，Vitest 258/258 全绿，无头浏览器实测确认切到工作台执行核验后切回，日志 114 条饱满且级别稳定保持 `DEBUG`。
+
 ## 2026-09-10 · 系统管理默认页签切换为「系统运行日志」
 
 - 控制台默认激活视图与导航序列调整 (`AdminConsole.tsx`):

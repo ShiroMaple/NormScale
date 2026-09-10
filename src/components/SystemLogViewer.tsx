@@ -63,24 +63,29 @@ function formatTime(isoStr: string): string {
   }
 }
 
-export const SystemLogViewer: React.FC = () => {
+export interface SystemLogViewerProps {
+  isActive?: boolean;
+}
+
+export const SystemLogViewer: React.FC<SystemLogViewerProps> = ({ isActive = true }) => {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
   const [serverLevel, setServerLevel] = useState<LogLevel>('info');
   const [isChangingLevel, setIsChangingLevel] = useState(false);
-  
+
   // 筛选与控制项
   const [filterLevel, setFilterLevel] = useState<LogLevel | 'ALL'>('ALL');
   const [filterTag, setFilterTag] = useState<LogModuleTag | 'ALL'>('ALL');
   const [keyword, setKeyword] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isPaused, setIsPaused] = useState(false);
-  const [expandedLogIdx, setExpandedLogIdx] = useState<number | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
-  // 1. 初始化拉取历史缓冲并同步级别
+  // 1. 初始化拉取历史缓冲并同步级别，初始加载后自动定位至最新日志
   useEffect(() => {
     let isMounted = true;
 
@@ -90,7 +95,15 @@ export const SystemLogViewer: React.FC = () => {
         const data = await res.json();
         if (isMounted && data.success) {
           if (data.currentLevel) setServerLevel(data.currentLevel);
-          if (Array.isArray(data.logs)) setLogs(data.logs);
+          if (Array.isArray(data.logs)) {
+            setLogs(data.logs);
+            // 初始数据装配完成后延迟一帧自动滚到底部最新位置
+            setTimeout(() => {
+              if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+              }
+            }, 60);
+          }
         }
       } catch (err) {
         console.error('初始化拉取历史日志失败', err);
@@ -150,12 +163,27 @@ export const SystemLogViewer: React.FC = () => {
     };
   }, [isPaused]);
 
-  // 3. 自动滚屏到底部 (严格限制在终端容器内部，杜绝影响外层页面滚动条)
+  // 3. 智能对齐最新日志：正序模式自动吸底，倒序模式自动吸顶 (严格局限于终端容器内部)
   useEffect(() => {
-    if (autoScroll && scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    if (!isActive) return;
+    let timer: NodeJS.Timeout | null = null;
+    if (sortOrder === 'asc' && autoScroll) {
+      timer = setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      }, 50);
+    } else if (sortOrder === 'desc') {
+      timer = setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = 0;
+        }
+      }, 30);
     }
-  }, [logs, autoScroll]);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isActive, logs, autoScroll, sortOrder]);
 
   // 4. 动态调整服务端全局输出级别
   const handleServerLevelChange = async (newLevel: LogLevel) => {
@@ -201,10 +229,18 @@ export const SystemLogViewer: React.FC = () => {
     });
   }, [logs, filterLevel, filterTag, keyword]);
 
+  // 最终呈现列表 (根据 sortOrder 支持正序旧到新或倒序新到旧)
+  const displayLogs = useMemo(() => {
+    if (sortOrder === 'desc') {
+      return [...filteredLogs].reverse();
+    }
+    return filteredLogs;
+  }, [filteredLogs, sortOrder]);
+
   // 6. 清屏
   const handleClearLogs = () => {
     setLogs([]);
-    setExpandedLogIdx(null);
+    setExpandedLogId(null);
   };
 
   // 7. 导出日志为文件
@@ -226,30 +262,29 @@ export const SystemLogViewer: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 min-h-0 select-none">
       {/* 顶部控制与工具操作栏 */}
-      <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs space-y-3.5">
-        
+      <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-3.5 shadow-xs space-y-3 shrink-0">
+
         {/* 第一行：状态指示灯、服务端日志级别动态切换与通用操作 */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-outline-variant/30">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5 border-b border-outline-variant/30">
           <div className="flex items-center gap-3">
             {/* 实时连接状态呼吸灯 */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-high dark:bg-surface-dark-high text-xs">
               <span
-                className={`w-2 h-2 rounded-full ${
-                  connectionStatus === 'connected'
+                className={`w-2 h-2 rounded-full ${connectionStatus === 'connected'
                     ? 'bg-emerald-500 animate-pulse'
                     : connectionStatus === 'connecting'
-                    ? 'bg-amber-500 animate-ping'
-                    : 'bg-rose-500'
-                }`}
+                      ? 'bg-amber-500 animate-ping'
+                      : 'bg-rose-500'
+                  }`}
               />
               <span className="text-[11px] font-medium text-on-surface-variant">
                 {connectionStatus === 'connected'
                   ? 'SSE 实时流在线'
                   : connectionStatus === 'connecting'
-                  ? '正在建立连接...'
-                  : '连接已断开 (重连中)'}
+                    ? '正在建立连接...'
+                    : '连接已断开 (重连中)'}
               </span>
             </div>
 
@@ -281,11 +316,10 @@ export const SystemLogViewer: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsPaused(!isPaused)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                isPaused
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${isPaused
                   ? 'bg-amber-500/10 border-amber-300 text-amber-700 dark:text-amber-400'
                   : 'border-outline-variant/60 hover:bg-surface-container-high text-on-surface-variant'
-              }`}
+                }`}
               title={isPaused ? '已暂停日志实时接收，点击恢复' : '点击暂停实时刷屏'}
             >
               <span className="material-symbols-outlined text-sm">
@@ -294,16 +328,31 @@ export const SystemLogViewer: React.FC = () => {
               <span>{isPaused ? '恢复流' : '暂停流'}</span>
             </button>
 
+            {/* 排序方式切换 */}
+            <button
+              type="button"
+              onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${sortOrder === 'desc'
+                  ? 'bg-primary/10 border-primary/30 text-primary dark:text-primary-fixed-dim'
+                  : 'border-outline-variant/60 hover:bg-surface-container-high text-on-surface-variant'
+                }`}
+              title={sortOrder === 'asc' ? '当前：时间正序 (从旧到新流式追加)，点击切换为倒序' : '当前：时间倒序 (最新日志在顶部)，点击切换为正序'}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {sortOrder === 'asc' ? 'arrow_downward' : 'arrow_upward'}
+              </span>
+              <span>{sortOrder === 'asc' ? '正序' : '倒序'}</span>
+            </button>
+
             {/* 自动滚屏开关 */}
             <button
               type="button"
               onClick={() => setAutoScroll(!autoScroll)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                autoScroll
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${autoScroll
                   ? 'bg-primary/10 border-primary/30 text-primary dark:text-primary-fixed-dim'
                   : 'border-outline-variant/60 hover:bg-surface-container-high text-on-surface-variant'
-              }`}
-              title="切换新日志到达时是否自动滚屏到底部"
+                }`}
+              title="切换新日志到达时是否自动滚屏到底部 (仅正序模式下有效)"
             >
               <span className="material-symbols-outlined text-sm">
                 {autoScroll ? 'vertical_align_bottom' : 'pan_tool'}
@@ -338,7 +387,7 @@ export const SystemLogViewer: React.FC = () => {
 
         {/* 第二行：多维筛选器 (级别、模块标签、关键字搜索) */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-          
+
           {/* 快速级别过滤器胶囊 */}
           <div className="md:col-span-4 flex items-center gap-1 overflow-x-auto pb-1 md:pb-0">
             {ALL_LEVELS.map(lvl => (
@@ -346,11 +395,10 @@ export const SystemLogViewer: React.FC = () => {
                 key={lvl.value}
                 type="button"
                 onClick={() => setFilterLevel(lvl.value)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                  filterLevel === lvl.value
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${filterLevel === lvl.value
                     ? 'bg-primary text-on-primary shadow-xs'
                     : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant hover:text-on-surface'
-                }`}
+                  }`}
               >
                 {lvl.label}
               </button>
@@ -398,16 +446,19 @@ export const SystemLogViewer: React.FC = () => {
         </div>
       </div>
 
-      {/* 终端展示主视窗 */}
-      <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-slate-950 dark:bg-[#0b0f17] text-slate-200 overflow-hidden shadow-sm flex flex-col h-[560px]">
-        
+      {/* 终端展示主视窗：自适应撑满剩余高度，杜绝内外双滚动条 */}
+      <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-slate-950 dark:bg-[#0b0f17] text-slate-200 overflow-hidden shadow-sm flex flex-col flex-1 min-h-[260px]">
+
         {/* 视窗 Header 栏 */}
-        <div className="px-4 py-2 bg-slate-900/90 dark:bg-[#111622] border-b border-slate-800 flex items-center justify-between text-xs select-none">
+        <div className="px-4 py-2 bg-slate-900/90 dark:bg-[#111622] border-b border-slate-800 flex items-center justify-between text-xs select-none shrink-0">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-base">terminal</span>
             <span className="font-bold text-slate-100 tracking-wide">SYSTEM RUNTIME LOG STREAM</span>
             <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-400 font-sans tabular-nums">
-              当前呈现: {filteredLogs.length} / 缓冲池: {logs.length} 条
+              当前呈现: {displayLogs.length} / 缓冲池: {logs.length} 条
+            </span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800/80 text-slate-400">
+              {sortOrder === 'asc' ? '正序 (旧➔新)' : '倒序 (最新在顶)'}
             </span>
           </div>
 
@@ -424,7 +475,7 @@ export const SystemLogViewer: React.FC = () => {
 
         {/* 日志内容滚动列表 */}
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 font-sans text-[11px] leading-relaxed space-y-1">
-          {filteredLogs.length === 0 ? (
+          {displayLogs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 select-none">
               <span className="material-symbols-outlined text-3xl opacity-50">data_array</span>
               <span>暂无匹配的运行日志</span>
@@ -433,24 +484,25 @@ export const SystemLogViewer: React.FC = () => {
               </span>
             </div>
           ) : (
-            filteredLogs.map((log, idx) => {
+            displayLogs.map((log, idx) => {
               const levelUpper = log.level.toUpperCase();
               const levelStyle = LEVEL_BADGE_STYLE[log.level] || LEVEL_BADGE_STYLE.info;
               const tagStyle = TAG_BADGE_STYLE[log.tag] || TAG_BADGE_STYLE.SYSTEM;
-              const isExpanded = expandedLogIdx === idx;
+              const rowId = `${log.timestamp}-${idx}`;
+              const isExpanded = expandedLogId === rowId;
               const hasMetadata = Boolean(log.metadata && Object.keys(log.metadata).length > 0);
+              const lineNum = sortOrder === 'asc' ? idx + 1 : filteredLogs.length - idx;
 
               return (
                 <div
                   key={idx}
-                  className={`group rounded p-1 transition-colors flex flex-col ${
-                    isExpanded ? 'bg-slate-900/90 border border-slate-700' : 'hover:bg-slate-900/60'
-                  }`}
+                  className={`group rounded p-1 transition-colors flex flex-col ${isExpanded ? 'bg-slate-900/90 border border-slate-700' : 'hover:bg-slate-900/60'
+                    }`}
                 >
                   <div className="flex items-start gap-2 min-w-0">
                     {/* 行号 */}
                     <span className="text-slate-600 select-none w-8 text-right shrink-0">
-                      {idx + 1}
+                      {lineNum}
                     </span>
 
                     {/* 时间戳 */}
@@ -488,7 +540,7 @@ export const SystemLogViewer: React.FC = () => {
                     {hasMetadata && (
                       <button
                         type="button"
-                        onClick={() => setExpandedLogIdx(isExpanded ? null : idx)}
+                        onClick={() => setExpandedLogId(isExpanded ? null : rowId)}
                         className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0 ml-auto flex items-center gap-1 cursor-pointer"
                         title="展开/收起结构化上下文"
                       >

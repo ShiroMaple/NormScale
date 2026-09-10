@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { ILogger, IModuleLogger, ITraceCollector, LogEvent, LogLevel, LogModuleTag } from './logger.interface';
 import { MemoryTraceCollector } from './trace-collector';
 
@@ -55,12 +57,76 @@ export class DefaultDomainLogger implements ILogger {
   private listeners: Set<(event: LogEvent) => void> = new Set();
 
   constructor(options?: { level?: LogLevel; enableColors?: boolean }) {
-    // 默认从环境变量 LOG_LEVEL 读取，单测环境下默认为 warn 避免测试刷屏
+    // 默认优先级: options.level > LOG_LEVEL 环境变量 > config.json 声明 > 默认 (info/silent)
     const envLevel = (process.env.LOG_LEVEL || '').toLowerCase() as LogLevel;
     const isTestEnv = process.env.NODE_ENV === 'test' || typeof process.env.VITEST !== 'undefined';
     
-    this.currentLevel = options?.level || envLevel || (isTestEnv ? 'silent' : 'info');
+    let configLevel: LogLevel | undefined;
+    if (!isTestEnv && typeof window === 'undefined') {
+      try {
+        if (typeof fs !== 'undefined' && fs?.existsSync && typeof path !== 'undefined' && path?.join) {
+          const configPath = path.join(process.cwd(), 'config.json');
+          if (fs.existsSync(configPath)) {
+            const raw = fs.readFileSync(configPath, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (parsed.logging?.level) {
+              configLevel = parsed.logging.level;
+            }
+          }
+        }
+      } catch {
+        // 容错不阻塞
+      }
+    }
+
+    this.currentLevel = options?.level || envLevel || configLevel || (isTestEnv ? 'silent' : 'info');
     this.enableColors = options?.enableColors ?? (typeof process !== 'undefined' && !process.env.NO_COLOR);
+
+    // 预填历史日志至环形缓冲 (仅在 Node 服务端环境)
+    if (typeof window === 'undefined') {
+      this.prefillBufferFromDisk();
+    }
+  }
+
+  /** 从本地磁盘历史日志预填至内存环形缓冲 */
+  private prefillBufferFromDisk(): void {
+    if (typeof window !== 'undefined') return;
+    if (process.env.NODE_ENV === 'test' || typeof process.env.VITEST !== 'undefined') return;
+    try {
+      if (typeof fs === 'undefined' || !fs?.existsSync || typeof path === 'undefined' || !path?.join) return;
+      const logFile = path.join(process.cwd(), '.cache', 'logs', 'system.log');
+      if (!fs.existsSync(logFile)) return;
+      const content = fs.readFileSync(logFile, 'utf-8');
+      const lines = content.split('\n').filter(Boolean);
+      const recentLines = lines.slice(-200);
+      for (const line of recentLines) {
+        try {
+          const parsed: LogEvent = JSON.parse(line);
+          this.ringBuffer.push(parsed);
+        } catch {
+          // 忽略格式损坏的单行
+        }
+      }
+    } catch {
+      // 容错不阻塞
+    }
+  }
+
+  /** 将日志事件持久追加至本地日志文件 (.cache/logs/system.log) */
+  private appendLogToDisk(event: LogEvent): void {
+    if (typeof window !== 'undefined') return;
+    if (process.env.NODE_ENV === 'test' || typeof process.env.VITEST !== 'undefined') return;
+    try {
+      if (typeof fs === 'undefined' || !fs?.appendFileSync || typeof path === 'undefined' || !path?.join) return;
+      const logDir = path.join(process.cwd(), '.cache', 'logs');
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      const logFile = path.join(logDir, 'system.log');
+      fs.appendFileSync(logFile, JSON.stringify(event) + '\n', 'utf-8');
+    } catch {
+      // 容错处理，杜绝磁盘 IO 异常阻断业务流程
+    }
   }
 
   public setLevel(level: LogLevel): void {
@@ -162,6 +228,9 @@ export class DefaultDomainLogger implements ILogger {
     if (this.ringBuffer.length > DefaultDomainLogger.MAX_BUFFER_SIZE) {
       this.ringBuffer.shift();
     }
+
+    // 追加写入本地磁盘持久日志文件
+    this.appendLogToDisk(logEvent);
 
     // 2. 向所有活跃订阅监听器广播日志事件 (SSE)
     for (const listener of this.listeners) {

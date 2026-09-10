@@ -175,8 +175,10 @@ export default function DashboardPage() {
           <StandardExplorer initialStandardId={standardsData?.standards[0]?.standard_id} />
         )}
 
-        {/* 视图 4：系统管理与运维配置控制台 */}
-        {activeTab === 'admin' && <AdminConsole />}
+        {/* 视图 4：系统管理与运维配置控制台 (Keep-Alive 保活：后台持续推流，切换时不丢失连接与运行轨迹) */}
+        <div className={`w-full h-full ${activeTab === 'admin' ? 'block' : 'hidden'}`}>
+          <AdminConsole isActive={activeTab === 'admin'} />
+        </div>
       </main>
 
       {/* 历史会话加载覆盖警告确认弹窗 */}

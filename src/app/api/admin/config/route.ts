@@ -19,6 +19,9 @@ const AdminConfigSchema = z.object({
     version: z.string().min(1).default('1.0.0'),
     description: z.string().optional(),
   }).optional(),
+  logging: z.object({
+    level: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+  }).optional(),
   llm: z.object({
     timeoutMs: z.number().min(1000).max(600000),
     maxRetries: z.number().min(0).max(5),
@@ -95,12 +98,31 @@ export async function POST(request: Request) {
     }
 
     const configPath = getConfigFilePath();
-    fs.writeFileSync(configPath, JSON.stringify(validatedConfig, null, 2), 'utf-8');
+
+    // 保留现有 config.json 中可能未在请求中显式包含的 logging 配置
+    let existingLogging = { level: 'info' as const };
+    if (fs.existsSync(configPath)) {
+      try {
+        const rawExisting = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (rawExisting.logging?.level) {
+          existingLogging = rawExisting.logging;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const mergedConfig = {
+      ...validatedConfig,
+      logging: validatedConfig.logging || existingLogging,
+    };
+
+    fs.writeFileSync(configPath, JSON.stringify(mergedConfig, null, 2), 'utf-8');
 
     return NextResponse.json({
       success: true,
       message: '系统配置已持久化保存',
-      config: validatedConfig,
+      config: mergedConfig,
     });
   } catch (err: any) {
     return NextResponse.json(

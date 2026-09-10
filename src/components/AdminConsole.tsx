@@ -5,7 +5,11 @@ import { LlmConfigItem, AppConfig } from '@/extractor/openai-compatible-extracto
 import { LearnedAliasEntry } from '@/normalizer/property-key-normalizer.ts';
 import { SystemLogViewer } from '@/components/SystemLogViewer';
 
-export const AdminConsole: React.FC = () => {
+export interface AdminConsoleProps {
+  isActive?: boolean;
+}
+
+export const AdminConsole: React.FC<AdminConsoleProps> = ({ isActive = true }) => {
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -171,20 +175,57 @@ export const AdminConsole: React.FC = () => {
   };
 
   return (
-    <div className="space-y-5 h-[calc(100vh-4rem-2rem)] overflow-y-auto custom-scrollbar p-6 select-none">
-      
-      {/* 顶部配置概览与操作栏 */}
-      <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="font-section-title text-section-title font-bold text-on-surface dark:text-surface-bright flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary dark:text-primary-fixed-dim text-2xl">tune</span>
-            <span>系统管理与运行参数配置</span>
-          </h2>
-          <p className="text-xs text-on-surface-variant dark:text-outline-variant mt-0.5">
-            实时管理 config.json 大模型配置、API 路由、执行超时与质检员授权
-          </p>
+    <div className="h-full flex flex-col overflow-hidden p-6 select-none gap-4">
+      {/* 控制台顶栏：Tab 切换与全局操作/状态提示 */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant/40 pb-3 shrink-0">
+        {/* 左侧 Tab 栏 */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setConsoleTab('system_logs')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              consoleTab === 'system_logs'
+                ? 'bg-primary text-on-primary shadow-xs'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">terminal</span>
+            <span>系统运行日志</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setConsoleTab('params')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              consoleTab === 'params'
+                ? 'bg-primary text-on-primary shadow-xs'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">settings</span>
+            <span>参数设置</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setConsoleTab('learned_aliases')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              consoleTab === 'learned_aliases'
+                ? 'bg-primary text-on-primary shadow-xs'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">auto_fix</span>
+            <span>动态别名白盒知识库</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-sans tabular-nums ${
+              consoleTab === 'learned_aliases' ? 'bg-white/20 text-white' : 'bg-surface-container-highest dark:bg-surface-dark-highest text-on-surface-variant'
+            }`}>
+              {aliases.length}
+            </span>
+          </button>
         </div>
 
+        {/* 右侧操作栏与反馈 */}
         <div className="flex items-center gap-3 shrink-0">
           {feedback && (
             <span className={`text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
@@ -202,7 +243,7 @@ export const AdminConsole: React.FC = () => {
               type="button"
               onClick={handleSaveConfig}
               disabled={isSaving || isLoading}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-primary hover:bg-primary-container text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
             >
               <span className="material-symbols-outlined text-base">
                 {isSaving ? 'hourglass_top' : 'save'}
@@ -213,56 +254,12 @@ export const AdminConsole: React.FC = () => {
         </div>
       </div>
 
-      {/* 控制台子面板切换 Tab */}
-      <div className="flex items-center gap-2 border-b border-outline-variant/40 pb-2">
-        <button
-          type="button"
-          onClick={() => setConsoleTab('system_logs')}
-          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            consoleTab === 'system_logs'
-              ? 'bg-primary text-on-primary shadow-xs'
-              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
-          }`}
-        >
-          <span className="material-symbols-outlined text-base">terminal</span>
-          <span>系统运行日志</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setConsoleTab('params')}
-          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            consoleTab === 'params'
-              ? 'bg-primary text-on-primary shadow-xs'
-              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
-          }`}
-        >
-          <span className="material-symbols-outlined text-base">settings</span>
-          <span>参数设置</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setConsoleTab('learned_aliases')}
-          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            consoleTab === 'learned_aliases'
-              ? 'bg-primary text-on-primary shadow-xs'
-              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-surface-dark-high'
-          }`}
-        >
-          <span className="material-symbols-outlined text-base">auto_fix</span>
-          <span>动态别名白盒知识库</span>
-          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-sans tabular-nums ${
-            consoleTab === 'learned_aliases' ? 'bg-white/20 text-white' : 'bg-surface-container-highest dark:bg-surface-dark-highest text-on-surface-variant'
-          }`}>
-            {aliases.length}
-          </span>
-        </button>
-      </div>
+      {/* 主体自适应面板内容 */}
+      <div className="flex-1 min-h-0 flex flex-col">
 
       {consoleTab === 'learned_aliases' ? (
         /* 白盒自学习别名知识库面板 */
-        <div className="space-y-4">
+        <div className="h-full overflow-y-auto custom-scrollbar space-y-4 pr-1">
           {/* 指标与过滤检索条 */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-3.5 shadow-xs">
@@ -454,7 +451,7 @@ export const AdminConsole: React.FC = () => {
         </div>
       ) : consoleTab === 'system_logs' ? (
         /* 系统运行日志专页 (SSE 流式、输出级别动态控制、多维过滤) */
-        <SystemLogViewer />
+        <SystemLogViewer isActive={isActive && consoleTab === 'system_logs'} />
       ) : isLoading ? (
         <div className="h-64 flex flex-col items-center justify-center text-on-surface-variant gap-2 text-xs">
           <span className="material-symbols-outlined text-3xl animate-spin text-primary">progress_activity</span>
@@ -467,7 +464,8 @@ export const AdminConsole: React.FC = () => {
         </div>
       ) : (
         /* 主体分栏：五五开对称布局 (左侧 50% 模型配置，右侧 50% 全局参数与版本控制) */
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div className="h-full overflow-y-auto custom-scrollbar space-y-5 pr-1">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           
           {/* 左侧 50%：大模型配置卡片列表 */}
           <div className="space-y-4">
@@ -744,10 +742,11 @@ export const AdminConsole: React.FC = () => {
                 <li>抽取 Schema 版本号提升后，历史解析缓存将自动退避，促使系统基于最新 Prompt 重新生成规范化结果。</li>
               </ul>
             </div>
-
           </div>
         </div>
-      )}
+      </div>
+    )}
     </div>
-  );
+  </div>
+);
 };

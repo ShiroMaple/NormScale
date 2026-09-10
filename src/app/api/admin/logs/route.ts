@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { z } from 'zod';
 import { logger } from '@/logger';
 import { LogLevel, LogModuleTag } from '@/logger/logger.interface';
@@ -83,6 +85,20 @@ export async function POST(request: NextRequest) {
     const newLevel = parseResult.data.level;
     const prevLevel = logger.getLevel();
     logger.setLevel(newLevel);
+
+    // 同步持久化日志级别至 config.json
+    try {
+      const configPath = path.join(process.cwd(), 'config.json');
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf-8');
+        const configData = JSON.parse(raw);
+        if (!configData.logging) configData.logging = {};
+        configData.logging.level = newLevel;
+        fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf-8');
+      }
+    } catch (saveErr) {
+      logger.warn('SYSTEM', `[Config] 持久化日志级别至 config.json 异常: ${saveErr}`);
+    }
 
     logger.info('SYSTEM', `系统运行日志输出级别由 [${prevLevel.toUpperCase()}] 动态调整为 [${newLevel.toUpperCase()}]`);
 
