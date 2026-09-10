@@ -23,6 +23,7 @@ export interface CachedDocSummary {
   isTextBased?: boolean;
   pageCount?: number;
   hasPreprocessed?: boolean;
+  cacheLevel?: 'L1' | 'L2' | 'L3'; // 三级缓存层级：L1 解析缓存，L2 预处理就绪，L3 仅原件
 }
 
 /**
@@ -99,10 +100,13 @@ export async function GET(request: Request) {
           };
         }
 
+        const effectiveLevel = cached.cacheLevel || (cached.model === '未调用模型' || !cached.sessionDocument?.batches?.[0]?.grade ? 'L2' : 'L1');
+
         return NextResponse.json({
           success: true,
           result: {
             ...cached,
+            cacheLevel: effectiveLevel,
             bboxes,
             sessionDocument: cached.sessionDocument,
           },
@@ -127,6 +131,11 @@ export async function GET(request: Request) {
           if (data && data.md5) {
             const cachedVersion = data.parserConfigVersion || '1.0.0';
             const isVersionMatched = cachedVersion === currentVersion;
+            const hasParsedBatches = data.sessionDocument?.batches?.some(b => Boolean(b.grade || b.standard));
+            const cacheLevel: 'L1' | 'L2' = data.cacheLevel
+              ? (data.cacheLevel as 'L1' | 'L2')
+              : (data.model === '未调用模型' || !hasParsedBatches ? 'L2' : 'L1');
+
             documents.push({
               md5: data.md5,
               docId: data.sessionDocument?.docId || `doc_${data.md5.slice(0, 8)}`,
@@ -141,6 +150,7 @@ export async function GET(request: Request) {
               isTextBased: data.isTextBased,
               pageCount: data.pageCount || data.sessionDocument?.pageCount || 1,
               hasPreprocessed: Boolean(data.preprocessedDir),
+              cacheLevel,
             });
           }
         } catch (err) {

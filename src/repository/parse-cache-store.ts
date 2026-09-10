@@ -20,15 +20,16 @@ export interface CachedParseResult {
   model: string;
   provider: string;
   parsedAt: string;
+  cacheLevel?: 'L1' | 'L2' | 'L3'; // 三级缓存层级：L1 解析缓存，L2 预处理缓存，L3 原件缓存
   tokenStats: {
     inputTokens: number;
     outputTokens: number;
     durationSeconds: number;
     isFromCache: boolean;
   };
-  rawStreamingJson: string;
+  rawStreamingJson?: string;
   sessionDocument: SessionDocument;
-  bboxes: FieldBBox[];
+  bboxes?: FieldBBox[];
 }
 
 /**

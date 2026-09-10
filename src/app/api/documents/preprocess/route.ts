@@ -8,8 +8,12 @@ import { OpenAiCompatibleExtractor } from '@/extractor/openai-compatible-extract
 import { logger } from '@/logger/index.ts';
 
 export async function POST(request: Request) {
+  const startTime = Date.now();
+
   try {
     const contentType = request.headers.get('content-type') || '';
+    logger.debug('EXTRACTOR', `[API /api/documents/preprocess] 收到预处理上传请求, Content-Type: ${contentType}`);
+
     let fileBuffer: Buffer | null = null;
     let filename = '质保书.pdf';
     let clientExtractedText: string | undefined;
@@ -61,11 +65,18 @@ export async function POST(request: Request) {
     }
 
     if (!fileBuffer) {
+      logger.warn('EXTRACTOR', `[API /api/documents/preprocess] 上传内容解析为空，拒绝请求`);
       return NextResponse.json(
         { success: false, error: '未提供有效的文件内容' },
         { status: 400 }
       );
     }
+
+    const fileSizeKb = (fileBuffer.length / 1024).toFixed(1);
+    logger.debug(
+      'EXTRACTOR',
+      `[API /api/documents/preprocess] 文件解包完成: [${filename}] (${fileSizeKb} KB) | 切图数: ${clientPageImages.length} | 矢量文本: ${clientExtractedText ? `${clientExtractedText.length} 字符` : '无'} | 坐标Tokens: ${clientTextTokens?.length || 0} 个`
+    );
 
     // 1. 严格格式准入校验（仅支持 PDF 与 PNG / JPEG / JPG / BMP）
     const validation = globalDocumentPreprocessorService.validateFormat(filename);
@@ -76,18 +87,22 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    logger.debug('EXTRACTOR', `[API /api/documents/preprocess] 格式准入校验通过: [${filename}] (${validation.isPdf ? 'PDF 文档' : '图片格式'})`);
 
     // 2. 计算文件 MD5 指纹
+    const md5Start = Date.now();
     const md5 = crypto.createHash('md5').update(fileBuffer).digest('hex');
+    logger.debug('EXTRACTOR', `[API /api/documents/preprocess] MD5 指纹计算完成: ${md5} (计算耗时: ${Date.now() - md5Start}ms)`);
 
-    // 3. 原件即时落盘至 .cache/uploads/{md5}.{ext}
+    // 3. 原件即时落盘至 .cache/uploads/{md5}.{ext} (L3 原件缓存)
     const originalFilePath = globalDocumentPreprocessorService.saveUploadedOriginal(
       md5,
       filename,
       fileBuffer
     );
+    logger.debug('EXTRACTOR', `[API /api/documents/preprocess] L3 原件落盘就绪: ${originalFilePath}`);
 
-    // 4. 预处理产物（切图与 text.txt、tokens.json）即时落盘至 .cache/preprocessed/{md5}/
+    // 4. 预处理产物（切图与 text.txt、tokens.json）即时落盘至 .cache/preprocessed/{md5}/ (L2 预处理缓存)
     // 若为单张图片且未传 pageImages，则以原图作为第一页切图
     const pagesToSave = clientPageImages.length > 0
       ? clientPageImages
@@ -101,15 +116,102 @@ export async function POST(request: Request) {
       clientExtractedText,
       clientTextTokens
     );
+    logger.debug(
+      'EXTRACTOR',
+      `[API /api/documents/preprocess] L2 预处理产物落盘就绪: 目录=${preAssets.dir}, 切图=${preAssets.pageCount} 张, 矢量文本=${preAssets.isTextBased ? '有' : '无'}`
+    );
 
-    // 5. 校验当前版本是否存在历史解析结果
+    // 5. 校验当前版本是否存在历史解析结果 (L1 解析缓存)
     const extractor = new OpenAiCompatibleExtractor();
     const currentVersion = extractor.getParserConfigVersion();
-    const cachedParse = globalParseCacheStore.getValid(md5, currentVersion);
+    let cachedParse = globalParseCacheStore.getValid(md5, currentVersion);
+    let cacheLevel: 'L1' | 'L2' = 'L2';
 
+    if (cachedParse) {
+      cacheLevel = cachedParse.cacheLevel === 'L2' ? 'L2' : 'L1';
+      logger.debug(
+        'EXTRACTOR',
+        `[API /api/documents/preprocess] 检索到历史缓存: MD5=${md5}, 等级=${cacheLevel}, 模型=${cachedParse.model}`
+      );
+    } else {
+      // 方案 C 落地：若无历史解析缓存，立即生成 L2 预处理草稿写入 .cache/parses/{md5}.json
+      // 使得步骤 1 上传预处理完成的文档在「历史已缓存文档」中立即可见
+      const sizeStr = `${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB`;
+      const pageUrls = preAssets.images && preAssets.images.length > 0
+        ? preAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${md5}&page=${idx + 1}`)
+        : [];
+
+      const draftResult: any = {
+        md5,
+        filename,
+        fileSize: sizeStr,
+        parsedAt: new Date().toISOString(),
+        model: '未调用模型',
+        provider: 'local',
+        parserConfigVersion: currentVersion,
+        isTextBased: preAssets.isTextBased,
+        pageCount: preAssets.pageCount,
+        preprocessedDir: preAssets.dir,
+        cacheLevel: 'L2',
+        sessionDocument: {
+          docId: `doc_${md5.slice(0, 8)}`,
+          filename,
+          fileSize: sizeStr,
+          uploadTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          ocrStatus: 'PENDING',
+          pageCount: preAssets.pageCount,
+          pages: pageUrls,
+          samplePages: pageUrls,
+          extractedText: clientExtractedText || '',
+          isTextBased: preAssets.isTextBased,
+          batches: [
+            {
+              batchNo: '',
+              subBatchIndex: 1,
+              grade: '',
+              standard: '',
+              supplier: '',
+              dimensions: '',
+              heatNo: '',
+              packNo: '',
+              productName: '',
+              certificateNo: '',
+              deliveryState: '',
+              constructionNo: '',
+              verdict: 'MANUAL_REVIEW',
+              verdictSummary: '预处理已就绪，等待大模型解析提取...',
+              ocrConfidence: 0,
+              gradeMatchConfidence: 0,
+              chemical: [],
+              mechanical: { tensile_rm: '', yield_rp02: '', elongation_a: '' },
+              process: { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '' },
+              reportNo: '',
+              sha256Hash: '',
+              inspector: '',
+            },
+          ],
+        },
+        tokenStats: {
+          inputTokens: 0,
+          outputTokens: 0,
+          durationSeconds: 0,
+          isFromCache: false,
+        },
+        rawStreamingJson: '',
+        bboxes: [],
+      };
+
+      globalParseCacheStore.set(md5, draftResult);
+      logger.debug(
+        'EXTRACTOR',
+        `[API /api/documents/preprocess] 已生成 L2 预处理就绪缓存草稿 -> .cache/parses/${md5}.json (立即可见)`
+      );
+    }
+
+    const totalDuration = Date.now() - startTime;
     logger.info(
       'EXTRACTOR',
-      `[API /api/documents/preprocess] 文件即时预处理落盘就绪 [${filename}] -> MD5: ${md5}, 切图: ${preAssets.pageCount} 张, 命中解析缓存: ${Boolean(cachedParse)}`
+      `[API /api/documents/preprocess] 文件即时预处理完成 [${filename}] -> MD5: ${md5}, 切图: ${preAssets.pageCount} 张, 缓存等级: ${cacheLevel}, 总耗时: ${totalDuration}ms`
     );
 
     return NextResponse.json({
@@ -118,7 +220,8 @@ export async function POST(request: Request) {
       filename,
       pageCount: preAssets.pageCount,
       isTextBased: preAssets.isTextBased,
-      hasCachedParse: Boolean(cachedParse),
+      hasCachedParse: cacheLevel === 'L1',
+      cacheLevel,
       parserConfigVersion: currentVersion,
       originalFilePath,
       preprocessedDir: preAssets.dir,

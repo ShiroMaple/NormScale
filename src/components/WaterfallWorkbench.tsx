@@ -192,6 +192,24 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 }) => {
   // 当前激活的步骤索引：0 (Step 1), 1 (Step 2), 2 (Step 3), 3 (Step 4)
   const [currentStep, setCurrentStep] = useState<number>(initialStep);
+
+  // 全局轻量 Toast 状态通知（提升至顶部供所有异步回调与流水线就绪使用）
+  const [toastInfo, setToastInfo] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+  } | null>(null);
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastInfo({ message, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToastInfo(null);
+      toastTimerRef.current = null;
+    }, 3500);
+  }, []);
   const [zoomLevel, setZoomLevel] = useState<number>(150);
   const [rotation, setRotation] = useState<number>(0); // 顺时针旋转角度 (0, 90, 180, 270)
   const [pageOrientationOverride, setPageOrientationOverride] = useState<'auto' | 'portrait' | 'landscape'>('auto'); // 用户版式覆盖 (auto自适应, portrait强制竖版, landscape强制横版)
@@ -279,6 +297,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   const [currentDocPage, setCurrentDocPage] = useState<number>(1);
   const pdfScrollContainerRef = useRef<HTMLDivElement>(null);
   const rightScrollContainerRef = useRef<HTMLDivElement>(null);
+  const step1ScrollContainerRef = useRef<HTMLElement>(null);
+  const step3ScrollContainerRef = useRef<HTMLElement>(null);
+  const [canScrollTop, setCanScrollTop] = useState<boolean>(false);
   const [uploadedFileUrls, setUploadedFileUrls] = useState<Record<string, string>>({});
   const [docBboxesMap, setDocBboxesMap] = useState<Record<string, FieldBBox[]>>({});
   // 步骤 3 批次核验调度防重锁（跨步骤级联清理与并发控制）
@@ -518,6 +539,50 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     };
   }, [currentStep, selectedDocId]);
 
+  // 监听当前步骤主滚动容器的垂直滚动距离，驱动返回顶部按钮可用状态
+  useEffect(() => {
+    let targetEl: HTMLElement | null = null;
+    if (currentStep === 2) {
+      targetEl = step3ScrollContainerRef.current;
+    } else if (currentStep === 1) {
+      targetEl = rightScrollContainerRef.current;
+    } else if (currentStep === 0) {
+      targetEl = step1ScrollContainerRef.current;
+    }
+
+    if (!targetEl) {
+      setCanScrollTop(false);
+      return;
+    }
+
+    const checkScroll = () => {
+      if (targetEl) {
+        setCanScrollTop(targetEl.scrollTop > 80);
+      }
+    };
+
+    checkScroll();
+    targetEl.addEventListener('scroll', checkScroll, { passive: true });
+    return () => {
+      targetEl?.removeEventListener('scroll', checkScroll);
+    };
+  }, [currentStep]);
+
+  // 平滑滚动回当前激活步骤的主容器顶部
+  const handleScrollToTop = useCallback(() => {
+    let targetEl: HTMLElement | null = null;
+    if (currentStep === 2) {
+      targetEl = step3ScrollContainerRef.current;
+    } else if (currentStep === 1) {
+      targetEl = rightScrollContainerRef.current;
+    } else if (currentStep === 0) {
+      targetEl = step1ScrollContainerRef.current;
+    }
+    if (targetEl) {
+      targetEl.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentStep]);
+
   // 组件卸载时安全清理定时器
   useEffect(() => {
     return () => {
@@ -640,6 +705,17 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           setSelectedBatchNo(firstBatch.batchNo);
         }
       }
+      // 双向投影至 queuedDocs，确保步骤 1 队列与全局会话保持同步，消除空队列假象
+      const projectedDocs: QueuedDocItem[] = (loadedSession.documents || []).map(d => ({
+        id: d.docId,
+        filename: d.filename,
+        status: '已命中解析缓存',
+        size: d.fileSize ? (typeof d.fileSize === 'number' ? `${Math.round(d.fileSize / 1024)} KB` : String(d.fileSize)) : '已归档',
+        date: new Date(loadedSession.createdAt || Date.now()).toLocaleDateString('zh-CN'),
+        md5: d.md5,
+        pageCount: d.pageCount || d.pages?.length || 1,
+      }));
+      setQueuedDocs(projectedDocs);
       setCurrentStep(1); // 自动进入 Step 2 进行核对
     }
   }, [loadedSession]);
@@ -661,10 +737,16 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     date: string;
     size: string;
     md5?: string;
+    cacheLevel?: 'L1' | 'L2' | 'L3';
   }
 
   // 待处理文档队列状态（初始完全清空为 0，由用户上传或从真实缓存载入）
   const [queuedDocs, setQueuedDocs] = useState<QueuedDocItem[]>([]);
+
+  // 是否存在正在进行切图预处理或上传中的文档（门禁守卫核心状态）
+  const isAnyDocPreprocessing = queuedDocs.some(
+    d => d.status === '预处理中...' || d.status === '上传中'
+  );
 
   // 历史已缓存文档列表状态（由服务端 .cache/parses/ 动态提供）
   const [cachedDocs, setCachedDocs] = useState<CachedDocItem[]>([]);
@@ -682,6 +764,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               filename: d.filename,
               date: new Date(d.parsedAt).toLocaleDateString(),
               size: d.fileSize,
+              cacheLevel: d.cacheLevel || 'L1',
             }))
           );
         }
@@ -728,6 +811,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         };
         const finalDocId = doc.docId || item.id;
 
+        const isL1Parsed = data.result?.cacheLevel === 'L1' || (doc.batches && Boolean(doc.batches[0]?.grade));
+
         setQueuedDocs(prev => {
           if (prev.some(d => d.id === finalDocId || (item.md5 && d.md5 === item.md5))) return prev;
           return [
@@ -735,7 +820,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             {
               id: finalDocId,
               filename: item.filename,
-              status: '已命中解析缓存',
+              status: isL1Parsed ? '已命中解析缓存' : '就绪',
               size: item.size,
               date: item.date,
               md5: item.md5 || data.result.md5,
@@ -790,6 +875,103 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       showToast('删除缓存请求异常', 'error');
     }
   };
+
+  // 即时触发客户端切图、文本提取与服务端预处理落盘流水线（可供初次上传及自检自愈复用）
+  const runInstantPreprocess = useCallback(
+    async (file: File, docId: string, blobUrlParam?: string) => {
+      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      const currentBlobUrl = blobUrlParam || URL.createObjectURL(file);
+      try {
+        let prePages: string[] = [];
+        let extractedText = '';
+        let preTokens: any[] | undefined;
+        let isTextBased = false;
+        let pageCount = 1;
+
+        if (!file.type.includes('image') && ext === '.pdf') {
+          const preRes = await renderPdfAndExtractText(file);
+          prePages = preRes.pages || [];
+          extractedText = preRes.text || '';
+          preTokens = preRes.textTokens;
+          isTextBased = preRes.isTextBased;
+          pageCount = preRes.pageCount;
+        } else {
+          prePages = [currentBlobUrl];
+        }
+
+        // 即时将原件与预处理切图/文本及 Token 坐标提交到服务端落盘
+        const formData = new FormData();
+        formData.append('file', file);
+        if (extractedText) {
+          formData.append('extractedText', extractedText);
+        }
+        if (preTokens && preTokens.length > 0) {
+          formData.append('textTokens', JSON.stringify(preTokens));
+        }
+        if (prePages.length > 0) {
+          formData.append('pageImages', JSON.stringify(prePages));
+        }
+
+        const res = await fetch('/api/documents/preprocess', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          const finalMd5 = data.md5;
+          setQueuedDocs(qPrev =>
+            qPrev.map(q =>
+              q.id === docId
+                ? {
+                  ...q,
+                  md5: finalMd5,
+                  status: data.hasCachedParse ? '已命中解析缓存' : '就绪',
+                  pageCount: data.pageCount,
+                }
+                : q
+            )
+          );
+
+          setSession(sPrev => ({
+            ...sPrev,
+            documents: sPrev.documents.map(d =>
+              d.docId === docId
+                ? {
+                  ...d,
+                  md5: finalMd5,
+                  pages: prePages.length > 0 ? prePages : d.pages,
+                  samplePages: prePages.length > 0 ? prePages : d.samplePages,
+                  pageCount: data.pageCount || pageCount,
+                  extractedText,
+                  isTextBased,
+                }
+                : d
+            ),
+          }));
+
+          if (data.hasCachedParse) {
+            showToast(`预处理完成 (已检测到历史解析缓存: ${file.name})`, 'success');
+          } else {
+            showToast(`预处理就绪 (共 ${data.pageCount || pageCount} 页): ${file.name}`, 'success');
+          }
+
+          // 步骤 1 文档上传并预处理完成后，即让已缓存文档队列刷新一次
+          refreshCachedDocs();
+        } else {
+          setQueuedDocs(qPrev =>
+            qPrev.map(q => (q.id === docId ? { ...q, status: '就绪' } : q))
+          );
+        }
+      } catch (prepErr) {
+        console.error('[InstantPreprocess] 预处理失败:', prepErr);
+        setQueuedDocs(qPrev =>
+          qPrev.map(q => (q.id === docId ? { ...q, status: '就绪' } : q))
+        );
+      }
+    },
+    [renderPdfAndExtractText, refreshCachedDocs, showToast]
+  );
 
   // 处理用户选择真实本地文件上传 (严格限制仅支持 PDF 与 PNG/JPEG/JPG/BMP 图片)
   const handleRealFiles = (files: FileList | File[]) => {
@@ -874,95 +1056,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       });
 
       // 即时触发客户端切图、文本提取与服务端预处理落盘流水线
-      const runInstantPreprocess = async () => {
-        try {
-          let prePages: string[] = [];
-          let extractedText = '';
-          let preTokens: any[] | undefined;
-          let isTextBased = false;
-          let pageCount = 1;
-
-          if (!file.type.includes('image') && ext === '.pdf') {
-            const preRes = await renderPdfAndExtractText(file);
-            prePages = preRes.pages || [];
-            extractedText = preRes.text || '';
-            preTokens = preRes.textTokens;
-            isTextBased = preRes.isTextBased;
-            pageCount = preRes.pageCount;
-          } else {
-            prePages = [blobUrl];
-          }
-
-          // 即时将原件与预处理切图/文本及 Token 坐标提交到服务端落盘
-          const formData = new FormData();
-          formData.append('file', file);
-          if (extractedText) {
-            formData.append('extractedText', extractedText);
-          }
-          if (preTokens && preTokens.length > 0) {
-            formData.append('textTokens', JSON.stringify(preTokens));
-          }
-          if (prePages.length > 0) {
-            formData.append('pageImages', JSON.stringify(prePages));
-          }
-
-          const res = await fetch('/api/documents/preprocess', {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await res.json();
-
-          if (data.success) {
-            const finalMd5 = data.md5;
-            setQueuedDocs(qPrev =>
-              qPrev.map(q =>
-                q.id === docId
-                  ? {
-                    ...q,
-                    md5: finalMd5,
-                    status: data.hasCachedParse ? '已命中解析缓存' : '就绪',
-                    pageCount: data.pageCount,
-                  }
-                  : q
-              )
-            );
-
-            setSession(sPrev => ({
-              ...sPrev,
-              documents: sPrev.documents.map(d =>
-                d.docId === docId
-                  ? {
-                    ...d,
-                    md5: finalMd5,
-                    pages: prePages.length > 0 ? prePages : d.pages,
-                    samplePages: prePages.length > 0 ? prePages : d.samplePages,
-                    pageCount: data.pageCount || pageCount,
-                    extractedText,
-                    isTextBased,
-                  }
-                  : d
-              ),
-            }));
-
-            if (data.hasCachedParse) {
-              showToast(`预处理完成 (已检测到历史解析缓存: ${file.name})`, 'success');
-            } else {
-              showToast(`预处理就绪 (共 ${data.pageCount || pageCount} 页): ${file.name}`, 'success');
-            }
-          } else {
-            setQueuedDocs(qPrev =>
-              qPrev.map(q => (q.id === docId ? { ...q, status: '就绪' } : q))
-            );
-          }
-        } catch (prepErr) {
-          console.error('[InstantPreprocess] 预处理失败:', prepErr);
-          setQueuedDocs(qPrev =>
-            qPrev.map(q => (q.id === docId ? { ...q, status: '就绪' } : q))
-          );
-        }
-      };
-
-      runInstantPreprocess();
+      runInstantPreprocess(file, docId, blobUrl);
     });
 
     setUploadedFileUrls(prev => ({ ...prev, ...newUrls }));
@@ -1020,7 +1114,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       return;
     }
 
-    const newSessionId = generateSessionId();
+    // 步骤 2 启动解析前的状态自检与防御门禁
+    if (isAnyDocPreprocessing) {
+      showToast('文档切图与文本正在预处理中，请稍候...', 'info');
+      return;
+    }
+
     // 严格仅采用用户实际加入队列的文档 (基于实例 docId 及真实内容 md5 精确关联，杜绝文件名碰撞)
     let activeDocs = session.documents.filter(d =>
       queuedDocs.some(
@@ -1038,6 +1137,43 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
       return;
     }
 
+    // 检查预处理产物完备性（切图 pages 是否存在且非空）
+    let hasReprocessingTriggered = false;
+    const missingResourceDocNames: string[] = [];
+
+    for (const doc of activeDocs) {
+      const hasPages = Array.isArray(doc.pages) && doc.pages.length > 0;
+      if (!hasPages) {
+        const rawFile = uploadedFilesMap[doc.docId];
+        if (rawFile) {
+          // 文档原件仍在：重新执行预处理自愈
+          hasReprocessingTriggered = true;
+          setQueuedDocs(prev => prev.map(q => q.id === doc.docId ? { ...q, status: '预处理中...' } : q));
+          showToast(`检测到文档 [${doc.filename}] 切图产物缺失，正在自动重新生成...`, 'info');
+          runInstantPreprocess(rawFile, doc.docId, uploadedFileUrls[doc.docId]);
+        } else {
+          // 原件也缺失：记录名称，从队列与 session 中精确移除
+          missingResourceDocNames.push(doc.filename);
+          setQueuedDocs(prev => prev.filter(q => q.id !== doc.docId));
+          setSession(prev => ({
+            ...prev,
+            documents: prev.documents.filter(d => d.docId !== doc.docId),
+          }));
+        }
+      }
+    }
+
+    if (missingResourceDocNames.length > 0) {
+      showToast(`文档 [${missingResourceDocNames.join(', ')}] 产物与原件资源均缺失，已从队列中移除，请重新上传`, 'error');
+      return;
+    }
+
+    if (hasReprocessingTriggered) {
+      // 保持在步骤 1，等待自愈完成由用户再次点击
+      return;
+    }
+
+    const newSessionId = generateSessionId();
     const totalBatches = activeDocs.reduce((acc, d) => acc + d.batches.length, 0);
     const passedBatches = activeDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'PASS').length, 0);
     const failedBatches = activeDocs.reduce((acc, d) => acc + d.batches.filter(b => b.verdict === 'FAIL').length, 0);
@@ -2204,24 +2340,6 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     };
   }, [isScreenshotMenuOpen]);
 
-  // 全局轻量 Toast 状态通知
-  const [toastInfo, setToastInfo] = useState<{
-    message: string;
-    type: 'success' | 'error' | 'info';
-  } | null>(null);
-  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
-    setToastInfo({ message, type });
-    toastTimerRef.current = setTimeout(() => {
-      setToastInfo(null);
-      toastTimerRef.current = null;
-    }, 3500);
-  }, []);
-
   // 监听大模型解析错误并阻断提示
   useEffect(() => {
     if (lastError) {
@@ -2518,9 +2636,35 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   }, [session.documents, selectedDocId, selectedBatchNo, capturePanelToPng, showToast]);
 
   const goToStep = (stepIdx: number) => {
-    if (stepIdx > 0 && (!session.documents || session.documents.length === 0)) {
-      showToast('请先在步骤 1 上传或选择待检验文档', 'info');
-      return;
+    if (stepIdx > 0) {
+      const hasAnyDocs = (session.documents && session.documents.length > 0) || queuedDocs.length > 0;
+      if (!hasAnyDocs) {
+        showToast('请先在步骤 1 上传或选择待检验文档', 'info');
+        return;
+      }
+      if (isAnyDocPreprocessing) {
+        showToast('文档切图与文本正在预处理中，请稍候...', 'info');
+        return;
+      }
+
+      // 目标为步骤 3（比对标准）：以结构化数据产物就绪度为准
+      if (stepIdx === 2) {
+        const hasValidBatchData = session.documents?.some(d =>
+          d.batches?.some(b => Boolean(b.grade || b.standard || (b.chemical && b.chemical.length > 0) || (b.mechanical && b.mechanical.length > 0)))
+        );
+        if (!hasValidBatchData) {
+          showToast('请先在步骤 2 核对并录入批次牌号或成分数据，再进入标准比对', 'info');
+          return;
+        }
+      } else if (stepIdx === 1) {
+        // 目标为步骤 2（核对数据）：已有解析产物或处于流式解析任务中放行
+        const hasAnyTask = Object.keys(parsingTasks).length > 0;
+        const hasParsedDocs = session.documents?.some(d => d.ocrStatus === 'DONE' || d.batches?.some(b => Boolean(b.grade || b.standard)));
+        if (!hasAnyTask && !hasParsedDocs) {
+          showToast('请点击右下角“解析文档，核对数据”以启动检验', 'info');
+          return;
+        }
+      }
     }
     if (stepIdx >= 0 && stepIdx <= 2) {
       setCurrentStep(stepIdx);
@@ -2580,7 +2724,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           {/* ========================================================================= */}
           {/* 步骤 1: 批量质保证书录入 (优化版：DocEx 风格物理文档队列与极简上传区) */}
           {/* ========================================================================= */}
-          <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar p-6 space-y-6">
+          <section ref={step1ScrollContainerRef} className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar p-6 space-y-6">
             <div className="max-w-[1440px] mx-auto w-full space-y-5">
 
               {/* 页面标题 */}
@@ -2878,9 +3022,20 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         </span>
                       </div>
                       <div className="min-w-0 flex-1 pr-1">
-                        <span className=" text-xs font-bold text-on-surface dark:text-surface-bright block truncate" title={item.filename}>
-                          {item.filename}
-                        </span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs font-bold text-on-surface dark:text-surface-bright block truncate" title={item.filename}>
+                            {item.filename}
+                          </span>
+                          {item.cacheLevel === 'L2' ? (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 shrink-0">
+                              L2 预处理
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 shrink-0">
+                              L1 已解析
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-on-surface-variant dark:text-outline-variant block mt-0.5">
                           {item.date} • {item.size}
                         </span>
@@ -4387,7 +4542,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
           {/* ========================================================================= */}
           {/* 步骤 3: 质检工作台 - 比对标准 (挂载统一标题与批次选择条) */}
           {/* ========================================================================= */}
-          <section className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar px-6 pb-6 pt-0">
+          <section ref={step3ScrollContainerRef} className="w-full h-full shrink-0 overflow-y-auto custom-scrollbar px-6 pb-6 pt-0">
             <div id="step-3-workbench-panel" className="max-w-[1440px] mx-auto w-full space-y-4 pt-6">
 
               {/* 顶部统一标题与两层树状批次选择条 (固定在顶部，设置 z-40 确保下拉菜单浮于上方) */}
@@ -6149,14 +6304,21 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
               <button
                 type="button"
                 onClick={handleStartNewSessionAndAdvance}
-                disabled={queuedDocs.length === 0}
-                className={`px-5 py-2 rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 ${queuedDocs.length === 0
+                disabled={queuedDocs.length === 0 || isAnyDocPreprocessing}
+                className={`px-5 py-2 rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 ${queuedDocs.length === 0 || isAnyDocPreprocessing
                   ? 'bg-outline-variant/40 dark:bg-border-dark/40 text-on-surface-variant/40 cursor-not-allowed'
                   : 'bg-primary hover:bg-primary-container text-on-primary cursor-pointer'
                   }`}
               >
-                <span>解析文档，核对数据</span>
-                <span className="material-symbols-outlined text-base">arrow_forward</span>
+                {isAnyDocPreprocessing && (
+                  <span className="material-symbols-outlined text-base animate-spin">
+                    progress_activity
+                  </span>
+                )}
+                <span>{isAnyDocPreprocessing ? '文档预处理中...' : '解析文档，核对数据'}</span>
+                {!isAnyDocPreprocessing && (
+                  <span className="material-symbols-outlined text-base">arrow_forward</span>
+                )}
               </button>
             )}
 
@@ -6307,6 +6469,26 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                 </button>
               </>
             )}
+
+            {/* 常驻辅助控制组：分割线 + 返回顶部 (仅图标) */}
+            <div className="w-px h-5 bg-outline-variant/60 dark:bg-border-dark self-center mx-0.5" />
+
+            <button
+              type="button"
+              onClick={handleScrollToTop}
+              disabled={!canScrollTop}
+              className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-all ${
+                canScrollTop
+                  ? 'border-outline-variant dark:border-border-dark text-on-surface dark:text-surface-bright hover:bg-surface-container-low dark:hover:bg-surface-dark-low hover:border-primary/50 cursor-pointer shadow-2xs active:scale-95'
+                  : 'border-outline-variant/30 dark:border-border-dark/30 text-on-surface-variant/30 dark:text-outline-variant/20 border-dashed cursor-not-allowed opacity-40'
+              }`}
+              title={canScrollTop ? '返回顶部' : '已在顶部'}
+              aria-label="返回顶部"
+            >
+              <span className="material-symbols-outlined text-lg">
+                vertical_align_top
+              </span>
+            </button>
           </div>
         </div>
       </footer>

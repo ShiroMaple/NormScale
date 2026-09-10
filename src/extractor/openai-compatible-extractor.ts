@@ -359,6 +359,9 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+          const requestStartTime = Date.now();
+          let ttftMs: number | null = null;
+
           try {
             logger.info('EXTRACTOR', `[OpenAI-Extractor-Stream] 发起流式解析请求 (尝试 ${attempt + 1}/${this.maxRetries + 1}): ${endpoint}`);
             const response = await fetch(endpoint, {
@@ -422,6 +425,9 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
 
                     const delta = parsedChunk.choices?.[0]?.delta?.content || '';
                     if (delta) {
+                      if (ttftMs === null) {
+                        ttftMs = Date.now() - requestStartTime;
+                      }
                       fullContent += delta;
                       onChunk?.(delta);
                     }
@@ -445,6 +451,9 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
                 }
                 const delta = parsedChunk.choices?.[0]?.delta?.content || '';
                 if (delta) {
+                  if (ttftMs === null) {
+                    ttftMs = Date.now() - requestStartTime;
+                  }
                   fullContent += delta;
                   onChunk?.(delta);
                 }
@@ -457,9 +466,14 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
             const promptTokens = capturedPromptTokens ?? 1800;
             const completionTokens = capturedCompletionTokens ?? Math.max(200, Math.ceil(fullContent.length / 3.5));
 
+            const totalDurationMs = Date.now() - requestStartTime;
+            const durationSec = (totalDurationMs / 1000).toFixed(2);
+            const ttftStr = ttftMs !== null ? `${ttftMs}ms` : '未知';
+            const speedStr = totalDurationMs > 0 ? `${(completionTokens / (totalDurationMs / 1000)).toFixed(1)} tok/s` : 'N/A';
+
             logger.info(
               'EXTRACTOR',
-              `[OpenAI-Extractor-Stream] 流式解析成功，累计字符: ${fullContent.length}，Token 开销: 输入 ${promptTokens} (${capturedPromptTokens !== undefined ? '官方真实' : '备用估算'}) / 输出 ${completionTokens} (${capturedCompletionTokens !== undefined ? '官方真实' : '备用估算'})`
+              `[OpenAI-Extractor-Stream] 流式解析成功 | 模型: ${this.activeConfig.model} (${this.activeConfig.provider}) | 耗时: ${durationSec}s (首字响应: ${ttftStr}, 速率: ${speedStr}) | 累计字符: ${fullContent.length} | Token 开销: 输入 ${promptTokens} / 输出 ${completionTokens}`
             );
 
             return this.buildPayloadResult(parsed, fullContent, promptTokens, completionTokens);
