@@ -312,10 +312,16 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
                 value={selectedStandardId}
                 onChange={(e) => setSelectedStandardId(e.target.value)}
                 disabled={isLoadingStandards}
-                className="rounded-lg border border-outline-variant/80 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low px-3 py-1.5 text-xs font-bold text-primary dark:text-primary-fixed-dim focus:outline-none focus:border-primary font-mono cursor-pointer shadow-2xs min-w-[280px] sm:min-w-[360px]"
+                className="rounded-lg border border-outline-variant/80 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low px-3 py-1.5 text-xs font-bold text-primary dark:text-primary-fixed-dim focus:outline-none focus:border-primary font-yahei cursor-pointer shadow-2xs min-w-[280px] sm:min-w-[360px]"
+                style={{ fontFamily: '"Microsoft YaHei", "微软雅黑", sans-serif' }}
               >
                 {standardsList.map((std) => (
-                  <option key={std.standard_id} value={std.standard_id}>
+                  <option
+                    key={std.standard_id}
+                    value={std.standard_id}
+                    className="font-yahei"
+                    style={{ fontFamily: '"Microsoft YaHei", "微软雅黑", sans-serif' }}
+                  >
                     {std.standard_id} · {std.standard_name} ({std.slice_count} 钢级)
                   </option>
                 ))}

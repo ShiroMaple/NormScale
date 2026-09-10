@@ -1043,7 +1043,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     const newSession: InspectionSession = {
       sessionId: newSessionId,
       createdAt: new Date().toLocaleString(),
-      title: `现场实时录入批次 · 共 ${activeDocs.length} 份文档检验`,
+      title: `工作台录入批次 · 共 ${activeDocs.length} 份文档检验`,
       totalDocuments: activeDocs.length,
       totalBatches,
       passedBatches,
@@ -2907,7 +2907,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                         fact_check
                       </span>
                       <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright flex items-center gap-2">
-                        <span>分层核验典型场景专测矩阵</span>
+                        <span>典型场景测试用例</span>
                         <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800 text-[10px] font-bold">
                           专用测试数据
                         </span>
@@ -2988,11 +2988,10 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               type="button"
                               disabled={Boolean(loadingScenarios[sc.id])}
                               onClick={() => handleLoadScenarioFile(sc)}
-                              className={`ml-auto px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1 ${
-                                loadingScenarios[sc.id]
+                              className={`ml-auto px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1 ${loadingScenarios[sc.id]
                                   ? 'bg-primary/60 text-on-primary cursor-wait'
                                   : 'bg-primary hover:bg-primary-container text-on-primary cursor-pointer'
-                              }`}
+                                }`}
                               title="将该测试用例高清矢量 PDF 原件装载入待处理队列"
                             >
                               <span className={`material-symbols-outlined text-[13px] ${loadingScenarios[sc.id] ? 'animate-spin' : ''}`}>
@@ -5280,20 +5279,20 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
                               {/* 1. 左侧约 55% (md:col-span-7)：系统客观判定 */}
                               <div className={`md:col-span-7 min-w-0 p-3.5 flex flex-col justify-center space-y-1.5 ${isResolving
-                                  ? 'bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200'
-                                  : isBatchHitl
-                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
-                                    : sysVerdict === 'FAIL'
-                                      ? 'bg-status-fail-bg text-status-fail-text'
-                                      : 'bg-status-pass-bg text-status-pass-text'
+                                ? 'bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200'
+                                : isBatchHitl
+                                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
+                                  : sysVerdict === 'FAIL'
+                                    ? 'bg-status-fail-bg text-status-fail-text'
+                                    : 'bg-status-pass-bg text-status-pass-text'
                                 }`}>
                                 <div className="flex items-center gap-2 flex-wrap justify-between">
                                   <div className="flex items-center gap-2">
                                     <span className={`material-symbols-outlined text-xl font-bold shrink-0 ${isResolving
-                                        ? 'text-indigo-600 dark:text-indigo-400 animate-spin'
-                                        : isBatchHitl
-                                          ? 'text-amber-600 dark:text-amber-400'
-                                          : ''
+                                      ? 'text-indigo-600 dark:text-indigo-400 animate-spin'
+                                      : isBatchHitl
+                                        ? 'text-amber-600 dark:text-amber-400'
+                                        : ''
                                       }`}>
                                       {isResolving ? 'sync' : isBatchHitl ? 'pending_actions' : sysVerdict === 'FAIL' ? 'cancel' : 'check_circle'}
                                     </span>
@@ -5308,8 +5307,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     </h3>
                                   </div>
                                   <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap shadow-2xs ${isResolving
-                                      ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700'
-                                      : badgeMeta.badgeClass
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700'
+                                    : badgeMeta.badgeClass
                                     }`}>
                                     {isResolving ? '流转: 语义消歧中' : `流转: ${arbitration.statusLabel}`}
                                   </span>

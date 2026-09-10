@@ -101,6 +101,7 @@ const config: Config = {
         headline: ['Inter', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
         label: ['JetBrains Mono', 'monospace'],
+        yahei: ['"Microsoft YaHei"', '微软雅黑', 'sans-serif'],
       },
       fontSize: {
         'body-md': ['13px', { lineHeight: '1.4', fontWeight: '400' }],

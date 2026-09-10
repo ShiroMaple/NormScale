@@ -166,11 +166,11 @@ export const BatchContextBar: React.FC<BatchContextBarProps> = ({
                 <span>累计开销: 输入 {sessionMetrics.totalInputTokens.toLocaleString()} / 输出 {sessionMetrics.totalOutputTokens.toLocaleString()} Tokens</span>
               </span>
               <span
-                title={`当前 Session 累计执行总耗时${sessionMetrics.auditDurationSeconds !== undefined ? ` (文档抽取: ${(sessionMetrics.parseDurationSeconds || 0).toFixed(1)}s · 规则核验: ${(sessionMetrics.auditDurationSeconds || 0).toFixed(1)}s)` : ''}`}
+                title={`当前 Session 累计解析总耗时${sessionMetrics.auditDurationSeconds !== undefined ? ` (文档抽取: ${(sessionMetrics.parseDurationSeconds || 0).toFixed(1)}s · 规则核验: ${(sessionMetrics.auditDurationSeconds || 0).toFixed(1)}s)` : ''}`}
                 className="shrink-0 flex items-center justify-center gap-1.5 bg-surface-container-high dark:bg-surface-dark-high px-2 py-1 rounded-lg text-[11px] text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark tabular-nums whitespace-nowrap"
               >
                 <span className="material-symbols-outlined text-[14px] text-emerald-600 dark:text-emerald-400 shrink-0">timer</span>
-                <span>总耗时 {sessionMetrics.totalDurationSeconds.toFixed(1)}s</span>
+                <span>解析总耗时 {sessionMetrics.totalDurationSeconds.toFixed(1)}s</span>
               </span>
             </div>
           )}

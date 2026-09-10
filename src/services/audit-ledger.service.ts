@@ -3,6 +3,44 @@ import path from 'path';
 import { InspectionSession } from '@/types/session.ts';
 import { logger } from '@/logger/index.ts';
 
+export interface AuditBatchSummary {
+  batchKey: string;
+  batchNo: string;
+  heatNo?: string;
+  subBatchIndex: number;
+  certificateNo?: string;
+  grade: string;
+  standard: string;
+  supplier?: string;
+  dimensions?: string;
+  verdict: string;
+  systemVerdict?: string;
+  humanVerdict?: string | null;
+  humanVerdictSummary?: string;
+  humanVerifiedAt?: string;
+  reportNo?: string;
+  sha256Hash?: string;
+  inspector?: string;
+  hasHitlCorrection?: boolean;
+  hitlReason?: string;
+  summaryStats?: {
+    passCount: number;
+    failCount: number;
+    missingCount: number;
+    totalRules: number;
+  };
+}
+
+export interface AuditDocSummary {
+  docId: string;
+  filename: string;
+  fileSize: string;
+  pageCount: number;
+  uploadTime?: string;
+  ocrStatus?: string;
+  batches: AuditBatchSummary[];
+}
+
 export interface AuditSessionSummary {
   sessionId: string;
   createdAt: string;
@@ -13,7 +51,14 @@ export interface AuditSessionSummary {
   failedBatches: number;
   hitlBatches: number;
   savedAt: string;
+  grades: string[];
+  standards: string[];
+  suppliers: string[];
+  documents: AuditDocSummary[];
 }
+
+import { parseStandards } from '@/utils/standard-parser';
+export { parseStandards };
 
 export class AuditLedgerService {
   private ledgerDir: string;
@@ -97,6 +142,7 @@ export class AuditLedgerService {
 
   /**
    * 列出所有已归档台账的轻量摘要列表（用于历史台账页面展示）
+   * 包含两层轻量骨架：Session ➔ Document ➔ Batch，并聚合牌号、标准与供货厂家集合
    */
   public listSessions(): AuditSessionSummary[] {
     if (!fs.existsSync(this.ledgerDir)) return [];
@@ -110,16 +156,83 @@ export class AuditLedgerService {
             const raw = fs.readFileSync(path.join(this.ledgerDir, file), 'utf-8');
             const data = JSON.parse(raw);
             if (data && data.sessionId) {
+              const gradeSet = new Set<string>();
+              const standardSet = new Set<string>();
+              const supplierSet = new Set<string>();
+
+              const docSummaries: AuditDocSummary[] = (data.documents || []).map((doc: any, dIdx: number) => {
+                const docId = doc.docId || `doc_${dIdx + 1}`;
+                const batchSummaries: AuditBatchSummary[] = (doc.batches || []).map((b: any, bIdx: number) => {
+                  const bNo = b.batchNo || '';
+                  const hNo = b.heatNo || '';
+                  const subIdx = typeof b.subBatchIndex === 'number' ? b.subBatchIndex : (bIdx + 1);
+                  const batchKey = `${docId}_${bNo || hNo || 'SPECIMEN'}_${subIdx}`;
+
+                  if (b.grade && b.grade.trim()) gradeSet.add(b.grade.trim());
+                  if (b.standard) {
+                    parseStandards(b.standard).forEach(std => standardSet.add(std));
+                  }
+                  if (b.supplier && b.supplier.trim()) supplierSet.add(b.supplier.trim());
+
+                  const reportSummary = b.auditReport?.summary;
+                  const summaryStats = reportSummary ? {
+                    passCount: reportSummary.pass_count ?? 0,
+                    failCount: reportSummary.fail_count ?? 0,
+                    missingCount: reportSummary.missing_count ?? 0,
+                    totalRules: reportSummary.total_rules_evaluated ?? 0,
+                  } : undefined;
+
+                  const hasHitl = Boolean(b.hitlFieldCorrection || b.hitlCorrection || b.hitlReason);
+
+                  return {
+                    batchKey,
+                    batchNo: bNo,
+                    heatNo: hNo || undefined,
+                    subBatchIndex: subIdx,
+                    certificateNo: b.certificateNo || undefined,
+                    grade: b.grade || '未识别牌号',
+                    standard: b.standard || '未指定标准',
+                    supplier: b.supplier || undefined,
+                    dimensions: b.dimensions || undefined,
+                    verdict: b.verdict || 'UNAUDITED',
+                    systemVerdict: b.systemVerdict || b.verdict || 'UNAUDITED',
+                    humanVerdict: b.humanVerdict ?? null,
+                    humanVerdictSummary: b.humanVerdictSummary || undefined,
+                    humanVerifiedAt: b.humanVerifiedAt || undefined,
+                    reportNo: b.reportNo || undefined,
+                    sha256Hash: b.sha256Hash || undefined,
+                    inspector: b.inspector || undefined,
+                    hasHitlCorrection: hasHitl,
+                    hitlReason: b.hitlReason || undefined,
+                    summaryStats,
+                  };
+                });
+
+                return {
+                  docId,
+                  filename: doc.filename || `未命名文档_${dIdx + 1}.pdf`,
+                  fileSize: doc.fileSize || '--',
+                  pageCount: doc.pageCount || 1,
+                  uploadTime: doc.uploadTime || undefined,
+                  ocrStatus: doc.ocrStatus || 'DONE',
+                  batches: batchSummaries,
+                };
+              });
+
               summaries.push({
                 sessionId: data.sessionId,
                 createdAt: data.createdAt || new Date().toISOString(),
                 title: data.title || `检验会话 ${data.sessionId}`,
-                totalDocuments: data.totalDocuments || data.documents?.length || 0,
-                totalBatches: data.totalBatches || 0,
-                passedBatches: data.passedBatches || 0,
-                failedBatches: data.failedBatches || 0,
-                hitlBatches: data.hitlBatches || 0,
+                totalDocuments: data.totalDocuments || docSummaries.length || 0,
+                totalBatches: data.totalBatches || docSummaries.reduce((sum, d) => sum + d.batches.length, 0),
+                passedBatches: data.passedBatches ?? docSummaries.reduce((sum, d) => sum + d.batches.filter(b => b.verdict === 'PASS').length, 0),
+                failedBatches: data.failedBatches ?? docSummaries.reduce((sum, d) => sum + d.batches.filter(b => b.verdict === 'FAIL').length, 0),
+                hitlBatches: data.hitlBatches ?? docSummaries.reduce((sum, d) => sum + d.batches.filter(b => b.hasHitlCorrection || b.verdict === 'MANUAL_REVIEW').length, 0),
                 savedAt: data.savedAt || data.createdAt || new Date().toISOString(),
+                grades: Array.from(gradeSet),
+                standards: Array.from(standardSet),
+                suppliers: Array.from(supplierSet),
+                documents: docSummaries,
               });
             }
           } catch {
