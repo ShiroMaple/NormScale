@@ -9,6 +9,7 @@ import {
   StandardClause,
 } from '@/lib/api-client.ts';
 import { EvaluationRule } from '@/schemas/standard.schema.ts';
+import { MechanicalIcon, ProcessNdtIcon } from '@/components/icons';
 
 interface StandardExplorerProps {
   initialStandardId?: string;
@@ -256,10 +257,16 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
 
   // 动态 Tab 定义（附带规则数量计数，无规则项自适应隐藏）
   const tabDefinitions = useMemo(() => {
-    const tabs: Array<{ id: typeof activeTab; label: string; count: number; icon: string }> = [
+    const tabs: Array<{
+      id: typeof activeTab;
+      label: string;
+      count: number;
+      icon?: string;
+      customIcon?: React.ReactNode;
+    }> = [
       { id: 'chemical', label: '化学成分限值', count: chemicalRules.length, icon: 'science' },
-      { id: 'mechanical', label: '力学与硬度指标', count: mechanicalRules.length, icon: 'fitness_center' },
-      { id: 'process_ndt', label: '工艺与探伤条款', count: processNdtRules.length, icon: 'precision_manufacturing' },
+      { id: 'mechanical', label: '力学与硬度指标', count: mechanicalRules.length, customIcon: <MechanicalIcon className="w-3.5 h-3.5" /> },
+      { id: 'process_ndt', label: '工艺与探伤试验', count: processNdtRules.length, customIcon: <ProcessNdtIcon className="w-3.5 h-3.5" /> },
     ];
 
     if (formulaMiscRules.length > 0) {
@@ -296,7 +303,7 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
       {/* 顶部工具栏：标准选择器 (Select/Combobox) + 搜索框 + 组织类型分类 */}
       <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          
+
           {/* 1. 核心标准切换下拉选择器 */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-on-primary shadow-xs shrink-0">
@@ -368,18 +375,16 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedStructureType(cat.id)}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                  selectedStructureType === cat.id
-                    ? 'bg-primary text-on-primary shadow-xs'
-                    : 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant hover:bg-surface-container-high'
-                }`}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all flex items-center gap-1.5 ${selectedStructureType === cat.id
+                  ? 'bg-primary text-on-primary shadow-xs'
+                  : 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
               >
                 <span>{cat.label}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  selectedStructureType === cat.id
-                    ? 'bg-white/20 text-white'
-                    : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
-                }`}>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${selectedStructureType === cat.id
+                  ? 'bg-white/20 text-white'
+                  : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
+                  }`}>
                   {cat.count}
                 </span>
               </button>
@@ -398,11 +403,11 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
 
       {/* 主体分栏：左侧 35% 切片目录列表，右侧 65% 切片技术规范详情 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        
+
         {/* 左侧：切片目录列表 */}
         <div className="lg:col-span-4 space-y-4">
           <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-4 shadow-xs">
-            
+
             {/* 标准摘要标头 */}
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-outline-variant/40 dark:border-border-dark">
               <div>
@@ -442,11 +447,10 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
                       key={slice.spec_key}
                       type="button"
                       onClick={() => setSelectedSliceKey(slice.spec_key)}
-                      className={`w-full text-left rounded-xl p-3 transition-all flex items-center justify-between border cursor-pointer ${
-                        isSelected
-                          ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs ring-1 ring-primary/20'
-                          : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
-                      }`}
+                      className={`w-full text-left rounded-xl p-3 transition-all flex items-center justify-between border cursor-pointer ${isSelected
+                        ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs ring-1 ring-primary/20'
+                        : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
+                        }`}
                     >
                       <div className="min-w-0 pr-2">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -481,7 +485,7 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
         {/* 右侧：当前切片详细技术规范卡片 */}
         <div className="lg:col-span-8 space-y-4">
           <div className="rounded-xl border border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark p-6 space-y-5 shadow-xs">
-            
+
             {isLoadingDetail || !currentSlice ? (
               <div className="space-y-4 py-8">
                 <div className="h-8 w-48 bg-surface-container-low dark:bg-surface-dark-low rounded animate-pulse" />
@@ -536,19 +540,23 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
                         key={tab.id}
                         type="button"
                         onClick={() => setActiveTab(tab.id)}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                          isActive
-                            ? 'bg-primary text-on-primary shadow-xs'
-                            : 'text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-low dark:hover:bg-surface-dark-low'
-                        }`}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${isActive
+                          ? 'bg-primary text-on-primary shadow-xs'
+                          : 'text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-low dark:hover:bg-surface-dark-low'
+                          }`}
                       >
-                        <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+                        {tab.customIcon ? (
+                          <span className="flex items-center justify-center shrink-0">
+                            {tab.customIcon}
+                          </span>
+                        ) : (
+                          <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+                        )}
                         <span>{tab.label}</span>
-                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                          isActive
-                            ? 'bg-white/20 text-white'
-                            : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
-                        }`}>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant'
+                          }`}>
                           {tab.count}
                         </span>
                       </button>
@@ -588,11 +596,10 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
                                 {roundingStr}
                               </td>
                               <td className="px-4 py-2.5">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                                  rule.requirement_level === 'MANDATORY'
-                                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-300'
-                                }`}>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${rule.requirement_level === 'MANDATORY'
+                                  ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-300'
+                                  }`}>
                                   {rule.requirement_level === 'MANDATORY' ? '必检' : rule.requirement_level}
                                 </span>
                               </td>
@@ -620,11 +627,10 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
                             <span className="text-xs font-bold text-on-surface-variant dark:text-outline-variant font-sans">
                               {rule.display_name}
                             </span>
-                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${
-                              rule.requirement_level === 'MANDATORY'
-                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200'
-                            }`}>
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${rule.requirement_level === 'MANDATORY'
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200'
+                              }`}>
                               {rule.requirement_level === 'MANDATORY' ? '强制考核' : '条件考核'}
                             </span>
                           </div>

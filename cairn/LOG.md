@@ -4,6 +4,22 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-10 · 自定义工业标准 Tab SVG 图标规范化封装与无缝接入
+
+- 工业视觉图标定制与自适应样式封装 (`MechanicalIcon.tsx`, `ProcessNdtIcon.tsx`, `index.ts`, `StandardExplorer.tsx`):
+  1. 资产规范化封装：将存入的 `力学.svg` 与 `工艺分析.svg` 封装为纯客户端 React 图标组件，移除死色填充改用 `fill="currentColor"`；
+  2. 状态自适应着色：使自定义图标与 Tab 的激活态（高亮深蓝底 + 纯白）和未激活态（低饱和中灰文本）实现原生样式跟随与无缝变色；
+  3. 标准库动态接入：在 `tabDefinitions` 的 `mechanical` 和 `process_ndt` 挂载 `customIcon`，平替原 Material Symbols 字体图标；
+  4. 验证就绪：`tsc --noEmit` 0 错误，Vitest 253/253 全绿，无头浏览器真机实测截图验证激活与未激活态视觉协调、无毛刺。
+
+## 2026-09-10 · 工作台首页典型场景测试用例受控折叠展开（默认折叠）落地
+
+- 工作台首页布局精简与测试资产受控管理 (`WaterfallWorkbench.tsx`):
+  1. 状态管理：新增 `isScenariosExpanded` 受控状态，默认设置为 `false`（默认折叠）；
+  2. 交互与布局：点击标题栏整行或右侧「展开/收起」按钮均可切换展示状态，配合 Material Symbols `expand_more / expand_less` 顺滑切换；
+  3. 空间释放：默认状态下隐藏 4 栏测试卡片网格，首页首屏空间显著释放，更加专注聚焦于待解析质保书上传与历史缓存；
+  4. 验证就绪：`tsc --noEmit` 0 错误，通过真实浏览器端实测核验默认折叠与展开收起交互。
+
 ## 2026-09-10 · 执行标准标签独立拆分与会话横向平铺/炉批纵向平铺落地
 
 - 标准拆解与微药丸多维布局治理 (`standard-parser.ts`, `audit-ledger.service.ts`, `AuditLedger.tsx`, `standard-parser.test.ts`):

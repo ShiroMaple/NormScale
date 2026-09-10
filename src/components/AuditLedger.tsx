@@ -396,7 +396,7 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
             <span className="text-2xl font-bold tracking-tight text-purple-600 dark:text-purple-400 tabular-nums">
               {totalStats.pendingHumanReviewBatches}
             </span>
-            <span className="text-[11px] text-on-surface-variant">{totalStats.hitlInvolvedBatches} 项 HITL</span>
+            <span className="text-[11px] text-on-surface-variant"> / {totalStats.hitlInvolvedBatches} 项 HITL</span>
           </div>
         </div>
 
