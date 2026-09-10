@@ -7,10 +7,14 @@
 > 2. **当前下一步（What's next）**：当前焦点 Phase 的明确行动项清单，无需重新推导；
 > 3. **开放决策（Open decisions）**：哪些跨阶段技术决策或业务边界悬而未决，避免踩坑与决策漂移。
 
-**当前焦点**：**Phase 11 - 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 10)**
-- **核心定位**：将 NormScale 从单一不锈钢换热管扩展至碳钢、合金钢等多品类管板锻件标准，存储向生产级演进并完成容器化；
-- **标准扩充**：扩充 GB/T 8163、GB/T 5310、ASME SA-213、EN 10216 等多品类标准切片库；
-- **存储与运维**：升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`，接入 ONNX Runtime 物理坐标抽取，完成全链路监控与 Docker 生产镜像交付。
+**当前里程碑达成**：**Alpha 1.0.0 (首发可用版本 · 2026-09-10)**
+- **系统核心基石**：已交付双轨制合规核验、四维分层体系 (Tier 1-4)、多标准剪刀差归因、三级工业缓存 (L1/L2/L3)、零丢失数据漏斗与 GitHub Actions 生产 CI/CD 自动化闭环；
+- **后续演化战略**：确立“**边试用、边反馈、边开发（Trial-Feedback Loop）**”飞轮模式。在真实业务一线试用中接触更广泛的质保书版式、小众标准、边界问题与极端异常，驱动 LLM 提示词工程微调、规则库扩充与系统鲁棒性升级。详细总结见 [`cairn/alpha-1.0.0-retrospective.md`](alpha-1.0.0-retrospective.md)。
+
+**当前演进焦点**：**Phase 11 - 试用反馈驱动样本飞轮、多品类标准扩充与生产容器化**
+- **试用与反馈飞轮**：收集真实一线 MTC 边界案例与长尾表述，持续微调优化大模型 Prompt、提取约束与思考强度；
+- **标准切片扩充**：扩充 GB/T 8163、GB/T 5310、ASME SA-213、EN 10216 等多品类标准切片库；
+- **存储与运维升级**：平滑升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`，接入 ONNX Runtime 物理坐标抽取，完善全链路监控。
 
 ## 里程碑 (Milestones)
 
@@ -34,8 +38,13 @@
   - 渐进式流式推流 (SSE)：Tier 1 确定性规则秒级下发 `tier1_ready` 全景大盘，长尾项异步推流 `tier2_patch` 补丁，兼顾吞吐与极速响应；
   - 知识经验自学习闭环：质检员在 HITL 中确认的属性映射自动沉淀至 `data/learned_aliases.json`，下次直通 Tier 1 Fast-Path；
   - 生产提取器安全加固：彻底从服务端生产单例与默认 fallback 中剥离 `MockCertificateExtractor`，消除假数据伪造隐雷；
-  - 四维分层典型场景测试资产物理隔离归档：独立收敛至 `tests/fixtures/scenarios/`，受控于 `NEXT_PUBLIC_ENABLE_TEST_FIXTURES` 环境变量，支持一键零残留卸载；详见 [`cairn/langgraph-orchestration-and-fixtures.md`](file:///c:/Users/gaoft/Documents/CodeSpace/NormScale/cairn/langgraph-orchestration-and-fixtures.md)。
-- [ ] **Phase 11: 横向多品类标准扩充、存储升级与生产容器化 (原 Phase 10)**
+- [x] **Milestone Alpha 1.0.0: 首发可用版本（全链路双轨核验、四维流转体系、三级缓存、CI/CD 自动化流水线）**
+  - 核心达成：完整交付从 MTC 预处理、大模型全量提取、Tier 1~4 多标尺比对、全景比对矩阵到历史台账审计的全流程；
+  - 演进战略：确立“边试用、边反馈、边开发”飞轮模式，持续通过样本与一线反馈驱动系统成熟；
+  - 总结全景：详见 [`cairn/alpha-1.0.0-retrospective.md`](alpha-1.0.0-retrospective.md)。
+- [ ] **Phase 11: 边试用边反馈样本飞轮、横向多品类标准扩充与存储升级 (原 Phase 10)**
+  - 一线质检真实 MTC 试用反馈收集、长尾表述与边缘案例库沉淀
+  - 大模型 Prompt 结构与思考强度持续调优，提升复杂异构质保书抽取准确率
   - 扩充管材、板材、锻件等多品类标准规则库
   - 升级 `FileRuleStore` 为 `SqliteRuleStore` / `PostgresRuleStore`（JSONB 索引 + 事务读写），对接生产级分布式向量库
   - 接入后端 PaddleOCR (ONNX Runtime) 服务，用于纯图片与扫描件（`isTextBased === false`）的物理字符 Token 坐标抽取与 `tokens.json` 统一格式产出

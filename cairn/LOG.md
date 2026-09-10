@@ -4,6 +4,14 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-10 · NormScale Alpha 1.0.0 首发里程碑达成与“边试用边反馈边开发”演化战略确立
+
+- 首发可用版本发布与阶段性全景总结 (`alpha-1.0.0-retrospective.md`, `ROADMAP.md`, `package.json`, Git tag `v1.0.0-alpha`):
+  1. 里程碑定义：正式将当前系统定义为 **Alpha 1.0.0** 首发可用版本，完成从预处理、大模型提取、双轨四维比对到 CI/CD 自动化全链路工程闭环；
+  2. 核心成果沉淀：在 `cairn/alpha-1.0.0-retrospective.md` 系统总结六大核心架构资产（双轨核验、四维分层、多标剪刀差、三级缓存、零丢失漏斗、生产 CI/CD）、四大关键决策与踩坑教训；
+  3. 演进战略转型：确立“**边试用、边反馈、边开发 (Trial-Feedback Loop)**”飞轮模式，通过一线质检真实 MTC 试用持续捕获小众标准、长尾表述与边缘案例，反哺驱动 LLM 提示词工程调优与规则库扩充；
+  4. 版本规范与基线锁定：`package.json` 版本升级为 `1.0.0-alpha`，创建带注释 Git 标签 `v1.0.0-alpha` 并同步至远程代码仓。
+
 ## 2026-09-10 · GitHub Actions 自动化 CI/CD 流水线建立、Nginx 4006 反代与首发生产部署上线
 
 - 基础设施与 CI/CD 落地 (`.github/workflows/deploy.yml`, `ecosystem.config.cjs`, `scripts/deploy.sh`):
