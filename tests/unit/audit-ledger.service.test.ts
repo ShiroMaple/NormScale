@@ -1,7 +1,59 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { globalAuditLedgerService } from '@/services/audit-ledger.service';
+import type { InspectionSession } from '@/types/session.ts';
 
 describe('AuditLedgerService - 历史检验台账仓储服务', () => {
+  beforeAll(() => {
+    const list = globalAuditLedgerService.listSessions();
+    if (list.length === 0) {
+      const fixtureSession: InspectionSession = {
+        sessionId: 'SESS-FIXTURE-CI-INIT',
+        createdAt: '2026-09-08 12:00:00',
+        title: 'CI环境预热会话 · 共 1 份文档检验',
+        totalDocuments: 1,
+        totalBatches: 1,
+        passedBatches: 1,
+        failedBatches: 0,
+        hitlBatches: 0,
+        documents: [
+          {
+            docId: 'doc_fixture_01',
+            md5: '8d566b296d4110c544e8bd1b6b6136d5',
+            filename: '测试质保书1.pdf',
+            fileSize: '0.17 MB',
+            uploadTime: '2026-09-08 12:00:00',
+            ocrStatus: 'DONE',
+            pageCount: 1,
+            batches: [
+              {
+                batchNo: 'Z26022C-DB7',
+                subBatchIndex: 1,
+                grade: 'S32168',
+                standard: 'NB/T47019.5-2021',
+                supplier: '镇海石化建安工程股份有限公司制管厂',
+                dimensions: 'OD 15.0mm × WT 0.8mm',
+                heatNo: 'YX2602-2207',
+                verdict: 'PASS',
+                verdictSummary: '全景规则比对 22 项全项合规',
+                ocrConfidence: 95,
+                gradeMatchConfidence: 99,
+                chemical: [
+                  { element: 'C', value: '0.018', confidence: '99%', status: 'ok' },
+                ],
+                mechanical: { tensile_rm: '621', yield_rp02: '289', elongation_a: '48.5' },
+                process: { flattening: 'PASS', intergranularCorrosion: 'PASS', ndt: 'PASS' },
+                reportNo: 'QA-20260902-001',
+                sha256Hash: 'test_hash_123',
+                inspector: 'QC-Engineer',
+              },
+            ],
+          },
+        ],
+      };
+      globalAuditLedgerService.saveSession(fixtureSession);
+    }
+  });
+
   it('应当能正常扫描真实归档目录并提取轻量树状摘要列表', () => {
     const list = globalAuditLedgerService.listSessions();
     expect(Array.isArray(list)).toBe(true);

@@ -1,0 +1,172 @@
+{
+  "md5": "6752e28dd91018639dfcb53a15c9153f",
+  "filename": "case3_tier1_to_tier2_fail.pdf",
+  "fileSize": "6.9 KB",
+  "parserConfigVersion": "1.1.0",
+  "originalFilePath": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\uploads\\6752e28dd91018639dfcb53a15c9153f.pdf",
+  "preprocessedDir": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\preprocessed\\6752e28dd91018639dfcb53a15c9153f",
+  "extractedTextPath": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\preprocessed\\6752e28dd91018639dfcb53a15c9153f\\text.txt",
+  "isTextBased": true,
+  "pageCount": 1,
+  "pageImages": [
+    "page-1.png"
+  ],
+  "model": "deterministic-generator",
+  "provider": "NormScale-TestKit",
+  "parsedAt": "2026-09-09T04:39:57.034Z",
+  "tokenStats": {
+    "inputTokens": 1200,
+    "outputTokens": 1800,
+    "durationSeconds": 0.05,
+    "isFromCache": true
+  },
+  "sessionDocument": {
+    "docId": "doc_6752e28d",
+    "filename": "case3_tier1_to_tier2_fail.pdf",
+    "fileSize": "6.9 KB",
+    "uploadTime": "2026-09-07 16:50:00",
+    "ocrStatus": "DONE",
+    "pageCount": 1,
+    "batches": [
+      {
+        "batchNo": "BATCH-2026-03-FAIL",
+        "subBatchIndex": 1,
+        "certificateNo": "MTC-2026-CASE3-FAIL",
+        "reportNo": "MTC-2026-CASE3-FAIL",
+        "sha256Hash": "6752e28dd91018639dfcb53a15c9153f",
+        "inspector": "张建华",
+        "productName": "锅炉热交换器用不锈钢无缝钢管",
+        "grade": "06Cr18Ni11Ti",
+        "standard": "NB/T 47019.5-2021",
+        "supplier": "Jiangsu Heat Exchange Alloy Tube Industries",
+        "dimensions": "OD 19.0mm x WT 1.5mm x L 6000mm",
+        "heatNo": "H-CASE3-772",
+        "deliveryState": "固溶退火酸洗",
+        "verdict": "UNAUDITED",
+        "verdictSummary": "就绪待核验",
+        "ocrConfidence": 79,
+        "gradeMatchConfidence": 100,
+        "chemical": [
+          {
+            "element": "C",
+            "value": "0.045",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Si",
+            "value": "0.55",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Mn",
+            "value": "1.30",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "P",
+            "value": "0.028",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "S",
+            "value": "0.003",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Cr",
+            "value": "17.80",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Ni",
+            "value": "10.20",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Ti",
+            "value": "0.350",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "N",
+            "value": "0.010",
+            "confidence": "99%",
+            "status": "ok"
+          }
+        ],
+        "mechanical": {
+          "tensile_rm": "560",
+          "yield_rp02": "240",
+          "elongation_a": "42.0",
+          "hardness": "82"
+        },
+        "process": {
+          "flattening": "合格 OK (未见裂纹)",
+          "flaring": "合格 OK (扩口率 20%)",
+          "grainSize": "7.5",
+          "intergranularCorrosion": "合格 OK (E法无倾向)",
+          "ndt_et": "合格 OK (E3H 等级)",
+          "ndt_ut": "合格 OK (U2 等级)",
+          "ndt": "合格 OK / 合格 OK",
+          "hydrostatic": "20 MPa 稳压 10s 无渗漏合格",
+          "pressureTest": "20 MPa 稳压 10s 无渗漏合格",
+          "surfaceQuality": "内外表面光洁平整合格"
+        },
+        "additionalTests": [
+          {
+            "key": "表面光洁度",
+            "name": "表面光洁度",
+            "category": "process",
+            "standard": "NB/T 47019.5-2021",
+            "result": "1.50 um",
+            "value_num": 1.5,
+            "unit": "um",
+            "conclusion": "FAIL"
+          }
+        ],
+        "surfaceQuality": "内外表面光洁平整合格"
+      }
+    ],
+    "md5": "6752e28dd91018639dfcb53a15c9153f"
+  },
+  "bboxes": [
+    {
+      "id": "header_cert_no",
+      "page": 1,
+      "x": 50,
+      "y": 120,
+      "w": 200,
+      "h": 20,
+      "label": "证书编号",
+      "category": "meta"
+    },
+    {
+      "id": "header_std",
+      "page": 1,
+      "x": 215,
+      "y": 120,
+      "w": 200,
+      "h": 20,
+      "label": "执行标准",
+      "category": "meta"
+    },
+    {
+      "id": "header_grade",
+      "page": 1,
+      "x": 385,
+      "y": 120,
+      "w": 150,
+      "h": 20,
+      "label": "材料牌号",
+      "category": "meta"
+    }
+  ]
+}

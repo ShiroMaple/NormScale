@@ -192,6 +192,22 @@ export function getScenarioCachedParseResult(md5: string): CachedParseResult | n
     }
   }
 
+  // 种子回退目录 (跟随 git 仓库分发，保障纯净 CI/CD 环境 100% 具备测试固件)
+  const seedPaths = [
+    path.resolve(__dirname, 'seeds', `${targetMd5}.json`),
+    path.resolve(process.cwd(), 'tests/fixtures/scenarios/seeds', `${targetMd5}.json`),
+  ];
+  for (const sPath of seedPaths) {
+    if (fs.existsSync(sPath)) {
+      try {
+        const raw = fs.readFileSync(sPath, 'utf8');
+        return JSON.parse(raw) as CachedParseResult;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   if (targetMd5 === '944f39572b5617186447ca32ff71635b') {
     return CASE2_SEED_PARSE_RESULT;
   }

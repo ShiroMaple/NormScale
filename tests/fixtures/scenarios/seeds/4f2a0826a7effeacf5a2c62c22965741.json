@@ -1,0 +1,412 @@
+{
+  "md5": "4f2a0826a7effeacf5a2c62c22965741",
+  "filename": "case4_tier1_to_tier2_hitl.pdf",
+  "fileSize": "0.01 MB",
+  "parserConfigVersion": "1.1.0",
+  "originalFilePath": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\uploads\\4f2a0826a7effeacf5a2c62c22965741.pdf",
+  "preprocessedDir": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\preprocessed\\4f2a0826a7effeacf5a2c62c22965741",
+  "extractedTextPath": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\preprocessed\\4f2a0826a7effeacf5a2c62c22965741\\text.txt",
+  "isTextBased": true,
+  "pageCount": 1,
+  "pageImages": [
+    "page-1.png"
+  ],
+  "model": "kimi-k2.7-code-highspeed",
+  "provider": "Moonshot",
+  "parsedAt": "2026-09-09T06:17:29.462Z",
+  "tokenStats": {
+    "inputTokens": 4848,
+    "outputTokens": 5918,
+    "durationSeconds": 36.2,
+    "isFromCache": false
+  },
+  "sessionDocument": {
+    "docId": "doc_4f2a0826",
+    "filename": "case4_tier1_to_tier2_hitl.pdf",
+    "fileSize": "0.01 MB",
+    "uploadTime": "2026-09-09 06:17:29",
+    "ocrStatus": "DONE",
+    "pageCount": 1,
+    "batches": [
+      {
+        "batchNo": "BATCH-2026-04-AMB",
+        "subBatchIndex": 1,
+        "certificateNo": "MTC-2026-CASE4-AMB",
+        "constructionNo": "",
+        "productName": "",
+        "grade": "06Cr18Ni11Ti",
+        "standard": "NB/T 47019.5-2021",
+        "supplier": "Suzhou Nuclear Power Pressure Equipment Co.",
+        "dimensions": "OD 15.0mm x WT 0.8mm x L 6000mm",
+        "heatNo": "H-CASE4-338",
+        "packNo": "",
+        "deliveryState": "Solution Annealed & Pickled",
+        "verdict": "UNAUDITED",
+        "verdictSummary": "大模型结构化提取完成，待合规比对",
+        "ocrConfidence": 99,
+        "gradeMatchConfidence": 100,
+        "chemical": [
+          {
+            "element": "C",
+            "value": "0.045",
+            "confidence": "99%"
+          },
+          {
+            "element": "Si",
+            "value": "0.55",
+            "confidence": "99%"
+          },
+          {
+            "element": "Mn",
+            "value": "1.30",
+            "confidence": "99%"
+          },
+          {
+            "element": "P",
+            "value": "0.028",
+            "confidence": "99%"
+          },
+          {
+            "element": "S",
+            "value": "0.003",
+            "confidence": "99%"
+          },
+          {
+            "element": "Cr",
+            "value": "17.80",
+            "confidence": "99%"
+          },
+          {
+            "element": "Ni",
+            "value": "10.20",
+            "confidence": "99%"
+          },
+          {
+            "element": "Ti",
+            "value": "0.350",
+            "confidence": "99%"
+          },
+          {
+            "element": "N",
+            "value": "0.010",
+            "confidence": "99%"
+          }
+        ],
+        "mechanical": {
+          "tensile_rm": "560 MPa",
+          "yield_rp02": "240 MPa",
+          "elongation_a": "42.0 %",
+          "hardness": "82 HRB"
+        },
+        "process": {
+          "flattening": "PASS OK - Sound without cracking",
+          "flaring": "PASS OK - Flare angle 60 deg, rate 20%",
+          "intergranularCorrosion": "PASS OK - Sound without crack",
+          "grainSize": "7.5 class",
+          "ndt_et": "",
+          "ndt_ut": "PASS OK - Class U2 Acceptance passed",
+          "ndt": "PASS OK - Class U2 Acceptance passed",
+          "surfaceQuality": ""
+        },
+        "additionalTests": [
+          {
+            "key": "mech_shear_toughness",
+            "name": "Shear Toughness K1C",
+            "category": "mechanical",
+            "standard": "",
+            "result": "85 MPa.m^1/2",
+            "value_num": null,
+            "unit": "",
+            "conclusion": "PASS"
+          },
+          {
+            "key": "proc_hydraulic",
+            "name": "Hydrostatic Test",
+            "category": "process",
+            "standard": "GB/T 241",
+            "result": "PASS OK - 20.0 MPa 10s pressure holding without leakage",
+            "value_num": null,
+            "unit": "",
+            "conclusion": "PASS"
+          },
+          {
+            "key": "geo_surface_quality",
+            "name": "Surface Quality",
+            "category": "process",
+            "standard": "NB/T 47019.5",
+            "result": "PASS OK - Inner & outer surfaces smooth, no cracks or folds",
+            "value_num": null,
+            "unit": "",
+            "conclusion": "PASS"
+          }
+        ],
+        "testMethods": {
+          "flaring": "GB/T 242",
+          "flattening": "GB/T 246",
+          "intergranularCorrosion": "GB/T 4334 Method E",
+          "grainSize": "GB/T 6394",
+          "ndt_et": "",
+          "ndt_ut": "GB/T 5777"
+        },
+        "surfaceQuality": "",
+        "reportNo": "QA-34649462",
+        "sha256Hash": "SHA256-YFWPPT20",
+        "inspector": "Auto-AI-Inspector"
+      }
+    ]
+  },
+  "bboxes": [
+    {
+      "id": "meta_certificateNo",
+      "page": 1,
+      "x": 8,
+      "y": 13.5,
+      "w": 26,
+      "h": 3,
+      "label": "Certificate No"
+    },
+    {
+      "id": "meta_standard",
+      "page": 1,
+      "x": 36,
+      "y": 13.5,
+      "w": 28,
+      "h": 3,
+      "label": "Declared Standard"
+    },
+    {
+      "id": "meta_grade",
+      "page": 1,
+      "x": 67,
+      "y": 13.5,
+      "w": 24,
+      "h": 3,
+      "label": "Declared Grade"
+    },
+    {
+      "id": "meta_supplier",
+      "page": 1,
+      "x": 8,
+      "y": 17,
+      "w": 34,
+      "h": 3,
+      "label": "Supplier"
+    },
+    {
+      "id": "meta_dimensions",
+      "page": 1,
+      "x": 45,
+      "y": 17,
+      "w": 26,
+      "h": 3,
+      "label": "Dimensions"
+    },
+    {
+      "id": "meta_heatNo",
+      "page": 1,
+      "x": 73,
+      "y": 17,
+      "w": 20,
+      "h": 3,
+      "label": "Heat No"
+    },
+    {
+      "id": "meta_batchNo",
+      "page": 1,
+      "x": 8,
+      "y": 20.5,
+      "w": 30,
+      "h": 3,
+      "label": "Batch / Lot No"
+    },
+    {
+      "id": "meta_deliveryState",
+      "page": 1,
+      "x": 41,
+      "y": 20.5,
+      "w": 28,
+      "h": 3,
+      "label": "Delivery Condition"
+    },
+    {
+      "id": "chem_C",
+      "page": 1,
+      "x": 8,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "C"
+    },
+    {
+      "id": "chem_Si",
+      "page": 1,
+      "x": 17,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "Si"
+    },
+    {
+      "id": "chem_Mn",
+      "page": 1,
+      "x": 26,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "Mn"
+    },
+    {
+      "id": "chem_P",
+      "page": 1,
+      "x": 35,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "P"
+    },
+    {
+      "id": "chem_S",
+      "page": 1,
+      "x": 44,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "S"
+    },
+    {
+      "id": "chem_Cr",
+      "page": 1,
+      "x": 53,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "Cr"
+    },
+    {
+      "id": "chem_Ni",
+      "page": 1,
+      "x": 62,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "Ni"
+    },
+    {
+      "id": "chem_Ti",
+      "page": 1,
+      "x": 71,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "Ti"
+    },
+    {
+      "id": "chem_N",
+      "page": 1,
+      "x": 80,
+      "y": 30,
+      "w": 8,
+      "h": 3,
+      "label": "N"
+    },
+    {
+      "id": "mech_tensile",
+      "page": 1,
+      "x": 8,
+      "y": 41,
+      "w": 17,
+      "h": 3,
+      "label": "Tensile Strength Rm"
+    },
+    {
+      "id": "mech_yield",
+      "page": 1,
+      "x": 28,
+      "y": 41,
+      "w": 17,
+      "h": 3,
+      "label": "Yield Strength Rp0.2"
+    },
+    {
+      "id": "mech_elongation",
+      "page": 1,
+      "x": 48,
+      "y": 41,
+      "w": 17,
+      "h": 3,
+      "label": "Elongation A"
+    },
+    {
+      "id": "mech_hardness",
+      "page": 1,
+      "x": 68,
+      "y": 41,
+      "w": 16,
+      "h": 3,
+      "label": "Hardness HRB"
+    },
+    {
+      "id": "proc_flattening",
+      "page": 1,
+      "x": 8,
+      "y": 51,
+      "w": 44,
+      "h": 2.8,
+      "label": "Flattening Test Result"
+    },
+    {
+      "id": "proc_flaring",
+      "page": 1,
+      "x": 8,
+      "y": 54.5,
+      "w": 44,
+      "h": 2.8,
+      "label": "Flaring Test Result"
+    },
+    {
+      "id": "metallo_grain",
+      "page": 1,
+      "x": 8,
+      "y": 58,
+      "w": 44,
+      "h": 2.8,
+      "label": "Grain Size Rating"
+    },
+    {
+      "id": "corrosion_intergranular",
+      "page": 1,
+      "x": 8,
+      "y": 61.5,
+      "w": 48,
+      "h": 2.8,
+      "label": "Intergranular Corrosion"
+    },
+    {
+      "id": "ndt_ut",
+      "page": 1,
+      "x": 8,
+      "y": 65,
+      "w": 44,
+      "h": 2.8,
+      "label": "Ultrasonic Testing UT"
+    },
+    {
+      "id": "proc_hydraulic",
+      "page": 1,
+      "x": 8,
+      "y": 68.5,
+      "w": 52,
+      "h": 2.8,
+      "label": "Hydrostatic Test"
+    },
+    {
+      "id": "geo_surface_quality",
+      "page": 1,
+      "x": 8,
+      "y": 72,
+      "w": 58,
+      "h": 2.8,
+      "label": "Surface Quality"
+    }
+  ]
+}

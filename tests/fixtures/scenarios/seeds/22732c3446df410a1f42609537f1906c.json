@@ -1,0 +1,161 @@
+{
+  "md5": "22732c3446df410a1f42609537f1906c",
+  "filename": "case1_tier1_hitl_unknown_grade.pdf",
+  "fileSize": "6.3 KB",
+  "parserConfigVersion": "1.1.0",
+  "originalFilePath": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\uploads\\22732c3446df410a1f42609537f1906c.pdf",
+  "preprocessedDir": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\preprocessed\\22732c3446df410a1f42609537f1906c",
+  "extractedTextPath": "C:\\Users\\gaoft\\Documents\\CodeSpace\\NormScale\\.cache\\preprocessed\\22732c3446df410a1f42609537f1906c\\text.txt",
+  "isTextBased": true,
+  "pageCount": 1,
+  "pageImages": [
+    "page-1.png"
+  ],
+  "model": "deterministic-generator",
+  "provider": "NormScale-TestKit",
+  "parsedAt": "2026-09-09T04:39:57.029Z",
+  "tokenStats": {
+    "inputTokens": 1200,
+    "outputTokens": 1800,
+    "durationSeconds": 0.05,
+    "isFromCache": true
+  },
+  "sessionDocument": {
+    "docId": "doc_22732c34",
+    "filename": "case1_tier1_hitl_unknown_grade.pdf",
+    "fileSize": "6.3 KB",
+    "uploadTime": "2026-09-07 16:50:00",
+    "ocrStatus": "DONE",
+    "pageCount": 1,
+    "batches": [
+      {
+        "batchNo": "BATCH-2026-01-UNK",
+        "subBatchIndex": 1,
+        "certificateNo": "MTC-2026-CASE1-UNK",
+        "reportNo": "MTC-2026-CASE1-UNK",
+        "sha256Hash": "22732c3446df410a1f42609537f1906c",
+        "inspector": "张建华",
+        "productName": "锅炉热交换器用不锈钢无缝钢管",
+        "grade": "SUS 304H-SpecialX",
+        "standard": "GB/T 13296-2023",
+        "supplier": "Wuxi Special Stainless Steel Tube Corp.",
+        "dimensions": "OD 25.0mm x WT 2.0mm x L 6000mm",
+        "heatNo": "H-CASE1-991",
+        "deliveryState": "固溶退火酸洗",
+        "verdict": "UNAUDITED",
+        "verdictSummary": "就绪待核验",
+        "ocrConfidence": 76,
+        "gradeMatchConfidence": 50,
+        "chemical": [
+          {
+            "element": "C",
+            "value": "0.052",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Si",
+            "value": "0.50",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Mn",
+            "value": "1.20",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "P",
+            "value": "0.026",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "S",
+            "value": "0.002",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Cr",
+            "value": "18.25",
+            "confidence": "99%",
+            "status": "ok"
+          },
+          {
+            "element": "Ni",
+            "value": "8.45",
+            "confidence": "99%",
+            "status": "ok"
+          }
+        ],
+        "mechanical": {
+          "tensile_rm": "570",
+          "yield_rp02": "250",
+          "yield_reh": "250",
+          "elongation_a": "45.0",
+          "hardness": "80"
+        },
+        "process": {
+          "flattening": "合格 OK (未见裂纹)",
+          "flaring": "合格 OK (扩口率 20%)",
+          "grainSize": "7.5",
+          "intergranularCorrosion": "合格 OK (E法无倾向)",
+          "ndt_et": "合格 OK (E3H 等级)",
+          "ndt_ut": "合格 OK (U2 等级)",
+          "ndt": "合格 OK / 合格 OK",
+          "hydrostatic": "20 MPa 稳压 10s 无渗漏合格",
+          "pressureTest": "20 MPa 稳压 10s 无渗漏合格",
+          "surfaceQuality": "内外表面光洁平整合格"
+        },
+        "additionalTests": [
+          {
+            "key": "pressure_tightness",
+            "name": "液压致密性试验",
+            "category": "ndt",
+            "standard": "GB/T 241",
+            "result": "20.0 MPa 稳压 10s 无渗漏合格",
+            "value_num": 20,
+            "unit": "MPa",
+            "conclusion": "PASS"
+          }
+        ],
+        "surfaceQuality": "内外表面光洁平整合格"
+      }
+    ],
+    "md5": "22732c3446df410a1f42609537f1906c"
+  },
+  "bboxes": [
+    {
+      "id": "header_cert_no",
+      "page": 1,
+      "x": 50,
+      "y": 120,
+      "w": 200,
+      "h": 20,
+      "label": "证书编号",
+      "category": "meta"
+    },
+    {
+      "id": "header_std",
+      "page": 1,
+      "x": 215,
+      "y": 120,
+      "w": 200,
+      "h": 20,
+      "label": "执行标准",
+      "category": "meta"
+    },
+    {
+      "id": "header_grade",
+      "page": 1,
+      "x": 385,
+      "y": 120,
+      "w": 150,
+      "h": 20,
+      "label": "材料牌号",
+      "category": "meta"
+    }
+  ]
+}
