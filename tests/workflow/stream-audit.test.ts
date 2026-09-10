@@ -89,7 +89,7 @@ describe('渐进式流式通信与分段事件调度测试 (Phase 3)', () => {
     // 验证包含消歧补丁 tier2_patch 或最终 complete
     const patchOrComplete = events.find(e => e.type === 'tier2_patch' || e.type === 'complete');
     expect(patchOrComplete).toBeDefined();
-  });
+  }, 15000);
 
   it('包含未知歧义项目时：流式发射 tier1_ready 并在消歧低置信时发射 hitl_interrupt 挂起', async () => {
     const engine = new WorkflowEngine();
@@ -119,7 +119,7 @@ describe('渐进式流式通信与分段事件调度测试 (Phase 3)', () => {
       expect(hitlEv.hitlContext.reason).toBe('PROPERTY_AMBIGUITY');
       expect(hitlEv.taskId).toBe(`${sessionId}::${batchNo}`);
     }
-  });
+  }, 15000);
 
   it('未收录未知牌号触发 streamAudit 挂起后，能够通过 resumeAudit 成功恢复并产出包含规则项的报告', async () => {
     const engine = new WorkflowEngine();

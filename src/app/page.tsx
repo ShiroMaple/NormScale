@@ -197,7 +197,7 @@ export default function DashboardPage() {
 
                 <div className="mt-3 p-3 rounded-lg bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark text-xs space-y-1">
                   <div className="text-[11px] text-on-surface-variant dark:text-outline-variant font-medium">即将载入的历史台账：</div>
-                  <div className="font-bold text-on-surface dark:text-surface-bright font-mono truncate">
+                  <div className="font-bold text-on-surface dark:text-surface-bright font-sans tabular-nums truncate">
                     {pendingSessionToLoad.title || pendingSessionToLoad.sessionId}
                   </div>
                   <div className="text-[11px] text-on-surface-variant dark:text-outline-variant">

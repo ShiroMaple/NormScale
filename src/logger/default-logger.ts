@@ -1,4 +1,4 @@
-import { ILogger, IModuleLogger, ITraceCollector, LogLevel, LogModuleTag } from './logger.interface';
+import { ILogger, IModuleLogger, ITraceCollector, LogEvent, LogLevel, LogModuleTag } from './logger.interface';
 import { MemoryTraceCollector } from './trace-collector';
 
 /** 日志级别严重度数值 (数值越小级别越低) */
@@ -42,12 +42,17 @@ const TAG_COLORS: Record<LogModuleTag, string> = {
  * ============================================================================
  * 
  * 专注于工业质检场景的结构化自然语言输出与多色终端呈现。
- * 支持分级控制、模块隔离、子日志器绑定与内存审计轨迹关联。
+ * 支持分级控制、模块隔离、子日志器绑定、内存审计轨迹关联与全局环形缓冲/实时广播。
  * ============================================================================
  */
 export class DefaultDomainLogger implements ILogger {
   private currentLevel: LogLevel;
   private enableColors: boolean;
+
+  /** 内存环形缓冲区固定上限 (保留最近 1000 条事件) */
+  private static readonly MAX_BUFFER_SIZE = 1000;
+  private ringBuffer: LogEvent[] = [];
+  private listeners: Set<(event: LogEvent) => void> = new Set();
 
   constructor(options?: { level?: LogLevel; enableColors?: boolean }) {
     // 默认从环境变量 LOG_LEVEL 读取，单测环境下默认为 warn 避免测试刷屏
@@ -64,6 +69,24 @@ export class DefaultDomainLogger implements ILogger {
 
   public getLevel(): LogLevel {
     return this.currentLevel;
+  }
+
+  /** 获取当前内存缓冲的所有历史日志 */
+  public getBufferedLogs(): LogEvent[] {
+    return [...this.ringBuffer];
+  }
+
+  /** 清空内存日志缓冲区 */
+  public clearBufferedLogs(): void {
+    this.ringBuffer = [];
+  }
+
+  /** 订阅实时日志事件广播 (用于 SSE 流式推送) */
+  public subscribe(listener: (event: LogEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   public debug(tag: LogModuleTag, message: string, metadata?: Record<string, unknown>): void {
@@ -124,6 +147,32 @@ export class DefaultDomainLogger implements ILogger {
     duration_ms?: number,
     metadata?: Record<string, unknown>
   ): void {
+    const isoTimestamp = new Date().toISOString();
+
+    // 1. 构造结构化日志事件并存入环形缓冲区 (保留最近 1000 条)
+    const logEvent: LogEvent = {
+      timestamp: isoTimestamp,
+      level,
+      tag,
+      message,
+      duration_ms,
+      metadata,
+    };
+    this.ringBuffer.push(logEvent);
+    if (this.ringBuffer.length > DefaultDomainLogger.MAX_BUFFER_SIZE) {
+      this.ringBuffer.shift();
+    }
+
+    // 2. 向所有活跃订阅监听器广播日志事件 (SSE)
+    for (const listener of this.listeners) {
+      try {
+        listener(logEvent);
+      } catch {
+        // 捕获个别客户端监听器异常，避免影响核心日志流程
+      }
+    }
+
+    // 3. 终端打印输出
     const timeStr = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const levelUpper = level.toUpperCase().padEnd(5, ' ');
     const tagStr = '[' + tag + ']'.padEnd(12, ' ');

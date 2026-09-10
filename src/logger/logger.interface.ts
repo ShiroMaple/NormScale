@@ -73,6 +73,14 @@ export interface ILogger {
   forTag(tag: LogModuleTag): IModuleLogger;
   /** 为单次质检任务创建内存轨迹收集器 */
   createTraceCollector(contextId?: string): ITraceCollector;
+  /** 动态设置当前日志级别 */
+  setLevel?(level: LogLevel): void;
+  /** 获取当前日志级别 */
+  getLevel?(): LogLevel;
+  /** 获取内存环形缓冲区日志 */
+  getBufferedLogs?(): LogEvent[];
+  /** 订阅日志事件 */
+  subscribe?(listener: (event: LogEvent) => void): () => void;
 }
 
 /** 绑定了固定模块标签的便捷子日志器 */
