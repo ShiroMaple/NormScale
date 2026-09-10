@@ -4,6 +4,23 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-10 · GitHub Actions 自动化 CI/CD 流水线建立、Nginx 4006 反代与首发生产部署上线
+
+- 基础设施与 CI/CD 落地 (`.github/workflows/deploy.yml`, `ecosystem.config.cjs`, `scripts/deploy.sh`):
+  1. 服务器基础设施配置：以 `zpje` 身份创建 `/var/www/NormScale` (755)；在 `/etc/nginx/conf.d/normscale.conf` 配置 4006 端口反代与已有泛域名 SSL 证书并重载；
+  2. 运行时与安全鉴权：安装 Node.js 22 LTS，生成专有 ed25519 部署密钥对，公钥写入 `authorized_keys`，配置 `registry.npmmirror.com` 加速；
+  3. GitHub Hosted 流水线：建立 `.github/workflows/deploy.yml`（自动化 `typecheck`、`test`、云端 `build`、排除 cache 归档打薄至 6.6MB、SCP 传输与远程部署）；
+  4. 首发部署与守护验证：PM2 进程 `NormScale` 成功在 4006 端口集群上线并 `pm2 save`；本地及公网域名 `normscale.izpje.com` 均响应 `HTTP/2 200`。
+
+## 2026-09-10 · 中文项目文档 README.md 编写与系统设计架构全景梳理
+
+- 完善开源级项目说明文档 (`README.md`):
+  1. 项目背景与痛点：阐明特种工业质保书 (MTC) 异构性、多重标准交叉约束及通用 OCR / 纯向量 RAG 的局限性；
+  2. 总体架构全景：系统化梳理双轨制合规核验、四维分层体系 (Tier 1-4)、多标准剪刀差归因、三级工业缓存及零丢失平衡恒等式；
+  3. 技术栈与工程约束：明确 Node.js 22 LTS、Next.js 15 App Router、TypeScript Strict、pnpm 独占等核心技术选型与规范；
+  4. 快速上手与操作流：提供从环境配置、API 密钥注入到 `pnpm dev` 启动的 Quickstart 指南与四步骤作业流程；
+  5. 标准扩展指南：说明离线标准切片库 (`IRuleStore`) 架构及新增国家/行业标准的切片自检流 (`pnpm standard:validate`)。
+
 ## 2026-09-10 · 大模型全量无损提取与长尾兜底Prompt升级、数据漏斗双断言落地与UI心智纠偏
 
 - 提取准则升级与流转契约锁定 (`prompt-builder.ts`, `WaterfallWorkbench.tsx`, `zero-drop-funnel-assertion.test.ts`):

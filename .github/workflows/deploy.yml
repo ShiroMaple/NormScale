@@ -1,0 +1,121 @@
+name: NormScale CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: normscale-production
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI (TypeCheck & Unit Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript type checking
+        run: pnpm typecheck
+
+      - name: Run automated tests
+        run: pnpm test
+
+  build-and-deploy:
+    name: Build & Deploy to Production
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Next.js project
+        run: pnpm build
+
+      - name: Package release archive
+        run: |
+          set -Eeuo pipefail
+          tar --exclude='.next/cache' -czf normscale-release.tar.gz \
+            .next \
+            public \
+            data \
+            scripts \
+            ecosystem.config.cjs \
+            config.json \
+            package.json \
+            pnpm-lock.yaml \
+            .env.example
+
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          set -Eeuo pipefail
+          for name in SERVER_HOST SERVER_PORT SERVER_USER SERVER_SSH_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "Error: Missing required GitHub secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Upload release archive to target server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: normscale-release.tar.gz
+          target: /tmp
+          overwrite: true
+
+      - name: Deploy release and reload PM2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -Eeuo pipefail
+            mkdir -p /var/www/NormScale
+            tar -xzf /tmp/normscale-release.tar.gz -C /var/www/NormScale
+            rm -f /tmp/normscale-release.tar.gz
+            chmod +x /var/www/NormScale/scripts/deploy.sh
+            bash /var/www/NormScale/scripts/deploy.sh
