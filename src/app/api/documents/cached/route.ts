@@ -34,13 +34,6 @@ export interface CachedDocSummary {
 export async function GET(request: Request) {
   try {
     const cacheDir = path.join(process.cwd(), '.cache', 'parses');
-    if (!fs.existsSync(cacheDir)) {
-      return NextResponse.json({
-        success: true,
-        documents: [],
-      });
-    }
-
     const extractor = new OpenAiCompatibleExtractor();
     const currentVersion = extractor.getParserConfigVersion();
 
@@ -49,12 +42,13 @@ export async function GET(request: Request) {
       ? searchParams.get('md5') || searchParams.get('id') || searchParams.get('docId') || searchParams.get('sampleId')
       : null;
 
-    // 若指定了 md5 / docId，返回单个文档的完整 CachedParseResult
+    // 若指定了 md5 / docId，按 L1 ➔ L2 ➔ L3 降级返回单个文档的完整 CachedParseResult
     if (md5Param) {
+      // 1. 第一优先级 L1: 检索真实解析结果
       let cached = globalParseCacheStore.getValid(md5Param, currentVersion) || globalParseCacheStore.get(md5Param);
 
-      // 容错按 docId 扫描
-      if (!cached) {
+      // 容错按 docId 扫描 L1 parses
+      if (!cached && fs.existsSync(cacheDir)) {
         const allFiles = fs.readdirSync(cacheDir);
         for (const file of allFiles) {
           if (file.endsWith('.json')) {
@@ -72,7 +66,14 @@ export async function GET(request: Request) {
         }
       }
 
-      if (cached) {
+      const isGenuineL1 = Boolean(
+        cached &&
+        (cached.cacheLevel === 'L1' || !cached.cacheLevel) &&
+        cached.model !== '未调用模型' &&
+        cached.sessionDocument?.batches?.some(b => Boolean(b.grade || b.standard || (b.chemical && b.chemical.length > 0)))
+      );
+
+      if (cached && isGenuineL1) {
         // 自愈补全 bboxes 与 pages 切图 URL 列表
         const preprocessedAssets = globalDocumentPreprocessorService.getPreprocessed(cached.md5);
         let bboxes = cached.bboxes || [];
@@ -92,7 +93,7 @@ export async function GET(request: Request) {
 
         let pageUrls = cached.sessionDocument?.pages || [];
         if (pageUrls.length === 0 && preprocessedAssets?.images && preprocessedAssets.images.length > 0) {
-          pageUrls = preprocessedAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${cached.md5}&page=${idx + 1}`);
+          pageUrls = preprocessedAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${cached!.md5}&page=${idx + 1}`);
           cached.sessionDocument = {
             ...cached.sessionDocument,
             pages: pageUrls,
@@ -100,83 +101,242 @@ export async function GET(request: Request) {
           };
         }
 
-        const effectiveLevel = cached.cacheLevel || (cached.model === '未调用模型' || !cached.sessionDocument?.batches?.[0]?.grade ? 'L2' : 'L1');
-
         return NextResponse.json({
           success: true,
           result: {
             ...cached,
-            cacheLevel: effectiveLevel,
+            cacheLevel: 'L1',
             bboxes,
             sessionDocument: cached.sessionDocument,
           },
         });
       }
 
+      // 2. 第二优先级 L2: 检索预处理切图与文本资产并动态在内存中组装
+      const preAssets = globalDocumentPreprocessorService.getPreprocessed(md5Param);
+      if (preAssets) {
+        const pageUrls = preAssets.images && preAssets.images.length > 0
+          ? preAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${md5Param}&page=${idx + 1}`)
+          : [];
+        const filename = preAssets.metadata?.filename || `文档_${md5Param.slice(0, 8)}.pdf`;
+        const fileSize = preAssets.metadata?.fileSize || '1.0 MB';
+        const createdAt = preAssets.metadata?.createdAt || new Date().toISOString();
+
+        const l2DynamicResult: CachedParseResult = {
+          md5: md5Param,
+          filename,
+          fileSize,
+          parsedAt: createdAt,
+          model: '未调用模型',
+          provider: 'local',
+          parserConfigVersion: currentVersion,
+          isTextBased: preAssets.isTextBased,
+          pageCount: preAssets.pageCount,
+          preprocessedDir: preAssets.dir,
+          cacheLevel: 'L2',
+          sessionDocument: {
+            docId: `doc_${md5Param.slice(0, 8)}`,
+            filename,
+            fileSize,
+            uploadTime: createdAt.replace('T', ' ').slice(0, 19),
+            ocrStatus: 'PENDING',
+            pageCount: preAssets.pageCount,
+            pages: pageUrls,
+            samplePages: pageUrls,
+            extractedText: preAssets.text || '',
+            isTextBased: preAssets.isTextBased,
+            batches: [
+              {
+                batchNo: '',
+                subBatchIndex: 1,
+                grade: '',
+                standard: '',
+                supplier: '',
+                dimensions: '',
+                heatNo: '',
+                packNo: '',
+                productName: '',
+                certificateNo: '',
+                deliveryState: '',
+                constructionNo: '',
+                verdict: 'MANUAL_REVIEW',
+                verdictSummary: '预处理已就绪，等待大模型解析提取...',
+                ocrConfidence: 0,
+                gradeMatchConfidence: 0,
+                chemical: [],
+                mechanical: { tensile_rm: '', yield_rp02: '', elongation_a: '' },
+                process: { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '' },
+                reportNo: '',
+                sha256Hash: '',
+                inspector: '',
+              },
+            ],
+          },
+          tokenStats: {
+            inputTokens: 0,
+            outputTokens: 0,
+            durationSeconds: 0,
+            isFromCache: false,
+          },
+          rawStreamingJson: '',
+          bboxes: [],
+        };
+
+        return NextResponse.json({
+          success: true,
+          result: l2DynamicResult,
+        });
+      }
+
+      // 3. 第三优先级 L3: 检索仅上传原件
+      const uploadsDir = path.join(process.cwd(), '.cache', 'uploads');
+      if (fs.existsSync(uploadsDir)) {
+        const uploadFiles = fs.readdirSync(uploadsDir);
+        const match = uploadFiles.find(f => f.startsWith(md5Param));
+        if (match) {
+          const stat = fs.statSync(path.join(uploadsDir, match));
+          const l3DynamicResult: any = {
+            md5: md5Param,
+            filename: match,
+            fileSize: `${(stat.size / (1024 * 1024)).toFixed(2)} MB`,
+            parsedAt: stat.mtime.toISOString(),
+            model: '未调用模型',
+            provider: 'local',
+            cacheLevel: 'L3',
+            pageCount: 1,
+            isTextBased: false,
+            sessionDocument: {
+              docId: `doc_${md5Param.slice(0, 8)}`,
+              filename: match,
+              fileSize: `${(stat.size / (1024 * 1024)).toFixed(2)} MB`,
+              ocrStatus: 'PENDING',
+              pageCount: 1,
+              pages: [],
+              samplePages: [],
+              batches: [],
+            },
+            bboxes: [],
+          };
+
+          return NextResponse.json({
+            success: true,
+            result: l3DynamicResult,
+          });
+        }
+      }
+
       return NextResponse.json(
-        { success: false, error: '未找到指定文档的解析缓存' },
+        { success: false, error: '未找到指定文档的缓存' },
         { status: 404 }
       );
     }
 
-    const files = fs.readdirSync(cacheDir);
+    // 无参扫描模式：按 L1 ➔ L2 ➔ L3 顺序收集全部文档摘要
     const documents: CachedDocSummary[] = [];
+    const seenMd5s = new Set<string>();
 
-    for (const file of files) {
-      if (file.endsWith('.json')) {
-        try {
-          const filePath = path.join(cacheDir, file);
-          const raw = fs.readFileSync(filePath, 'utf-8');
-          const data = JSON.parse(raw) as CachedParseResult;
-          if (data && data.md5) {
-            const cachedVersion = data.parserConfigVersion || '1.0.0';
-            const isVersionMatched = cachedVersion === currentVersion;
-            const hasParsedBatches = data.sessionDocument?.batches?.some(b => Boolean(b.grade || b.standard));
-            const cacheLevel: 'L1' | 'L2' = data.cacheLevel
-              ? (data.cacheLevel as 'L1' | 'L2')
-              : (data.model === '未调用模型' || !hasParsedBatches ? 'L2' : 'L1');
-
-            documents.push({
-              md5: data.md5,
-              docId: data.sessionDocument?.docId || `doc_${data.md5.slice(0, 8)}`,
-              filename: data.filename || file.replace('.json', ''),
-              fileSize: data.fileSize || '1.0 MB',
-              parsedAt: data.parsedAt || new Date().toISOString(),
-              model: data.model || 'kimi-k2.7-code',
-              provider: data.provider || 'Moonshot',
-              batchCount: data.sessionDocument?.batches?.length || 1,
-              parserConfigVersion: cachedVersion,
-              isVersionMatched,
-              isTextBased: data.isTextBased,
-              pageCount: data.pageCount || data.sessionDocument?.pageCount || 1,
-              hasPreprocessed: Boolean(data.preprocessedDir),
-              cacheLevel,
-            });
+    // 1. 扫描 L1 (.cache/parses/*.json)
+    if (fs.existsSync(cacheDir)) {
+      const files = fs.readdirSync(cacheDir);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          try {
+            const filePath = path.join(cacheDir, file);
+            const raw = fs.readFileSync(filePath, 'utf-8');
+            const data = JSON.parse(raw) as CachedParseResult;
+            if (data && data.md5) {
+              const hasParsedBatches = data.sessionDocument?.batches?.some(
+                b => Boolean(b.grade || b.standard || (b.chemical && b.chemical.length > 0))
+              );
+              const isL1 = (data.cacheLevel === 'L1' || !data.cacheLevel) && data.model !== '未调用模型' && hasParsedBatches;
+              if (isL1) {
+                seenMd5s.add(data.md5);
+                const cachedVersion = data.parserConfigVersion || '1.0.0';
+                documents.push({
+                  md5: data.md5,
+                  docId: data.sessionDocument?.docId || `doc_${data.md5.slice(0, 8)}`,
+                  filename: data.filename || file.replace('.json', ''),
+                  fileSize: data.fileSize || '1.0 MB',
+                  parsedAt: data.parsedAt || new Date().toISOString(),
+                  model: data.model || 'kimi-k2.7-code',
+                  provider: data.provider || 'Moonshot',
+                  batchCount: data.sessionDocument?.batches?.length || 1,
+                  parserConfigVersion: cachedVersion,
+                  isVersionMatched: cachedVersion === currentVersion,
+                  isTextBased: data.isTextBased,
+                  pageCount: data.pageCount || data.sessionDocument?.pageCount || 1,
+                  hasPreprocessed: Boolean(data.preprocessedDir),
+                  cacheLevel: 'L1',
+                });
+              }
+            }
+          } catch (err) {
+            logger.warn('REPOSITORY', `[API /api/documents/cached] 解析文件 ${file} 异常: ${err}`);
           }
-        } catch (err) {
-          logger.warn('REPOSITORY', `[API /api/documents/cached] 解析文件 ${file} 异常: ${err}`);
         }
       }
     }
 
-    // 按解析时间倒序排列
-    documents.sort((a, b) => new Date(b.parsedAt).getTime() - new Date(a.parsedAt).getTime());
+    // 2. 扫描 L2 (.cache/preprocessed/)
+    const preprocessedMd5s = globalDocumentPreprocessorService.listAllPreprocessedMd5s();
+    for (const md5 of preprocessedMd5s) {
+      if (seenMd5s.has(md5)) continue;
+      const preAssets = globalDocumentPreprocessorService.getPreprocessed(md5);
+      if (preAssets) {
+        seenMd5s.add(md5);
+        const filename = preAssets.metadata?.filename || `文档_${md5.slice(0, 8)}.pdf`;
+        const fileSize = preAssets.metadata?.fileSize || '1.0 MB';
+        const parsedAt = preAssets.metadata?.createdAt || new Date().toISOString();
 
-    // 基于物理 MD5 唯一去重，绝不按可变的文件名误删不同文档
-    const uniqueDocsMap = new Map<string, CachedDocSummary>();
-    const deduplicatedDocuments: CachedDocSummary[] = [];
-
-    for (const doc of documents) {
-      if (!uniqueDocsMap.has(doc.md5)) {
-        uniqueDocsMap.set(doc.md5, doc);
-        deduplicatedDocuments.push(doc);
+        documents.push({
+          md5,
+          docId: `doc_${md5.slice(0, 8)}`,
+          filename,
+          fileSize,
+          parsedAt,
+          model: '未调用模型',
+          provider: 'local',
+          batchCount: 0,
+          parserConfigVersion: currentVersion,
+          isVersionMatched: true,
+          isTextBased: preAssets.isTextBased,
+          pageCount: preAssets.pageCount,
+          hasPreprocessed: true,
+          cacheLevel: 'L2',
+        });
       }
     }
+
+    // 3. 扫描 L3 (.cache/uploads/)
+    const uploadedFiles = globalDocumentPreprocessorService.listAllUploadedFiles();
+    for (const u of uploadedFiles) {
+      if (seenMd5s.has(u.md5)) continue;
+      seenMd5s.add(u.md5);
+      documents.push({
+        md5: u.md5,
+        docId: `doc_${u.md5.slice(0, 8)}`,
+        filename: u.filename,
+        fileSize: u.fileSize,
+        parsedAt: u.mtime.toISOString(),
+        model: '未调用模型',
+        provider: 'local',
+        batchCount: 0,
+        parserConfigVersion: currentVersion,
+        isVersionMatched: true,
+        isTextBased: false,
+        pageCount: 1,
+        hasPreprocessed: false,
+        cacheLevel: 'L3',
+      });
+    }
+
+    // 按时间倒序排列
+    documents.sort((a, b) => new Date(b.parsedAt).getTime() - new Date(a.parsedAt).getTime());
 
     return NextResponse.json({
       success: true,
       currentVersion,
-      documents: deduplicatedDocuments,
+      documents,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -206,41 +366,17 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // 检查是否存在对应缓存记录
-    const existsInParse = globalParseCacheStore.has(md5);
-    if (!existsInParse) {
-      // 容错扫描：匹配包含该 md5 或 docId 的缓存文件并删除
-      const cacheDir = path.join(process.cwd(), '.cache', 'parses');
-      let found = false;
-      if (fs.existsSync(cacheDir)) {
-        const files = fs.readdirSync(cacheDir);
-        for (const file of files) {
-          if (file.endsWith('.json')) {
-            const filePath = path.join(cacheDir, file);
-            try {
-              const raw = fs.readFileSync(filePath, 'utf-8');
-              const data = JSON.parse(raw) as CachedParseResult;
-              if (data.md5 === md5 || data.sessionDocument?.docId === md5) {
-                globalParseCacheStore.deleteCascade(data.md5);
-                found = true;
-                break;
-              }
-            } catch {
-              // ignore
-            }
-          }
-        }
-      }
-      if (!found) {
-        return NextResponse.json(
-          { success: false, error: '未找到指定 MD5 的缓存文件' },
-          { status: 404 }
-        );
-      }
-    } else {
-      // 执行级联删除：.cache/uploads, .cache/preprocessed/{md5}, .cache/parses/{md5}.json
-      globalParseCacheStore.deleteCascade(md5);
+    // 检查在任意一级缓存中是否存在 (L1 / L2 / L3)
+    const existsAny = globalParseCacheStore.hasAny(md5);
+    if (!existsAny) {
+      return NextResponse.json(
+        { success: false, error: '未找到指定 MD5 的缓存文件' },
+        { status: 404 }
+      );
     }
+
+    // 执行级联删除：.cache/uploads, .cache/preprocessed/{md5}, .cache/parses/{md5}.json
+    globalParseCacheStore.deleteCascade(md5);
 
     logger.info('REPOSITORY', `[API /api/documents/cached] 成功级联删除文档缓存 [${md5}]`);
     return NextResponse.json({ success: true, md5 });

@@ -91,4 +91,67 @@ describe('ParseCacheStore', () => {
     // 验证此时磁盘上已经成功落盘该 JSON 文件
     expect(fs.existsSync(diskPath)).toBe(true);
   });
+
+  it('getValid 严禁将 L2 草稿或无有效批次数据的条目判定为有效解析缓存', () => {
+    const testDraftMd5 = 'test_l2_draft_md5';
+    const draftData: CachedParseResult = {
+      md5: testDraftMd5,
+      filename: 'draft.pdf',
+      fileSize: '1.0 MB',
+      model: '未调用模型',
+      provider: 'local',
+      parserConfigVersion: '1.1.0',
+      cacheLevel: 'L2',
+      parsedAt: new Date().toISOString(),
+      tokenStats: { inputTokens: 0, outputTokens: 0, durationSeconds: 0, isFromCache: false },
+      rawStreamingJson: '',
+      sessionDocument: {
+        docId: 'doc_draft',
+        filename: 'draft.pdf',
+        fileSize: '1.0 MB',
+        uploadTime: '2026-09-11 12:00:00',
+        ocrStatus: 'PENDING',
+        pageCount: 1,
+        batches: [
+          {
+            batchNo: '',
+            grade: '',
+            standard: '',
+            chemical: [],
+            verdict: 'MANUAL_REVIEW',
+          } as any,
+        ],
+      },
+      bboxes: [],
+    };
+
+    store.set(testDraftMd5, draftData);
+    // get 可以拿到原始对象
+    expect(store.get(testDraftMd5)).not.toBeNull();
+    // 但 getValid 必须严密拦截，绝对不能返回有效解析缓存！
+    expect(store.getValid(testDraftMd5, '1.1.0')).toBeNull();
+
+    // 升级为真实 L1 解析数据后，getValid 应该放行
+    const l1Data: CachedParseResult = {
+      ...draftData,
+      model: 'kimi-k2.7-code',
+      cacheLevel: 'L1',
+      sessionDocument: {
+        ...draftData.sessionDocument,
+        ocrStatus: 'DONE',
+        batches: [
+          {
+            batchNo: 'B01',
+            grade: '06Cr18Ni11Ti',
+            standard: 'GB/T 13296-2023',
+            chemical: [{ element: 'C', value: 0.04 }],
+            verdict: 'PASS',
+          } as any,
+        ],
+      },
+    };
+    store.set(testDraftMd5, l1Data);
+    expect(store.getValid(testDraftMd5, '1.1.0')).not.toBeNull();
+    expect(store.getValid(testDraftMd5, '1.1.0')?.model).toBe('kimi-k2.7-code');
+  });
 });

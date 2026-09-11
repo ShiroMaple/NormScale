@@ -95,11 +95,16 @@ export class ParseCacheStore {
   }
 
   /**
-   * 校验配置项版本并获取有效缓存 (版本不一致判定失效)
+   * 校验配置项版本并获取有效解析缓存 (版本不一致判定失效；L2草稿或未调用模型数据严禁视为有效解析)
    */
   public getValid(md5: string, currentVersion?: string): CachedParseResult | null {
     const cached = this.get(md5);
     if (!cached) return null;
+
+    // 严禁将 L2 预处理草稿或未调用模型的数据视作有效解析结果
+    if (cached.cacheLevel === 'L2' || cached.model === '未调用模型') {
+      return null;
+    }
 
     if (currentVersion && cached.parserConfigVersion && cached.parserConfigVersion !== currentVersion) {
       logger.info(
@@ -109,13 +114,48 @@ export class ParseCacheStore {
       return null;
     }
 
+    // 防御性校验：若处于 PENDING 状态或批次全为空草稿，判定为无效解析
+    if (cached.sessionDocument?.ocrStatus === 'PENDING') {
+      return null;
+    }
+    if (cached.sessionDocument?.batches && cached.sessionDocument.batches.length > 0) {
+      const allEmpty = cached.sessionDocument.batches.every(
+        b => !b.grade && !b.standard && (!b.chemical || b.chemical.length === 0)
+      );
+      if (allEmpty) {
+        return null;
+      }
+    }
+
     return cached;
+  }
+
+  /**
+   * 检查是否在任何一级缓存中存在 (L1 parses, L2 preprocessed, L3 uploads)
+   */
+  public hasAny(md5: string): boolean {
+    if (!md5) return false;
+    if (this.has(md5)) return true;
+    if (globalDocumentPreprocessorService.getPreprocessed(md5)) return true;
+    const uploadsDir = path.join(process.cwd(), '.cache', 'uploads');
+    if (fs.existsSync(uploadsDir)) {
+      try {
+        const files = fs.readdirSync(uploadsDir);
+        if (files.some(f => f.startsWith(md5))) return true;
+      } catch {
+        // ignore
+      }
+    }
+    return false;
   }
 
   public set(md5: string, data: CachedParseResult): void {
     if (!md5 || !data) return;
     this.ensureDirExists();
     try {
+      if (!data.cacheLevel) {
+        data.cacheLevel = 'L1';
+      }
       // 严格基于文件内容 MD5 哈希作为物理唯一索引，严禁按文件名覆盖或删除不同内容文件
       const filePath = this.getFilePath(md5);
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');

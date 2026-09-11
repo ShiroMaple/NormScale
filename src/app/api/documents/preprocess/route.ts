@@ -110,11 +110,13 @@ export async function POST(request: Request) {
         ? [fileBuffer]
         : [];
 
+    const sizeStr = `${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB`;
     const preAssets = globalDocumentPreprocessorService.savePreprocessedAssets(
       md5,
       pagesToSave,
       clientExtractedText,
-      clientTextTokens
+      clientTextTokens,
+      { filename, fileSize: sizeStr }
     );
     logger.debug(
       'EXTRACTOR',
@@ -124,87 +126,13 @@ export async function POST(request: Request) {
     // 5. 校验当前版本是否存在历史解析结果 (L1 解析缓存)
     const extractor = new OpenAiCompatibleExtractor();
     const currentVersion = extractor.getParserConfigVersion();
-    let cachedParse = globalParseCacheStore.getValid(md5, currentVersion);
-    let cacheLevel: 'L1' | 'L2' = 'L2';
+    const cachedParse = globalParseCacheStore.getValid(md5, currentVersion);
+    const cacheLevel: 'L1' | 'L2' = cachedParse ? 'L1' : 'L2';
 
     if (cachedParse) {
-      cacheLevel = cachedParse.cacheLevel === 'L2' ? 'L2' : 'L1';
       logger.debug(
         'EXTRACTOR',
-        `[API /api/documents/preprocess] 检索到历史缓存: MD5=${md5}, 等级=${cacheLevel}, 模型=${cachedParse.model}`
-      );
-    } else {
-      // 方案 C 落地：若无历史解析缓存，立即生成 L2 预处理草稿写入 .cache/parses/{md5}.json
-      // 使得步骤 1 上传预处理完成的文档在「历史已缓存文档」中立即可见
-      const sizeStr = `${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB`;
-      const pageUrls = preAssets.images && preAssets.images.length > 0
-        ? preAssets.images.map((_, idx) => `/api/documents/preprocess?md5=${md5}&page=${idx + 1}`)
-        : [];
-
-      const draftResult: any = {
-        md5,
-        filename,
-        fileSize: sizeStr,
-        parsedAt: new Date().toISOString(),
-        model: '未调用模型',
-        provider: 'local',
-        parserConfigVersion: currentVersion,
-        isTextBased: preAssets.isTextBased,
-        pageCount: preAssets.pageCount,
-        preprocessedDir: preAssets.dir,
-        cacheLevel: 'L2',
-        sessionDocument: {
-          docId: `doc_${md5.slice(0, 8)}`,
-          filename,
-          fileSize: sizeStr,
-          uploadTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-          ocrStatus: 'PENDING',
-          pageCount: preAssets.pageCount,
-          pages: pageUrls,
-          samplePages: pageUrls,
-          extractedText: clientExtractedText || '',
-          isTextBased: preAssets.isTextBased,
-          batches: [
-            {
-              batchNo: '',
-              subBatchIndex: 1,
-              grade: '',
-              standard: '',
-              supplier: '',
-              dimensions: '',
-              heatNo: '',
-              packNo: '',
-              productName: '',
-              certificateNo: '',
-              deliveryState: '',
-              constructionNo: '',
-              verdict: 'MANUAL_REVIEW',
-              verdictSummary: '预处理已就绪，等待大模型解析提取...',
-              ocrConfidence: 0,
-              gradeMatchConfidence: 0,
-              chemical: [],
-              mechanical: { tensile_rm: '', yield_rp02: '', elongation_a: '' },
-              process: { flattening: '', flaring: '', intergranularCorrosion: '', ndt: '' },
-              reportNo: '',
-              sha256Hash: '',
-              inspector: '',
-            },
-          ],
-        },
-        tokenStats: {
-          inputTokens: 0,
-          outputTokens: 0,
-          durationSeconds: 0,
-          isFromCache: false,
-        },
-        rawStreamingJson: '',
-        bboxes: [],
-      };
-
-      globalParseCacheStore.set(md5, draftResult);
-      logger.debug(
-        'EXTRACTOR',
-        `[API /api/documents/preprocess] 已生成 L2 预处理就绪缓存草稿 -> .cache/parses/${md5}.json (立即可见)`
+        `[API /api/documents/preprocess] 检索到历史解析缓存: MD5=${md5}, 等级=L1, 模型=${cachedParse.model}`
       );
     }
 

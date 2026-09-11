@@ -4,6 +4,15 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-11 · 三级缓存方案 B 落地：消除 parses 占位草稿与实现 L1/L2/L3 降级匹配
+
+- 根治新文档解析空草稿拦截与缓存架构加固 (`preprocess/route.ts`, `cached/route.ts`, `parse/route.ts`, `parse-cache-store.ts`, `document-preprocessor.service.ts`):
+  1. 根因彻底消除：删除预处理落盘时向 `.cache/parses/` 写入 L2 空草稿的逻辑，`.cache/parses/` 严格仅存放经 LLM 真实解析完成的 L1 文件；
+  2. 缓存门禁加固：`ParseCacheStore.getValid` 注入严格准入条件，显式拦截 `cacheLevel === 'L2'`、`model === '未调用模型'` 及全空批次草稿；
+  3. L1 ➔ L2 ➔ L3 降级匹配：`/api/documents/cached` 在列表扫描与单文档详情查询时依次降级匹配，未解析文档动态在内存中组装 L2 摘要，绝不回写草稿；
+  4. 预处理元数据留存：`DocumentPreprocessorService` 向 `preprocessed/{md5}/meta.json` 沉淀原始文件名与大小；
+  5. 验证就绪：新增 3 项 L2/L3 契约测试，全量 54 个测试套件 270 项自动化单测 100% 绿灯，`tsc --noEmit` 0 错误。
+
 ## 2026-09-10 · NormScale Alpha 1.0.0 首发里程碑达成与“边试用边反馈边开发”演化战略确立
 
 - 首发可用版本发布与阶段性全景总结 (`alpha-1.0.0-retrospective.md`, `ROADMAP.md`, `package.json`, Git tag `v1.0.0-alpha`):

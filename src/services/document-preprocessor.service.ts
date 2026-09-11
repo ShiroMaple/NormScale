@@ -3,6 +3,12 @@ import path from 'path';
 import { logger } from '@/logger/index.ts';
 import { TextTokenItem } from '@/utils/bbox-matcher.ts';
 
+export interface PreprocessedMetadata {
+  filename?: string;
+  fileSize?: string;
+  createdAt?: string;
+}
+
 export interface PreprocessedAssets {
   dir: string;
   images: string[];
@@ -13,6 +19,7 @@ export interface PreprocessedAssets {
   tokens?: TextTokenItem[];
   isTextBased: boolean;
   pageCount: number;
+  metadata?: PreprocessedMetadata;
 }
 
 export interface FileFormatValidation {
@@ -108,7 +115,8 @@ export class DocumentPreprocessorService {
     md5: string,
     pages: (string | Buffer)[],
     text?: string,
-    tokens?: TextTokenItem[]
+    tokens?: TextTokenItem[],
+    metadata?: PreprocessedMetadata
   ): PreprocessedAssets {
     this.ensureDirs();
     const docPreDir = path.join(this.preprocessedDir, md5);
@@ -163,6 +171,18 @@ export class DocumentPreprocessorService {
       );
     }
 
+    // 若传入了文档元数据，保存为 meta.json
+    let savedMetadata = metadata;
+    if (metadata && (metadata.filename || metadata.fileSize)) {
+      const metaPath = path.join(docPreDir, 'meta.json');
+      savedMetadata = {
+        filename: metadata.filename,
+        fileSize: metadata.fileSize,
+        createdAt: metadata.createdAt || new Date().toISOString(),
+      };
+      fs.writeFileSync(metaPath, JSON.stringify(savedMetadata, null, 2), 'utf-8');
+    }
+
     logger.info(
       'EXTRACTOR',
       `[DocumentPreprocessorService] 预处理产物落盘完毕 [${md5}]: ${imageFiles.length} 张切图, isTextBased=${isTextBased}`
@@ -178,6 +198,7 @@ export class DocumentPreprocessorService {
       tokens,
       isTextBased,
       pageCount: imageFiles.length,
+      metadata: savedMetadata,
     };
   }
 
@@ -206,6 +227,7 @@ export class DocumentPreprocessorService {
       let textPath: string | undefined;
       let text: string | undefined;
       let tokens: TextTokenItem[] | undefined;
+      let metadata: PreprocessedMetadata | undefined;
 
       if (files.includes('text.txt')) {
         textFile = 'text.txt';
@@ -217,6 +239,15 @@ export class DocumentPreprocessorService {
         try {
           const rawTokens = fs.readFileSync(path.join(docPreDir, 'tokens.json'), 'utf-8');
           tokens = JSON.parse(rawTokens);
+        } catch {
+          // ignore
+        }
+      }
+
+      if (files.includes('meta.json')) {
+        try {
+          const rawMeta = fs.readFileSync(path.join(docPreDir, 'meta.json'), 'utf-8');
+          metadata = JSON.parse(rawMeta);
         } catch {
           // ignore
         }
@@ -234,10 +265,64 @@ export class DocumentPreprocessorService {
         tokens,
         isTextBased,
         pageCount: imageFiles.length,
+        metadata,
       };
     } catch (err) {
       logger.warn('EXTRACTOR', `[DocumentPreprocessorService] 读取预处理产物异常 (${md5}): ${err}`);
       return null;
+    }
+  }
+
+  /**
+   * 列出全部已预处理的 MD5 清单 (按 L2 扫描)
+   */
+  public listAllPreprocessedMd5s(): string[] {
+    if (!fs.existsSync(this.preprocessedDir)) return [];
+    try {
+      const items = fs.readdirSync(this.preprocessedDir);
+      return items.filter(item => {
+        const fullPath = path.join(this.preprocessedDir, item);
+        try {
+          return fs.statSync(fullPath).isDirectory() && fs.existsSync(path.join(fullPath, 'page-1.png'));
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 列出全部 uploads 目录下的原件清单 (按 L3 扫描)
+   */
+  public listAllUploadedFiles(): { md5: string; filename: string; fileSize: string; mtime: Date }[] {
+    if (!fs.existsSync(this.uploadsDir)) return [];
+    try {
+      const files = fs.readdirSync(this.uploadsDir);
+      const results: { md5: string; filename: string; fileSize: string; mtime: Date }[] = [];
+      for (const file of files) {
+        const filePath = path.join(this.uploadsDir, file);
+        try {
+          const stat = fs.statSync(filePath);
+          if (stat.isFile()) {
+            const md5 = file.split('.')[0] || '';
+            if (md5) {
+              results.push({
+                md5,
+                filename: file,
+                fileSize: `${(stat.size / (1024 * 1024)).toFixed(2)} MB`,
+                mtime: stat.mtime,
+              });
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return results;
+    } catch {
+      return [];
     }
   }
 

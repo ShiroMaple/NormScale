@@ -100,4 +100,29 @@ describe('API: /api/documents/parse (反伪哈希与零 Mock 门禁)', () => {
     expect(data.md5).not.toBe('184db4a3a0ccf6afcdc025b728dfba1d');
     expect(data.result.sessionDocument.batches[0].batchNo).toBe('TEST-BATCH-01');
   });
+
+  it('当文档仅有 L2 预处理资产（未完成真实解析）时，调用 parse 严禁被空草稿短路拦截为 cached: true', async () => {
+    const l2OnlyMd5 = 'test_l2_preprocessed_only_md5_000';
+    // 确保没有 L1 缓存
+    globalParseCacheStore.delete(l2OnlyMd5);
+
+    const formData = new FormData();
+    formData.append('md5', l2OnlyMd5);
+    formData.append('sampleId', `doc_${l2OnlyMd5.slice(0, 8)}`);
+    formData.append('filename', '待解析.pdf');
+    // 附带单页切图
+    formData.append('pageImages', JSON.stringify(['data:image/png;base64,mock']));
+    formData.append('extractedText', '一些预处理提取出来的文本内容');
+
+    const req = new Request('http://localhost:3000/api/documents/parse', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const res = await POST(req);
+    const data = await res.json();
+
+    // 关键断言：即使没有配置 API Key 报错，或者调用模型，它绝对不能是 cached: true 命中缓存！
+    expect(data.cached).not.toBe(true);
+  });
 });

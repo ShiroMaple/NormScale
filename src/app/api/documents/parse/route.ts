@@ -408,6 +408,7 @@ export async function POST(request: Request) {
               model: (extractor as any).activeConfig?.model || 'kimi-k2.7-code',
               provider: (extractor as any).activeConfig?.provider || 'Moonshot',
               parsedAt: new Date().toISOString(),
+              cacheLevel: 'L1',
               tokenStats: {
                 inputTokens: (rawResult as any).tokens?.input ?? 1800,
                 outputTokens: (rawResult as any).tokens?.output ?? Math.ceil(streamedChars / 3.5),
@@ -509,6 +510,7 @@ export async function POST(request: Request) {
       model: (extractor as any).activeConfig?.model || 'kimi-k2.7-code',
       provider: (extractor as any).activeConfig?.provider || 'Moonshot',
       parsedAt: new Date().toISOString(),
+      cacheLevel: 'L1',
       tokenStats: {
         inputTokens: (rawResult as any).tokens?.input || 0,
         outputTokens: (rawResult as any).tokens?.output || 0,
@@ -615,7 +617,14 @@ export async function GET(request: Request) {
       }
     }
 
-    if (!validParseResult) {
+    const isGenuineL1 = Boolean(
+      validParseResult &&
+      (validParseResult.cacheLevel === 'L1' || !validParseResult.cacheLevel) &&
+      validParseResult.model !== '未调用模型' &&
+      validParseResult.sessionDocument?.batches?.some(b => Boolean(b.grade || b.standard || (b.chemical && b.chemical.length > 0)))
+    );
+
+    if (!validParseResult || !isGenuineL1) {
       return NextResponse.json(
         { success: false, error: '未找到匹配的有效解析缓存' },
         { status: 404 }
