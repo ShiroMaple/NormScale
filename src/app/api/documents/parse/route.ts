@@ -144,7 +144,12 @@ export async function POST(request: Request) {
 
     // 4. 预处理产物（切图与文本及 Token 坐标）持久化或读取
     let preprocessedAssets = globalDocumentPreprocessorService.getPreprocessed(md5);
-    if (!preprocessedAssets && clientPageImages && clientPageImages.length > 0) {
+    const hasClientBase64 = Array.isArray(clientPageImages) &&
+      clientPageImages.length > 0 &&
+      typeof clientPageImages[0] === 'string' &&
+      clientPageImages[0].startsWith('data:image/');
+
+    if (!preprocessedAssets && hasClientBase64 && clientPageImages) {
       preprocessedAssets = globalDocumentPreprocessorService.savePreprocessedAssets(
         md5,
         clientPageImages,
@@ -282,7 +287,7 @@ export async function POST(request: Request) {
 
     // 7. 组装预处理文本层与切图多模态双模态 Prompt
     const extractedTextToUse = clientExtractedText || preprocessedAssets?.text;
-    const pageImagesToUse = (clientPageImages && clientPageImages.length > 0)
+    const pageImagesToUse: string[] = (hasClientBase64 && clientPageImages)
       ? clientPageImages
       : preprocessedAssets?.images?.map(imgFile => {
           if (preprocessedAssets) {
@@ -296,6 +301,10 @@ export async function POST(request: Request) {
           }
           return '';
         }).filter(Boolean) || [];
+
+    const resolvedDocPages = (clientPageImages && clientPageImages.length > 0)
+      ? clientPageImages
+      : preprocessedAssets?.images?.map((_, idx) => `/api/documents/preprocess?md5=${md5}&page=${idx + 1}`) || [];
 
     logger.info(
       'EXTRACTOR',
@@ -371,7 +380,7 @@ export async function POST(request: Request) {
               filename,
               fileSize,
               rawResult,
-              clientPageImages || preprocessedAssets?.images
+              resolvedDocPages
             );
 
             let pageUrls = sessionDoc.pages || [];
@@ -465,7 +474,7 @@ export async function POST(request: Request) {
       filename,
       fileSize,
       rawResult,
-      clientPageImages || preprocessedAssets?.images
+      resolvedDocPages
     );
 
     let bboxes = (rawResult as any).bboxes || [];

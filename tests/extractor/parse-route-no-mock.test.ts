@@ -125,4 +125,29 @@ describe('API: /api/documents/parse (反伪哈希与零 Mock 门禁)', () => {
     // 关键断言：即使没有配置 API Key 报错，或者调用模型，它绝对不能是 cached: true 命中缓存！
     expect(data.cached).not.toBe(true);
   });
+
+  it('当 pageImages 传入相对路由 URL 时，严禁被当作客户端 Base64 处理，防止引发非法 base64 异常', async () => {
+    const l2Md5 = 'test_l2_url_images_md5_111';
+    globalParseCacheStore.delete(l2Md5);
+
+    const formData = new FormData();
+    formData.append('md5', l2Md5);
+    formData.append('sampleId', `doc_${l2Md5.slice(0, 8)}`);
+    formData.append('filename', '测试带URL切图.pdf');
+    // 模拟前端传递的相对路由 URL，而非以 data:image/ 开头的 Base64
+    formData.append('pageImages', JSON.stringify([`/api/documents/preprocess?md5=${l2Md5}&page=1`]));
+    formData.append('extractedText', '预处理文本');
+
+    const req = new Request('http://localhost:3000/api/documents/parse', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const res = await POST(req);
+    const data = await res.json();
+
+    // 关键断言：接口能够正常处理请求准入并识别非有效 Base64，不返回 cached: true，也不会由于盲拼 Base64 导致不可预期的类型崩溃
+    expect(data.cached).not.toBe(true);
+  });
 });
+

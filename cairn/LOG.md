@@ -4,6 +4,14 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-14 · 根治切图相对路由透传引发的大模型 Base64 非法字符 (byte 25) 异常
+
+- 修复 `/api/documents/parse` 切图输入门禁 (`parse/route.ts`, `parse-route-no-mock.test.ts`):
+  1. 根因消除：由于历史缓存/重解析时 `doc.pages` 为相对代理路由 `/api/documents/preprocess?...`，原三元逻辑误将其当做 Base64 透传，拼出非法 DataURI 并在第 25 字节 `?` 处被模型网关拒绝；
+  2. 确立明确物理边界准入：加严 `hasClientBase64` 判定（必须以 `data:image/` 开头），非 DataURL 一律回源本地磁盘读取 `.cache/preprocessed/{md5}/page-*.png` 转纯 Base64，杜绝外部假设；
+  3. 规整 `sessionDoc.pages` 映射：统一收敛为合法的页面渲染代理路由或有效客户端 DataURL；
+  4. 伴生单测与回归：新增相对路由切图防盲传单测，全量 54 个测试套件 271 项用例全部通过，TypeScript 0 错误。
+
 ## 2026-09-11 · 三级缓存方案 B 落地：消除 parses 占位草稿与实现 L1/L2/L3 降级匹配
 
 - 根治新文档解析空草稿拦截与缓存架构加固 (`preprocess/route.ts`, `cached/route.ts`, `parse/route.ts`, `parse-cache-store.ts`, `document-preprocessor.service.ts`):
