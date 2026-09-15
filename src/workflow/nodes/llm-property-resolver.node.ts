@@ -3,13 +3,39 @@ import { FileRuleStore } from '../../repository/file-rule-store.ts';
 import { QualityAuditState, PropertyResolutionCandidate, HitlInterruptContext, WorkflowTokenUsage } from '../state.interface.ts';
 import { getSafeCollector } from '../trace-helper.ts';
 import { logger } from '../../logger/index.ts';
+import { PropertyKeyNormalizer } from '../../normalizer/property-key-normalizer.ts';
+import { TestRecord } from '../../schemas/certificate.schema.ts';
 import { LlmPropertyResolverService, CandidateRuleItem } from '../services/llm-property-resolver.service.ts';
+
+/**
+ * 判定一条 test_record 是否携带有效实测值 (raw 非空文本或 num 非空数值)
+ */
+function recordHasValue(rec: TestRecord): boolean {
+  const raw = rec.measured_value_raw;
+  if (raw !== undefined && raw !== null && String(raw).trim() !== '') return true;
+  const num = rec.measured_value_num;
+  return num !== undefined && num !== null;
+}
+
+/**
+ * 结构性 fill-only 写时守卫：
+ * 目标规则 key 已被 test_records 中另一条带值记录占用 (精确 key 或归一化 canonical key 命中) 时返回 true。
+ * Tier 2 只能填补空缺槽位，严禁覆写 Tier 1 已持有的实测指标。
+ */
+function isRuleKeyClaimed(records: TestRecord[], targetKey: string, selfIndex: number): boolean {
+  const targetCanonical = PropertyKeyNormalizer.normalize(targetKey).property_key;
+  return records.some((rec, idx) => {
+    if (idx === selfIndex || !rec.property_key || !recordHasValue(rec)) return false;
+    if (rec.property_key === targetKey) return true;
+    return PropertyKeyNormalizer.normalize(rec.property_key).property_key === targetCanonical;
+  });
+}
 
 /**
  * ============================================================================
  * 节点 2.5: LLM / 语义推断长尾检验项消歧节点 (LLM Property Resolver Node)
  * ============================================================================
- * 
+ *
  * 职责：
  * 针对 Tier 1 确定性规则无法高置信匹配的长尾属性 (unresolvedProperties)，
  * 从当前执行标准切片的合法规则池中提取封闭候选集，执行受限意图对齐与语义消歧：
@@ -82,6 +108,21 @@ export function createLlmPropertyResolverNode(
         }
       }
 
+      // 提取当前批次在 Tier 1 确定性阶段已经成功匹配并持有的规则 Key 集合
+      const alreadyMatchedRuleKeys = new Set<string>();
+      if (normalizedCert?.test_records) {
+        for (const r of normalizedCert.test_records) {
+          if (r.property_key && (r.measured_value_raw !== undefined || r.measured_value_num !== undefined)) {
+            alreadyMatchedRuleKeys.add(r.property_key);
+          }
+        }
+      }
+
+      // 仅保留尚未在质保书中匹配到实测值的标准规则给 LLM / 启发式消歧，杜绝反向覆盖已有核心指标
+      const unfulfilledCandidateRules = candidateRules.filter(
+        r => !alreadyMatchedRuleKeys.has(r.key)
+      );
+
       let resolvedList: PropertyResolutionCandidate[] = [];
       let ambiguousList: PropertyResolutionCandidate[] = [];
       const updatedRecords = [...normalizedCert.test_records];
@@ -93,7 +134,7 @@ export function createLlmPropertyResolverNode(
         try {
           const llmRes = await resolverService.resolveProperties(
             unresolvedProperties,
-            candidateRules,
+            unfulfilledCandidateRules,
             declaredStd,
             declaredGrade
           );
@@ -106,10 +147,33 @@ export function createLlmPropertyResolverNode(
             for (const prop of unresolvedProperties) {
               const matchedRes = llmRes.resolutions.find(r => r.raw_name === prop.raw_name);
               const targetRule = matchedRes?.resolved_key
-                ? candidateRules.find(c => c.key === matchedRes.resolved_key)
+                ? unfulfilledCandidateRules.find(c => c.key === matchedRes.resolved_key)
                 : undefined;
 
               if (targetRule && matchedRes && matchedRes.confidence >= 0.85) {
+                // 写时守卫 (fill-only)：先定位待改写记录，目标槽位已被其他带值记录占用则放弃改写
+                const targetIndex = updatedRecords.findIndex(
+                  r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key || (r as any).raw_property_name === prop.raw_name
+                );
+
+                if (targetIndex >= 0 && isRuleKeyClaimed(updatedRecords, targetRule.key, targetIndex)) {
+                  ambiguousList.push({
+                    ...prop,
+                    confidence: matchedRes.confidence,
+                    reasoning: `目标槽位 [${targetRule.key}] 已被其他带值记录占用，Tier 2 fill-only 放弃覆写，转入待决池`,
+                    is_standard_rule: false,
+                    is_degraded: false,
+                    model_name: modelName,
+                  });
+                  logger.warn('WORKFLOW', `[LLMPropertyResolver] 目标槽位 [${targetRule.key}] 已被其他带值记录占用，放弃将 [${prop.raw_name}] 覆写至该槽位 (fill-only 守卫)`, {
+                    raw_name: prop.raw_name,
+                    target_key: targetRule.key,
+                    confidence: matchedRes.confidence,
+                    model: modelName,
+                  });
+                  continue;
+                }
+
                 const resolvedItem: PropertyResolutionCandidate = {
                   ...prop,
                   source_tier: 'tier2',
@@ -124,9 +188,6 @@ export function createLlmPropertyResolverNode(
                 resolvedList.push(resolvedItem);
 
                 // 同步升级 normalizedCert.test_records 中对应的记录
-                const targetIndex = updatedRecords.findIndex(
-                  r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key || (r as any).raw_property_name === prop.raw_name
-                );
                 if (targetIndex >= 0 && updatedRecords[targetIndex]) {
                   const currRec = updatedRecords[targetIndex]!;
                   let numVal = currRec.measured_value_num;
@@ -144,6 +205,7 @@ export function createLlmPropertyResolverNode(
                     display_name: targetRule.name,
                     measured_value_num: numVal,
                     unit: currRec.unit || targetRule.unit,
+                    provenance: 'tier2_resolved',
                   };
                 }
 
@@ -192,7 +254,7 @@ export function createLlmPropertyResolverNode(
           let bestConfidence = 0.5;
           let reasoning = '本地启发式未在标准候选规则中找到强相关项';
 
-          for (const candidate of candidateRules) {
+          for (const candidate of unfulfilledCandidateRules) {
             const candKeyUpper = candidate.key.toUpperCase();
             const candNameUpper = candidate.name.toUpperCase();
 
@@ -245,6 +307,27 @@ export function createLlmPropertyResolverNode(
           }
 
           if (bestMatch && bestConfidence >= 0.85) {
+            // 写时守卫 (fill-only)：先定位待改写记录，目标槽位已被其他带值记录占用则放弃改写
+            const targetIndex = updatedRecords.findIndex(
+              r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key || (r as any).raw_property_name === prop.raw_name
+            );
+
+            if (targetIndex >= 0 && isRuleKeyClaimed(updatedRecords, bestMatch.key, targetIndex)) {
+              ambiguousList.push({
+                ...prop,
+                confidence: bestConfidence,
+                reasoning: `[本地规则降级] 目标槽位 [${bestMatch.key}] 已被其他带值记录占用，Tier 2 fill-only 放弃覆写，转入待决池`,
+                is_standard_rule: false,
+                is_degraded: true,
+              });
+              logger.warn('WORKFLOW', `[LLMPropertyResolver] 目标槽位 [${bestMatch.key}] 已被其他带值记录占用，放弃将 [${prop.raw_name}] 覆写至该槽位 (fill-only 守卫)`, {
+                raw_name: prop.raw_name,
+                target_key: bestMatch.key,
+                confidence: bestConfidence,
+              });
+              continue;
+            }
+
             const resolvedItem: PropertyResolutionCandidate = {
               ...prop,
               source_tier: 'tier2',
@@ -257,9 +340,6 @@ export function createLlmPropertyResolverNode(
             };
             resolvedList.push(resolvedItem);
 
-            const targetIndex = updatedRecords.findIndex(
-              r => r.property_key === prop.raw_name || r.property_key === prop.resolved_key || (r as any).raw_property_name === prop.raw_name
-            );
             if (targetIndex >= 0 && updatedRecords[targetIndex]) {
               const currRec = updatedRecords[targetIndex]!;
               let numVal = currRec.measured_value_num;
@@ -277,6 +357,7 @@ export function createLlmPropertyResolverNode(
                 display_name: bestMatch.name,
                 measured_value_num: numVal,
                 unit: currRec.unit || bestMatch.unit,
+                provenance: 'tier2_resolved',
               };
             }
 

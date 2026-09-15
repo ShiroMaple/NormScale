@@ -1,5 +1,7 @@
 import { PropertyKeyNormalizer } from './property-key-normalizer.ts';
 import { QualitativeNormalizer } from './qualitative-normalizer.ts';
+import { parseMeasuredNum, parseHardnessValues, isCompositePackagedText } from './numeric-parse.ts';
+import { logger } from '../logger/index.ts';
 
 /**
  * ============================================================================
@@ -21,27 +23,25 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
   if (Array.isArray(batch.chemical)) {
     for (const c of batch.chemical) {
       const rawStr = String(c.value ?? '').trim();
-      const numMatch = rawStr.match(/([0-9]+(?:\.[0-9]+)?)/);
-      const parsedNum = numMatch && numMatch[1] ? parseFloat(numMatch[1]) : undefined;
       chemicalRecords.push({
         category: 'chemical' as const,
         property_key: c.element,
         measured_value_raw: rawStr,
-        measured_value_num: parsedNum,
+        measured_value_num: parseMeasuredNum(rawStr),
         unit: '%',
+        provenance: 'core' as const,
       });
     }
   } else if (batch.chemical && typeof batch.chemical === 'object') {
     for (const [el, val] of Object.entries(batch.chemical)) {
       const rawStr = String(val ?? '').trim();
-      const numMatch = rawStr.match(/([0-9]+(?:\.[0-9]+)?)/);
-      const parsedNum = numMatch && numMatch[1] ? parseFloat(numMatch[1]) : undefined;
       chemicalRecords.push({
         category: 'chemical' as const,
         property_key: el,
         measured_value_raw: rawStr,
-        measured_value_num: parsedNum,
+        measured_value_num: parseMeasuredNum(rawStr),
         unit: '%',
+        provenance: 'core' as const,
       });
     }
   }
@@ -57,6 +57,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         measured_value_raw: String(batch.mechanical.tensile_rm),
         measured_value_num: !isNaN(parseFloat(batch.mechanical.tensile_rm)) ? parseFloat(batch.mechanical.tensile_rm) : undefined,
         unit: 'MPa',
+        provenance: 'core' as const,
       });
     }
     const rawYield =
@@ -71,8 +72,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
       batch.mechanical['屈服点'];
     if (rawYield !== undefined && rawYield !== null && String(rawYield).trim() !== '') {
       const rawYieldStr = String(rawYield).trim();
-      const numMatch = rawYieldStr.match(/([0-9]+(?:\.[0-9]+)?)/);
-      const parsedNum = (numMatch && typeof numMatch[1] === 'string') ? parseFloat(numMatch[1]) : undefined;
+      const parsedNum = parseMeasuredNum(rawYieldStr);
       const mechObj = batch.mechanical as Record<string, any>;
       mechanicalRecords.push({
         category: 'mechanical' as const,
@@ -82,6 +82,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         measured_value_raw: rawYieldStr,
         measured_value_num: parsedNum,
         unit: 'MPa',
+        provenance: 'core' as const,
       });
     }
     if (batch.mechanical.elongation_a) {
@@ -92,6 +93,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         measured_value_raw: String(batch.mechanical.elongation_a),
         measured_value_num: !isNaN(parseFloat(batch.mechanical.elongation_a)) ? parseFloat(batch.mechanical.elongation_a) : undefined,
         unit: '%',
+        provenance: 'core' as const,
       });
     }
     if (batch.mechanical.hardness) {
@@ -109,10 +111,11 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         unit = 'HBW';
       }
 
-      const nums = rawHardness.match(/\d+(\.\d+)?/g);
+      // 多值平均前先剥离硬度标尺代号（HV1/HRB/HBW 等），杜绝标尺内数字（如 HV1 的 1）混入平均
+      const nums = parseHardnessValues(rawHardness);
       let numVal: number | undefined;
-      if (nums && nums.length > 0) {
-        const sum = nums.reduce((acc, n) => acc + parseFloat(n), 0);
+      if (nums.length > 0) {
+        const sum = nums.reduce((acc, n) => acc + n, 0);
         numVal = Math.round((sum / nums.length) * 10) / 10;
       }
 
@@ -124,6 +127,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         measured_value_raw: rawHardness,
         measured_value_num: numVal,
         unit: unit || undefined,
+        provenance: 'core' as const,
       });
     }
 
@@ -136,8 +140,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
     for (const [key, val] of Object.entries(batch.mechanical)) {
       if (!processedMechKeys.has(key) && val !== undefined && val !== null && String(val).trim() !== '') {
         const valStr = String(val).trim();
-        const numMatch = valStr.match(/([0-9]+(?:\.[0-9]+)?)/);
-        const parsedNum = (numMatch && typeof numMatch[1] === 'string') ? parseFloat(numMatch[1]) : undefined;
+        const parsedNum = parseMeasuredNum(valStr);
         const norm = PropertyKeyNormalizer.normalize(key, 'mechanical', { measuredRaw: valStr });
         mechanicalRecords.push({
           category: 'mechanical' as const,
@@ -147,14 +150,19 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
           measured_value_raw: valStr,
           measured_value_num: parsedNum,
           qualitative_result: valStr,
+          provenance: 'core' as const,
         });
       }
     }
   }
 
-  // 预先扫描 additionalTests 中是否有水压/液压/承压致密性项目
-  const additionalList: any[] = Array.isArray(batch.additionalTests) ? batch.additionalTests : [];
+  // 预先扫描 additionalTests 中是否有水压/液压/承压致密性项目，并前置执行打标降级（复合串/疑似重复项仅标注、不静默删除）
+  const rawAdditional: any[] = Array.isArray(batch.additionalTests)
+    ? batch.additionalTests
+    : (Array.isArray(batch.additional_tests) ? batch.additional_tests : []);
+  const additionalList: any[] = annotateAdditionalTests(rawAdditional, batch);
   const hydroAdditionalItem = additionalList.find((t: any) => {
+    if (!t) return false;
     const k = String(t.key || '').toLowerCase();
     const n = String(t.name || '').toLowerCase();
     return (
@@ -223,16 +231,16 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
     const qual = QualitativeNormalizer.normalize(valStr);
 
     if (norm.property_key === 'grain_size') {
-      const numMatch = valStr.match(/[-+]?[0-9]+(?:\.[0-9]+)?/);
       processRecords.push({
         category: 'metallographic' as const,
         property_key: 'grain_size',
         display_name: norm.display_name,
         raw_property_name: rawKey,
         measured_value_raw: valStr,
-        measured_value_num: numMatch ? parseFloat(numMatch[0]) : undefined,
+        measured_value_num: parseMeasuredNum(valStr),
         unit: '级',
         qualitative_result: qual.qualitative_result,
+        provenance: 'core' as const,
       });
       processedKeys.add(norm.property_key);
     } else if (norm.property_key === 'eddy_current_test') {
@@ -246,6 +254,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         measured_value_raw: etRaw,
         measured_level_claimed: etMatch ? etMatch[0].toUpperCase() : qual.claimed_level,
         qualitative_result: qual.qualitative_result,
+        provenance: 'core' as const,
       });
       processedKeys.add(norm.property_key);
     } else if (norm.property_key === 'ultrasonic_test') {
@@ -259,6 +268,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         measured_value_raw: utRaw,
         measured_level_claimed: utMatch ? utMatch[0].toUpperCase() : qual.claimed_level,
         qualitative_result: qual.qualitative_result,
+        provenance: 'core' as const,
       });
       processedKeys.add(norm.property_key);
     } else if (norm.property_key === 'pressure_tightness' || norm.property_key === 'hydraulic_test') {
@@ -272,6 +282,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         measured_value_raw: valStr,
         qualitative_result: qual.qualitative_result,
         measured_level_claimed: qual.claimed_level,
+        provenance: 'core' as const,
       });
       processedKeys.add(norm.property_key);
     }
@@ -289,6 +300,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
       measured_value_raw: etRaw,
       measured_level_claimed: etMatch ? etMatch[0].toUpperCase() : undefined,
       qualitative_result: etRaw,
+      provenance: 'core' as const,
     });
     processedKeys.add('eddy_current_test');
   }
@@ -305,6 +317,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
       measured_value_raw: utRaw,
       measured_level_claimed: utMatch ? utMatch[0].toUpperCase() : undefined,
       qualitative_result: utRaw,
+      provenance: 'core' as const,
     });
     processedKeys.add('ultrasonic_test');
   }
@@ -325,6 +338,7 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
       display_name: '致密性/水压试验组 (Pressure Tightness)',
       measured_value_raw: ptRaw,
       qualitative_result: ptRaw,
+      provenance: 'core' as const,
     });
     processedKeys.add('pressure_tightness');
   }
@@ -362,14 +376,13 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
 
   // additional tests: 排除已被提取为致密性/水压核心检验项的项目，其余项统一规范化
   const additionalRecords = additionalList
-    .filter((t: any) => t !== hydroAdditionalItem)
+    .filter((t: any) => t && t !== hydroAdditionalItem)
     .map((t: any) => {
       const rawVal = t.result ?? t.value_num;
       const rawStr = String(rawVal ?? '').trim();
-      const numMatch = rawStr.match(/[-+]?[0-9]+(?:\.[0-9]+)?/);
       const parsedNum = typeof t.value_num === 'number' && !isNaN(t.value_num)
         ? t.value_num
-        : (numMatch ? parseFloat(numMatch[0]) : undefined);
+        : parseMeasuredNum(rawStr);
 
       const rawPropertyName = t.name || t.key || '';
       const norm = PropertyKeyNormalizer.normalize(
@@ -386,10 +399,12 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
         display_name: norm.is_known ? norm.display_name : (t.name || norm.display_name || norm.property_key),
         raw_property_name: rawPropertyName,
         measured_value_raw: t.result || String(t.value_num ?? ''),
-        measured_value_num: parsedNum,
+        // 复合打包串强制降级：数值比对禁用，仅保留原文与定性结果
+        measured_value_num: t.is_composite ? undefined : parsedNum,
         unit: t.unit,
         qualitative_result: qual.qualitative_result,
         measured_level_claimed: qual.claimed_level,
+        provenance: 'additional' as const,
       };
     });
 
@@ -417,3 +432,94 @@ export function batchSpecimenToCertificateExtract(batch: any, standardIds?: stri
     ],
   };
 }
+
+/**
+ * 打标降级 additionalTests 中的冗余条目（治理原则：打标降级，禁止静默删数据）
+ *
+ * 规则 1: 复合打包串形态判定 (Composite Pattern Check) —— result 含 ≥2 段指标赋值，
+ *         整段打包文本绝不标量化，仅标注 is_composite 排除出数值比对；
+ * 规则 2: 已有核心槽位同源查重 (Existing Core Slot Collision) —— 归一化后命中已知 key
+ *         且对应 mechanical/process 核心槽位已有值，标注 is_suspected_duplicate，
+ *         数值保留并由引擎层 provenance 优先级兜底。
+ */
+export function annotateAdditionalTests(
+  additionalList: any[],
+  batch: any
+): any[] {
+  if (!Array.isArray(additionalList) || additionalList.length === 0) {
+    return [];
+  }
+
+  const mech = batch?.mechanical;
+  const proc = batch?.process;
+
+  return additionalList.map((t: any) => {
+    if (!t) return t;
+    const name = String(t.name || t.key || '').trim();
+    const rawVal = String(t.result ?? t.value_num ?? '').trim();
+
+    // 规则 1：复合打包串形态判定（与 parseMeasuredNum 的复合守卫同规则，替代关键词枚举）
+    if (rawVal.length > 0 && isCompositePackagedText(rawVal)) {
+      logger.warn('NORMALIZER', '[SpecimenAdapter] additional_tests 条目为复合打包串，已打标降级（is_composite），排除出数值比对', {
+        key: t.key,
+        name,
+        result: rawVal,
+      });
+      return {
+        ...t,
+        is_composite: true,
+        duplicate_reason: '复合打包串：含多个指标赋值，已排除出数值比对',
+      };
+    }
+
+    // 规则 2：已有核心槽位同源查重（打标保留，不删除）
+    if (name) {
+      const norm = PropertyKeyNormalizer.normalize(name, t.category, { measuredRaw: rawVal, unit: t.unit });
+      if (norm.is_known) {
+        let duplicateOf: string | undefined;
+
+        // 力学槽位碰撞
+        if (norm.category === 'mechanical' && mech) {
+          if (norm.property_key === 'tensile_strength' && mech.tensile_rm) duplicateOf = norm.property_key;
+          if (
+            norm.property_key === 'yield_strength_rp02' &&
+            (mech.yield_rp02 || mech.yield_reh || mech.yield_rel || mech.yield_strength || mech.yield || mech['屈服强度'])
+          ) duplicateOf = norm.property_key;
+          if (norm.property_key === 'elongation_A' && mech.elongation_a) duplicateOf = norm.property_key;
+          if (norm.property_key === 'hardness' && mech.hardness) duplicateOf = norm.property_key;
+          if (norm.property_key === 'impact_absorbed_energy' && mech.impact_akv) duplicateOf = norm.property_key;
+        }
+
+        // 工艺与无损槽位碰撞
+        if (norm.category === 'process' && proc) {
+          if (norm.property_key === 'flattening_test' && proc.flattening) duplicateOf = norm.property_key;
+          if (norm.property_key === 'flaring_test' && proc.flaring) duplicateOf = norm.property_key;
+          if (norm.property_key === 'bending_test' && proc.bending) duplicateOf = norm.property_key;
+        }
+        if (norm.category === 'metallographic' && proc?.grainSize && norm.property_key === 'grain_size') duplicateOf = norm.property_key;
+        if (norm.category === 'corrosion' && proc?.intergranularCorrosion && norm.property_key === 'intergranular_corrosion') duplicateOf = norm.property_key;
+        if (norm.category === 'ndt' && proc) {
+          if (norm.property_key === 'eddy_current_test' && (proc.ndt_et || (proc.ndt && String(proc.ndt).includes('涡流')))) duplicateOf = norm.property_key;
+          if (norm.property_key === 'ultrasonic_test' && (proc.ndt_ut || (proc.ndt && String(proc.ndt).includes('超声')))) duplicateOf = norm.property_key;
+        }
+
+        if (duplicateOf) {
+          logger.warn('NORMALIZER', `[SpecimenAdapter] additional_tests 条目与核心槽位 ${duplicateOf} 同源重复，已打标 is_suspected_duplicate`, {
+            key: t.key,
+            name,
+            duplicate_of: duplicateOf,
+          });
+          return {
+            ...t,
+            is_suspected_duplicate: true,
+            duplicate_of: duplicateOf,
+            duplicate_reason: `与核心槽位 ${duplicateOf} 已提取值同源重复，疑似大模型重复打包`,
+          };
+        }
+      }
+    }
+
+    return t;
+  });
+}
+

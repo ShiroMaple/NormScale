@@ -83,6 +83,8 @@ export const TestRecordSchema = z.object({
   qualitative_result: z.string().optional().describe('定性试验结论 (如 PASS, FAIL, QUALIFIED, 合格, 无裂纹)'),
   measured_level_claimed: z.string().optional().describe('质保书声称的技术等级 (如 U2 超声二级, E3H 涡流等级, 7.0级 晶粒度)'),
   conclusion_text: z.string().optional().describe('检验结论或报告补充说明文本'),
+  // 记录来源标记（normalizer/workflow 写入，引擎槽位冲突优先级裁决依据）：core=核心表格, additional=附加长尾, tier2_resolved=Tier2 消歧改写
+  provenance: z.enum(['core', 'additional', 'tier2_resolved']).optional().describe('记录来源优先级标记 (core=3 > additional=2 > tier2_resolved=1，缺失按 additional 保守处理)'),
 }).passthrough();
 export type TestRecord = z.infer<typeof TestRecordSchema>;
 
@@ -101,6 +103,11 @@ export const AdditionalTestItemSchema = z.object({
   value_num: z.number().nullable().optional().describe('数值型连续实测值（若有）'),
   unit: z.string().optional().describe('测得值单位（若有）'),
   conclusion: z.string().optional().describe('定性结论 (如 PASS, FAIL, QUALIFIED)'),
+  // 打标降级治理字段（normalizer 层写入，禁止静默删数据）
+  is_composite: z.boolean().optional().describe('复合打包串标记：result 含多个指标赋值，排除出数值比对'),
+  is_suspected_duplicate: z.boolean().optional().describe('疑似重复标记：与核心槽位同源重复'),
+  duplicate_of: z.string().optional().describe('疑似重复条目碰撞到的核心槽位 property_key'),
+  duplicate_reason: z.string().optional().describe('打标降级的人读原因说明'),
 });
 export type AdditionalTestItem = z.infer<typeof AdditionalTestItemSchema>;
 

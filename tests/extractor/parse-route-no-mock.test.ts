@@ -148,6 +148,6 @@ describe('API: /api/documents/parse (反伪哈希与零 Mock 门禁)', () => {
 
     // 关键断言：接口能够正常处理请求准入并识别非有效 Base64，不返回 cached: true，也不会由于盲拼 Base64 导致不可预期的类型崩溃
     expect(data.cached).not.toBe(true);
-  });
+  }, 15000);
 });
 

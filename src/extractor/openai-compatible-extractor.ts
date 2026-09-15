@@ -11,6 +11,7 @@ import { SessionDocument, BatchSpecimen } from '../types/session.ts';
 import { buildDynamicExtractionPrompt } from './prompt-builder.ts';
 import { ConfidenceEvaluator } from '../engine/confidence-evaluator.ts';
 import { PropertyKeyNormalizer } from '../normalizer/property-key-normalizer.ts';
+import { annotateAdditionalTests } from '../normalizer/specimen-adapter.ts';
 
 export interface LlmConfigItem {
   id: string;
@@ -588,31 +589,50 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
         processObj.ndt = String(b.process.ndt);
       }
 
+      const rawAdditionalList = Array.isArray(b.additional_tests)
+        ? b.additional_tests.map((item: any) => ({
+          key: String(item.key || `test_${Math.random().toString(36).slice(2, 7)}`),
+          name: String(item.name || item.key || '附加检验项目'),
+          category: item.category || 'process',
+          standard: item.standard || '',
+          result: String(item.result || item.value || ''),
+          value_num: typeof item.value_num === 'number' ? item.value_num : null,
+          unit: item.unit || '',
+          conclusion: item.conclusion || 'PASS',
+        }))
+        : (Array.isArray(b.additionalTests) ? b.additionalTests : []);
+
+      const annotatedAdditionalTests = annotateAdditionalTests(rawAdditionalList, {
+        mechanical: b.mechanical,
+        chemical: b.chemical,
+        process: processObj,
+      });
+
       return {
-        batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),
+        batchNo: String(b.batchNo || b.batch_lot_number || b.heat_number || `BATCH-${idx + 1}`),
         subBatchIndex: idx + 1,
-        certificateNo: header.certificate_no || header.certificateNo || '',
-        constructionNo: header.construction_number || header.constructionNo || '',
-        productName: header.material_product_name || header.productName || '',
-        grade: header.declared_grade || header.declaredGrade || '',
-        standard: header.declared_standard || header.declaredStandard || '',
-        supplier: header.supplier_name || header.supplierName || '',
-        dimensions: header.dimensions || b.dimensions || '',
-        heatNo: header.heat_number || header.heatNo || '',
-        packNo: header.heat_treatment_lot_number || header.packNo || '',
-        deliveryState: header.delivery_state || header.deliveryState || '',
-        verdict: 'UNAUDITED',
+        grade: String(b.grade || b.declared_grade || header.declared_grade || header.declaredGrade || ''),
+        standard: String(b.standard || b.declared_standard || header.declared_standard || header.declaredStandard || ''),
+        supplier: String(b.supplier || header.supplier_name || header.supplierName || ''),
+        dimensions: String(b.dimensions || header.dimensions || ''),
+        heatNo: String(b.heatNo || b.heat_number || header.heat_number || header.heatNumber || ''),
+        packNo: String(b.packNo || b.heat_treatment_lot_number || header.heat_treatment_lot_number || header.heatTreatmentLotNumber || ''),
+        productName: String(b.productName || b.material_product_name || header.material_product_name || header.productName || ''),
+        certificateNo: String(b.certificateNo || b.certificate_no || header.certificate_no || header.certificateNo || ''),
+        deliveryState: String(b.deliveryState || b.delivery_state || header.delivery_state || header.deliveryState || ''),
+        constructionNo: String(b.constructionNo || b.construction_number || header.construction_number || header.constructionNo || ''),
+        verdict: 'UNAUDITED' as const,
         verdictSummary: '大模型结构化提取完成，待合规比对',
         ocrConfidence: ConfidenceEvaluator.calculateOcrConfidence({
-          certificateNo: header.certificate_no || header.certificateNo || '',
-          batchNo: b.batchNo || (header.heat_treatment_lot_number ? `${header.heat_treatment_lot_number}-B${idx + 1}` : `BATCH-0${idx + 1}`),
-          grade: header.declared_grade || header.declaredGrade || '',
+          certificateNo: String(b.certificateNo || b.certificate_no || header.certificate_no || header.certificateNo || ''),
+          batchNo: String(b.batchNo || b.batch_lot_number || b.heat_number || `BATCH-${idx + 1}`),
+          grade: String(b.grade || b.declared_grade || header.declared_grade || header.declaredGrade || ''),
           supplier: header.supplier_name || header.supplierName || '',
           standard: header.declared_standard || header.declaredStandard || '',
           chemical: Array.isArray(b.chemical) ? b.chemical : [],
           mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
           process: processObj,
-          additionalTests: b.additional_tests || b.additionalTests || [],
+          additionalTests: annotatedAdditionalTests,
         } as any),
         gradeMatchConfidence: ConfidenceEvaluator.calculateGradeMatchConfidence(
           header.declared_grade || header.declaredGrade || '',
@@ -621,18 +641,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
         chemical: Array.isArray(b.chemical) ? b.chemical : [],
         mechanical: b.mechanical || { tensile_rm: '', yield_rp02: '', elongation_a: '', hardness: '' },
         process: processObj,
-        additionalTests: Array.isArray(b.additional_tests)
-          ? b.additional_tests.map((item: any) => ({
-            key: String(item.key || `test_${Math.random().toString(36).slice(2, 7)}`),
-            name: String(item.name || item.key || '附加检验项目'),
-            category: item.category || 'process',
-            standard: item.standard || '',
-            result: String(item.result || item.value || ''),
-            value_num: typeof item.value_num === 'number' ? item.value_num : null,
-            unit: item.unit || '',
-            conclusion: item.conclusion || 'PASS',
-          }))
-          : (Array.isArray(b.additionalTests) ? b.additionalTests : []),
+        additionalTests: annotatedAdditionalTests,
         testMethods: (b.test_methods && typeof b.test_methods === 'object') ? b.test_methods : ((b.testMethods && typeof b.testMethods === 'object') ? b.testMethods : undefined),
         surfaceQuality: resolvedSurfaceQuality,
         reportNo: `QA-${Date.now().toString().slice(-8)}`,

@@ -274,6 +274,9 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   // 首页“典型场景测试用例”折叠展开状态 (默认折叠)
   const [isScenariosExpanded, setIsScenariosExpanded] = useState<boolean>(false);
 
+  // 疑似重复 / 复合打包打标条目明细展开状态 (默认折叠为汇总行)
+  const [isDuplicateDetailsExpanded, setIsDuplicateDetailsExpanded] = useState<boolean>(false);
+
   // 源文档 OCR 视觉 BBox 与右侧解析字段双向联动状态
   const [highlightedFieldId, setHighlightedFieldId] = useState<string | null>(null);
   // 停顿满 1 秒后激活 200% 原位放大的字段 ID 与防晕倒计时器
@@ -4134,23 +4137,34 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               : (t.value_num !== null && t.value_num !== undefined ? `${t.value_num}${t.unit ? ` ${t.unit}` : ''}` : '--');
                             const isFail = t.conclusion === 'FAIL' || safeValue.includes('不') || safeValue.toUpperCase().includes('FAIL');
 
+                            // 后端打标条目（疑似重复 / 复合打包串）：跳过关键词分类推断，强制归入 duplicate 折叠展示，不混入常规分类比对
+                            const tagged = t as typeof t & {
+                              is_composite?: boolean;
+                              is_suspected_duplicate?: boolean;
+                              duplicate_of?: string;
+                              duplicate_reason?: string;
+                            };
+                            const isTagged = Boolean(tagged.is_suspected_duplicate || tagged.is_composite);
+
                             // 智能推断分类：彻底纠正模型将尺寸/表面标记为 process 的偏差
                             const s = `${t.key || ''} ${t.name || ''}`.toLowerCase();
-                            let catKey = t.category || 'process';
-                            if (s.includes('尺寸') || s.includes('dimension') || s.includes('公差') || s.includes('壁厚') || s.includes('外径')) {
-                              catKey = 'geometric';
-                            } else if (s.includes('表面') || s.includes('surface') || s.includes('外观') || s.includes('瑕疵')) {
-                              catKey = 'surface';
-                            } else if (s.includes('探伤') || s.includes('涡流') || s.includes('超声') || s.includes('ndt') || s.includes('水压') || s.includes('气密')) {
-                              catKey = 'ndt';
-                            } else if (s.includes('腐蚀') || s.includes('corrosion') || s.includes('晶间')) {
-                              catKey = 'corrosion';
-                            } else if (s.includes('金相') || s.includes('晶粒') || s.includes('grain') || s.includes('夹杂')) {
-                              catKey = 'metallographic';
-                            } else if (s.includes('拉伸') || s.includes('屈服') || s.includes('延伸') || s.includes('硬度') || s.includes('冲击') || s.includes('mechanical')) {
-                              catKey = 'mechanical';
-                            } else if (s.includes('压扁') || s.includes('扩口') || s.includes('弯曲') || s.includes('卷边') || s.includes('process')) {
-                              catKey = 'process';
+                            let catKey: string = isTagged ? 'duplicate' : (t.category || 'process');
+                            if (!isTagged) {
+                              if (s.includes('尺寸') || s.includes('dimension') || s.includes('公差') || s.includes('壁厚') || s.includes('外径')) {
+                                catKey = 'geometric';
+                              } else if (s.includes('表面') || s.includes('surface') || s.includes('外观') || s.includes('瑕疵')) {
+                                catKey = 'surface';
+                              } else if (s.includes('探伤') || s.includes('涡流') || s.includes('超声') || s.includes('ndt') || s.includes('水压') || s.includes('气密')) {
+                                catKey = 'ndt';
+                              } else if (s.includes('腐蚀') || s.includes('corrosion') || s.includes('晶间')) {
+                                catKey = 'corrosion';
+                              } else if (s.includes('金相') || s.includes('晶粒') || s.includes('grain') || s.includes('夹杂')) {
+                                catKey = 'metallographic';
+                              } else if (s.includes('拉伸') || s.includes('屈服') || s.includes('延伸') || s.includes('硬度') || s.includes('冲击') || s.includes('mechanical')) {
+                                catKey = 'mechanical';
+                              } else if (s.includes('压扁') || s.includes('扩口') || s.includes('弯曲') || s.includes('卷边') || s.includes('process')) {
+                                catKey = 'process';
+                              }
                             }
 
                             const catLabelMap: Record<string, string> = {
@@ -4162,6 +4176,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               corrosion: '腐蚀',
                               process: '工艺',
                               other: '其他',
+                              duplicate: '疑似重复',
                             };
 
                             const catColorMap: Record<string, string> = {
@@ -4172,6 +4187,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               metallographic: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
                               corrosion: 'text-orange-700 bg-orange-50 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200 dark:border-orange-800',
                               process: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                              duplicate: 'text-gray-600 bg-gray-50 dark:bg-gray-950/60 dark:text-gray-300 border-gray-200 dark:border-gray-800',
                             };
 
                             return {
@@ -4184,8 +4200,8 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                               value: safeValue,
                               method: t.standard || '依据设计技术要求',
                               confidence: '96%',
-                              status: isFail ? ('warn' as const) : ('ok' as const),
-                              note: isFail ? '检验不合格' : undefined,
+                              status: isTagged || isFail ? ('warn' as const) : ('ok' as const),
+                              note: isTagged ? (tagged.duplicate_reason || '复合打包串，已排除出比对') : (isFail ? '检验不合格' : undefined),
                             };
                           }) : []),
                           // 几何尺寸交货规格 (使用独立 fieldId: 'meta_dimensions'，避免与公差检验 'geo_dimensions' 同名冲突)
@@ -4217,11 +4233,99 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                           { key: 'geometric', label: '几何尺寸', count: allExtractItems.filter(i => i.category === 'geometric').length },
                           { key: 'surface', label: '表面质量', count: allExtractItems.filter(i => i.category === 'surface').length },
                           { key: 'other', label: '其他综合', count: allExtractItems.filter(i => i.category === 'other').length },
+                          { key: 'duplicate', label: '疑似重复', count: allExtractItems.filter(i => i.category === 'duplicate').length },
                         ].filter(c => (c.key === 'all' && allExtractItems.length > 0) || c.count > 0);
 
                         const displayedItems = activeTabCategory === 'all'
                           ? allExtractItems
                           : allExtractItems.filter(i => i.category === activeTabCategory);
+
+                        // 打标条目（疑似重复 / 复合打包）在总览表中折叠收底，默认仅呈现汇总行，点击展开明细
+                        const visibleOverviewItems = displayedItems.filter(i => i.category !== 'duplicate');
+                        const foldedDuplicateItems = displayedItems.filter(i => i.category === 'duplicate');
+
+                        const renderOverviewRow = (row: ExtractRowItem, idx: number) => {
+                          const isValueHighlighted = highlightedFieldId === row.fieldId;
+                          const isMethodHighlighted = Boolean(row.methodFieldId && highlightedFieldId === row.methodFieldId);
+                          const isRowActive = isValueHighlighted || isMethodHighlighted;
+                          const numConfidence = parseInt(row.confidence?.replace('%', '') || '100', 10);
+                          const isLowConfidence = row.status === 'warn' || numConfidence < 85;
+
+                          return (
+                            <tr
+                              key={idx}
+                              id={`right-field-${row.fieldId}`}
+                              className={`transition-colors ${isRowActive
+                                ? 'bg-primary/10 dark:bg-primary/20'
+                                : 'hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40'
+                                }`}
+                            >
+                              <td className="px-3.5 py-2 whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
+                                  {row.categoryLabel}
+                                </span>
+                              </td>
+                              <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
+
+                              {/* 1. 提取测得值 / 试验结果（常态处于常规Text展示，hover浮现编辑按钮，点击可编辑，置信度预警保留⚠️） */}
+                              <td className="px-3.5 py-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="relative flex-1 flex items-center max-w-[240px]">
+                                    <EditableValueField
+                                      value={row.value}
+                                      unit={row.unit}
+                                      onChange={(val) => handleUpdateExtractValue(row.fieldId, val)}
+                                      onHover={() => handleFieldHover(row.fieldId)}
+                                      onLeave={() => handleFieldHover(null)}
+                                      isHighlighted={isValueHighlighted}
+                                      title="悬浮可联动查看原件切图，点击右侧编辑按钮修改"
+                                      className="w-full"
+                                    />
+                                  </div>
+
+                                  {/* 置信度⚠️气泡：warn / <85% 置信度 / 打标条目展示，悬浮展开完整工业说明 */}
+                                  {isLowConfidence && (
+                                    <div className="relative group flex items-center shrink-0">
+                                      <span className="cursor-help text-xs text-amber-600 dark:text-amber-400 select-none px-1 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40">⚠️</span>
+                                      <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20">
+                                        <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                                          <span className="material-symbols-outlined text-sm">warning</span>
+                                          <span>{row.category === 'duplicate' ? '疑似重复项提示' : `OCR 置信度预警 (${row.confidence})`}</span>
+                                        </div>
+                                        <p className="mt-1 text-[11px] text-inverse-on-surface/90 leading-snug">
+                                          {row.note || '抽取置信度低于 85% 工业安全阈值，请比对左侧原件切图核验'}
+                                        </p>
+                                        <div className="absolute bottom-full right-2 border-4 border-transparent border-b-inverse-surface" />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* 2. 试验依据方法 / 标准（独立 BBox 联动，无图标与边框） */}
+                              <td className="px-3.5 py-2.5 text-[11px]">
+                                {row.method && row.method !== '-' && row.methodFieldId ? (
+                                  <span
+                                    id={`right-field-${row.methodFieldId}`}
+                                    onMouseEnter={() => handleFieldHover(row.methodFieldId!)}
+                                    onMouseLeave={() => handleFieldHover(null)}
+                                    className={`inline-block transition-colors cursor-pointer ${isMethodHighlighted
+                                      ? 'text-primary dark:text-primary-fixed-dim font-bold underline underline-offset-2 decoration-2'
+                                      : 'text-on-surface-variant dark:text-outline-variant hover:text-primary hover:underline hover:underline-offset-2'
+                                      }`}
+                                    title="悬浮查看源文档中该项依据的标准/方法条款位置"
+                                  >
+                                    {row.method}
+                                  </span>
+                                ) : (
+                                  <span className="text-outline-variant dark:text-outline-dark">
+                                    {row.method || '-'}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        };
 
                         if (allExtractItems.length === 0) {
                           return (
@@ -4280,88 +4384,25 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/60">
-                                    {displayedItems.map((row, idx) => {
-                                      const isValueHighlighted = highlightedFieldId === row.fieldId;
-                                      const isMethodHighlighted = Boolean(row.methodFieldId && highlightedFieldId === row.methodFieldId);
-                                      const isRowActive = isValueHighlighted || isMethodHighlighted;
-                                      const numConfidence = parseInt(row.confidence?.replace('%', '') || '100', 10);
-                                      const isLowConfidence = row.status === 'warn' || numConfidence < 85;
-
-                                      return (
-                                        <tr
-                                          key={idx}
-                                          id={`right-field-${row.fieldId}`}
-                                          className={`transition-colors ${isRowActive
-                                            ? 'bg-primary/10 dark:bg-primary/20'
-                                            : 'hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40'
-                                            }`}
-                                        >
-                                          <td className="px-3.5 py-2 whitespace-nowrap">
-                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap inline-block ${row.categoryColor}`}>
-                                              {row.categoryLabel}
+                                    {visibleOverviewItems.map(renderOverviewRow)}
+                                    {foldedDuplicateItems.length > 0 && (
+                                      <tr className="bg-surface-container-low/40 dark:bg-surface-dark-low/40">
+                                        <td colSpan={4} className="px-3.5 py-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => setIsDuplicateDetailsExpanded(v => !v)}
+                                            className="flex items-center gap-1.5 text-xs font-bold text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed-dim transition-colors cursor-pointer"
+                                          >
+                                            <span className="material-symbols-outlined text-base">warning</span>
+                                            <span>疑似重复项 ({foldedDuplicateItems.length})，已排除出比对，点击展开明细</span>
+                                            <span className="material-symbols-outlined text-base transition-transform duration-200">
+                                              {isDuplicateDetailsExpanded ? 'expand_less' : 'expand_more'}
                                             </span>
-                                          </td>
-                                          <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{row.name}</td>
-
-                                          {/* 1. 提取测得值 / 试验结果（常态处于常规Text展示，hover浮现编辑按钮，点击可编辑，置信度预警保留⚠️） */}
-                                          <td className="px-3.5 py-1.5">
-                                            <div className="flex items-center gap-1.5">
-                                              <div className="relative flex-1 flex items-center max-w-[240px]">
-                                                <EditableValueField
-                                                  value={row.value}
-                                                  unit={row.unit}
-                                                  onChange={(val) => handleUpdateExtractValue(row.fieldId, val)}
-                                                  onHover={() => handleFieldHover(row.fieldId)}
-                                                  onLeave={() => handleFieldHover(null)}
-                                                  isHighlighted={isValueHighlighted}
-                                                  title="悬浮可联动查看原件切图，点击右侧编辑按钮修改"
-                                                  className="w-full"
-                                                />
-                                              </div>
-
-                                              {/* 置信度⚠️气泡：仅对 warn / <85% 置信度展示，悬浮展开完整工业说明 */}
-                                              {isLowConfidence && (
-                                                <div className="relative group flex items-center shrink-0">
-                                                  <span className="cursor-help text-xs text-amber-600 dark:text-amber-400 select-none px-1 py-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40">⚠️</span>
-                                                  <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col items-start w-56 p-2.5 bg-inverse-surface text-inverse-on-surface text-xs rounded-lg shadow-xl z-30 pointer-events-none transition-all border border-outline-variant/20">
-                                                    <div className="font-bold flex items-center gap-1.5 text-amber-300">
-                                                      <span className="material-symbols-outlined text-sm">warning</span>
-                                                      <span>OCR 置信度预警 ({row.confidence})</span>
-                                                    </div>
-                                                    <p className="mt-1 text-[11px] text-inverse-on-surface/90 leading-snug">
-                                                      {row.note || '抽取置信度低于 85% 工业安全阈值，请比对左侧原件切图核验'}
-                                                    </p>
-                                                    <div className="absolute bottom-full right-2 border-4 border-transparent border-b-inverse-surface" />
-                                                  </div>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </td>
-
-                                          {/* 2. 试验依据方法 / 标准（独立 BBox 联动，无图标与边框） */}
-                                          <td className="px-3.5 py-2.5 text-[11px]">
-                                            {row.method && row.method !== '-' && row.methodFieldId ? (
-                                              <span
-                                                id={`right-field-${row.methodFieldId}`}
-                                                onMouseEnter={() => handleFieldHover(row.methodFieldId!)}
-                                                onMouseLeave={() => handleFieldHover(null)}
-                                                className={`inline-block transition-colors cursor-pointer ${isMethodHighlighted
-                                                  ? 'text-primary dark:text-primary-fixed-dim font-bold underline underline-offset-2 decoration-2'
-                                                  : 'text-on-surface-variant dark:text-outline-variant hover:text-primary hover:underline hover:underline-offset-2'
-                                                  }`}
-                                                title="悬浮查看源文档中该项依据的标准/方法条款位置"
-                                              >
-                                                {row.method}
-                                              </span>
-                                            ) : (
-                                              <span className="text-outline-variant dark:text-outline-dark">
-                                                {row.method || '-'}
-                                              </span>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    )}
+                                    {isDuplicateDetailsExpanded && foldedDuplicateItems.map((row, idx) => renderOverviewRow(row, visibleOverviewItems.length + idx))}
                                   </tbody>
                                 </table>
                               </div>
@@ -4448,6 +4489,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                 geometric: '几何公差与尺寸检验 (Geometric Tolerances & Dimensions)',
                                 surface: '表面宏观与微观质量检验 (Surface Quality)',
                                 other: '其他综合检验条款实测 (Additional Tests)',
+                                duplicate: '疑似重复与复合打包项 (Suspected Duplicates & Composites)',
                               };
 
                               const headerTitle = categoryHeaderMap[activeTabCategory] || `${categoriesInBatch.find(c => c.key === activeTabCategory)?.label || '检验项目'}实测`;
@@ -4458,7 +4500,22 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
                                     {headerTitle}
                                   </span>
                                   <div className="space-y-2">
-                                    {displayedItems.map((item) => {
+                                    {activeTabCategory === 'duplicate' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsDuplicateDetailsExpanded(v => !v)}
+                                        className="w-full p-3 bg-surface-container-lowest dark:bg-surface-dark border border-dashed border-outline-variant/50 dark:border-border-dark rounded-lg flex items-center justify-between gap-3 text-on-surface-variant dark:text-outline-variant hover:border-primary/50 hover:text-primary transition-all cursor-pointer"
+                                      >
+                                        <span className="flex items-center gap-1.5 text-xs font-bold">
+                                          <span className="material-symbols-outlined text-base">warning</span>
+                                          <span>疑似重复项 ({displayedItems.length})，已排除出比对</span>
+                                        </span>
+                                        <span className="material-symbols-outlined text-base transition-transform duration-200">
+                                          {isDuplicateDetailsExpanded ? 'expand_less' : 'expand_more'}
+                                        </span>
+                                      </button>
+                                    )}
+                                    {(activeTabCategory !== 'duplicate' || isDuplicateDetailsExpanded) && displayedItems.map((item) => {
                                       const isHighlighted = highlightedFieldId === item.fieldId;
                                       const isMethodHighlighted = Boolean(item.methodFieldId && highlightedFieldId === item.methodFieldId);
 

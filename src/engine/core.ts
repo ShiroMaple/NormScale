@@ -359,6 +359,9 @@ export class ComplianceEngine {
     const chemical: Record<string, number> = {};
     const mechanical: Record<string, number> = {};
     const dimensions: Record<string, number> = {};
+    // 数值快照槽位的 provenance 归属登记表（用于快照覆写冲突的优先级裁决）
+    const chemicalOwners = new Map<string, TestRecord>();
+    const mechanicalOwners = new Map<string, TestRecord>();
 
     // 1. 提取几何尺寸数值（外径、壁厚、长度等）
     if (certificate.header.dimensions) {
@@ -401,32 +404,33 @@ export class ComplianceEngine {
             recordsMap.set(`${k}#num`, existing);
             recordsMap.set(`${k}#qual`, record);
           } else {
-            recordsMap.set(k, record);
+            // 同构冲突：按 provenance 优先级裁决（同级先到先赢），被挤出者转入 #superseded 诊断槽位
+            this.arbitrateRecordSlot(recordsMap, k, record);
           }
         } else {
           recordsMap.set(k, record);
         }
 
-        if (isNumeric) recordsMap.set(`${k}#num`, record);
-        if (isQualitative) recordsMap.set(`${k}#qual`, record);
+        if (isNumeric) this.arbitrateRecordSlot(recordsMap, `${k}#num`, record);
+        if (isQualitative) this.arbitrateRecordSlot(recordsMap, `${k}#qual`, record);
       }
 
       if (record.sub_property) {
-        recordsMap.set(`${record.property_key}_${record.sub_property}`, record);
-        recordsMap.set(`${canonicalKey}_${record.sub_property}`, record);
+        this.arbitrateRecordSlot(recordsMap, `${record.property_key}_${record.sub_property}`, record);
+        this.arbitrateRecordSlot(recordsMap, `${canonicalKey}_${record.sub_property}`, record);
       }
 
       // 提取连续数值到对应大类的数值快照表中（用于动态公式求值，如 Ti >= 4*(C+N)）
       if (record.measured_value_num !== undefined && record.measured_value_num !== null) {
         if (record.category === 'chemical') {
-          chemical[record.property_key] = record.measured_value_num;
-          chemical[canonicalKey] = record.measured_value_num;
+          this.writeSnapshotValue(chemical, chemicalOwners, record.property_key, record);
+          this.writeSnapshotValue(chemical, chemicalOwners, canonicalKey, record);
         } else if (record.category === 'mechanical') {
-          mechanical[record.property_key] = record.measured_value_num;
-          mechanical[canonicalKey] = record.measured_value_num;
+          this.writeSnapshotValue(mechanical, mechanicalOwners, record.property_key, record);
+          this.writeSnapshotValue(mechanical, mechanicalOwners, canonicalKey, record);
           if (record.sub_property) {
-            mechanical[`${record.property_key}_${record.sub_property}`] = record.measured_value_num;
-            mechanical[`${canonicalKey}_${record.sub_property}`] = record.measured_value_num;
+            this.writeSnapshotValue(mechanical, mechanicalOwners, `${record.property_key}_${record.sub_property}`, record);
+            this.writeSnapshotValue(mechanical, mechanicalOwners, `${canonicalKey}_${record.sub_property}`, record);
           }
         }
       }
@@ -439,6 +443,106 @@ export class ComplianceEngine {
       mechanical,
       dimensions,
     };
+  }
+
+  /**
+   * 实测记录来源优先级秩：core=3 > additional=2 > tier2_resolved=1；无 provenance 的旧缓存数据按 additional 保守处理
+   */
+  private static provenanceRank(rec: TestRecord): number {
+    switch (rec.provenance) {
+      case 'core': return 3;
+      case 'tier2_resolved': return 1;
+      default: return 2;
+    }
+  }
+
+  /**
+   * 槽位冲突日志元数据：记录双方 property_key / 实测值 / 来源
+   */
+  private static slotConflictMeta(rec: TestRecord): Record<string, unknown> {
+    return {
+      property_key: rec.property_key,
+      measured_value_num: rec.measured_value_num ?? null,
+      qualitative_result: rec.qualitative_result ?? null,
+      provenance: rec.provenance ?? 'additional',
+    };
+  }
+
+  /**
+   * 同构槽位 provenance 优先级裁决：高优先级记录占据槽位，被挤出者存入 `${key}#superseded` 诊断槽位（不参与评估查找链），冲突必打日志
+   */
+  private static arbitrateRecordSlot(recordsMap: Map<string, TestRecord>, key: string, incoming: TestRecord): void {
+    const existing = recordsMap.get(key);
+    if (!existing) {
+      recordsMap.set(key, incoming);
+      return;
+    }
+    if (existing === incoming) return; // 同一条记录重复索引同一槽位（如 property_key === canonicalKey）
+
+    if (this.provenanceRank(incoming) > this.provenanceRank(existing)) {
+      recordsMap.set(key, incoming);
+      this.parkSupersededRecord(recordsMap, key, existing);
+      defaultLogger.warn('ENGINE', `[ComplianceEngine] 槽位冲突：高优先级记录入主槽位 [${key}]，被挤出记录转入 #superseded 诊断槽位`, {
+        key,
+        kept: this.slotConflictMeta(incoming),
+        superseded: this.slotConflictMeta(existing),
+      });
+    } else {
+      // 同级或更低优先级：现有记录保留（同级先到先赢）
+      this.parkSupersededRecord(recordsMap, key, incoming);
+      defaultLogger.warn('ENGINE', `[ComplianceEngine] 槽位冲突：现有记录保留 [${key}]（先到先赢/优先级更高），新记录转入 #superseded 诊断槽位`, {
+        key,
+        kept: this.slotConflictMeta(existing),
+        superseded: this.slotConflictMeta(incoming),
+      });
+    }
+  }
+
+  /**
+   * 被挤出记录存入 `#superseded` 诊断槽位；若该槽位已有被挤出记录，保留 provenance 更高者
+   */
+  private static parkSupersededRecord(recordsMap: Map<string, TestRecord>, key: string, rec: TestRecord): void {
+    const diagKey = `${key}#superseded`;
+    const parked = recordsMap.get(diagKey);
+    if (!parked || this.provenanceRank(rec) > this.provenanceRank(parked)) {
+      recordsMap.set(diagKey, rec);
+    }
+  }
+
+  /**
+   * 数值快照表写入裁决：低优先级不得覆写高优先级已写入的快照值，同级先到先赢，冲突必打日志
+   */
+  private static writeSnapshotValue(
+    table: Record<string, number>,
+    owners: Map<string, TestRecord>,
+    key: string,
+    rec: TestRecord
+  ): void {
+    const value = rec.measured_value_num;
+    if (value === undefined || value === null) return;
+    const existing = owners.get(key);
+    if (!existing) {
+      table[key] = value;
+      owners.set(key, rec);
+      return;
+    }
+    if (existing === rec) return; // 同一条记录重复写同一快照键（如 property_key === canonicalKey）
+
+    if (this.provenanceRank(rec) > this.provenanceRank(existing)) {
+      table[key] = value;
+      owners.set(key, rec);
+      defaultLogger.warn('ENGINE', `[ComplianceEngine] 数值快照冲突：高优先级记录覆写快照值 [${key}]`, {
+        key,
+        kept: this.slotConflictMeta(rec),
+        superseded: this.slotConflictMeta(existing),
+      });
+    } else {
+      defaultLogger.warn('ENGINE', `[ComplianceEngine] 数值快照冲突：保留既有快照值 [${key}]（先到先赢/优先级更高）`, {
+        key,
+        kept: this.slotConflictMeta(existing),
+        superseded: this.slotConflictMeta(rec),
+      });
+    }
   }
 
 

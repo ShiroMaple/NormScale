@@ -4,6 +4,17 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-14 · 重复提取与覆写误判的系统性治理：打标降级 + provenance 优先级 + Tier 2 fill-only（修正前日"三道防线"方案）
+
+- 背景：`测试质保书1.pdf` 批次 Z26022C-E1 复合串 `Rp0.2=334、343 MPa；…` 被首数字正则抓出 0.2、经 Tier 2 对齐覆写屈服强度正确值导致误判 FAIL。经第三方复盘，前日条目（下方 2026-09-14"三道防线"）的关键词枚举过滤思路被修正为分层信任治理：
+  1. **标量化修复**（`src/normalizer/numeric-parse.ts` [NEW]）：`parseMeasuredNum` 复合形态守卫（≥2 段赋值绝不标量化）+ 标识符内嵌数字守卫（负向后行排除 Rp0.2/HV1 伪数字），替换 specimen-adapter 全部 6 处首数字提取点；`parseHardnessValues` 修复硬度多值平均混入 HV1 标尺数字（143/145/137 曾被算成 106.5）；
+  2. **三道防线 → 打标降级**（`specimen-adapter.ts` `annotateAdditionalTests`）：删除防线 1/3 的关键词正则枚举，改形态判定打标 `is_composite`；保留防线 2 key 碰撞但改为打标 `is_suspected_duplicate`/`duplicate_of`——**全程不删数据**，每次打标 `logger.warn` 留痕；`is_composite` 条目的 record 强制无 `measured_value_num`；
+  3. **引擎覆写信任模型**（`engine/core.ts`）：recordsMap 引入 provenance 优先级（core > additional > tier2_resolved，无标记按 additional），同构冲突不再 last-write-wins，被挤出记录存 `#superseded` 诊断槽位 + warn 日志；chemical/mechanical 数值快照表同样裁决；
+  4. **Tier 2 fill-only**（`llm-property-resolver.node.ts`）：写时守卫 `isRuleKeyClaimed`——目标槽位已被带值记录占用则放弃改写转 ambiguousList，结构性杜绝长尾反噬核心槽位；改写成功打标 `provenance: 'tier2_resolved'`；
+  5. **UI 打标折叠**（`WaterfallWorkbench.tsx`）：标记条目跳过关键词分类推断，归入"疑似重复"灰色类别、默认折叠汇总行、⚠️ 气泡展示原因，保持可编辑；
+  6. **回归锁定**（`tests/regression/z26022c-e1.test.ts` [NEW]）：8 用例复刻事故现场三层断言（适配层打标不删除 / 引擎层 334 判 PASS / 破坏变体下 provenance 优先级仍兜底）。
+- 验证就绪：新增 `records-map-conflict.test.ts`（6 例）、`numeric-parse.test.ts`（16 例）等；全量 61 套件 340 项单测 100% 绿灯，`tsc --noEmit` 0 错误。
+
 ## 2026-09-14 · 标准文档离线入库管线落地：确定性 harness + LLM 有界初提（开放问题 7 闭环）
 
 - 五阶段管线 (`src/ingestion/` + `scripts/ingest-standard.ts`，新增 `pnpm standard:ingest`):
@@ -12,6 +23,17 @@
   3. E2E 真实验证：NB/T 47019.5-2021 全链路入库 22 切片，与已有人工切片 golden 对比 30/30 指标完全一致；GB 13296-2023.pdf 因字体子集化乱码被显式拒绝（能力边界，待 OCR/多模态路线）；
   4. 验证就绪：新增 `tests/ingestion/` 29 项单测，全量 58 套件 305 项 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过。
 - 详情沉淀: 详见 [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)。
+
+## 2026-09-14 · 根治复合力学表头冗余沉淀与 Tier 2 反向覆写引发的误判 FAIL
+
+- 实施“三道防线”冗余过滤与消歧候选池动态收缩机制 (`specimen-adapter.ts`, `prompt-builder.ts`, `openai-compatible-extractor.ts`, `llm-property-resolver.node.ts`, `specimen-adapter.test.ts`):
+  1. 提示词前端治理：在 Zero-Drop 规则中增加去重严禁项，禁止大模型将结构化已解析项（力学/化学/工艺）作为表头或复合长文本二次写入 `additional_tests`；
+  2. 适配层三道防线过滤 (`filterRedundantAdditionalTests`)：
+     - 防线 1（复合汇总型指标识别）：正则检出含 2 个及以上核心力学赋值模式（Rp/Rm/A/HV/KV）的长字符串并在已具结构化力学时直接剔除；
+     - 防线 2（已有核心槽位同源查重）：利用 `PropertyKeyNormalizer` 比对已知槽位，已存在于 mechanical/process 的重名条目一律拦截；
+     - 防线 3（大类表头泛名过滤）：基于语义正则屏蔽“拉伸试验”、“力学性能试验”等纯表头项；
+  3. Tier 2 候选池收缩门禁：从 `candidateRules` 中剔除 Tier 1 确定性已持值的属性规则，物理隔绝后置长尾/复合条目反向覆盖核心已判定槽位；
+  4. 验证与回归：新增 `specimen-adapter.test.ts` 伴生单测，全量 55 个测试套件 276 项单测全绿，构建与类型检查 0 错误。
 
 ## 2026-09-14 · 根治切图相对路由透传引发的大模型 Base64 非法字符 (byte 25) 异常
 
