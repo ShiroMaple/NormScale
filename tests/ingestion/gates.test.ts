@@ -5,8 +5,14 @@ import type { DraftRule, DraftSlice, TextBlock } from '@/ingestion/types';
 
 /* 溯源断言用原文索引（数值字面取自其中） */
 const CLAUSE_TEXT_INDEX: Record<string, string> = {
+  表1: '表1 钢的牌号和化学成分\n15 06Cr18Ni11Ti S32168 0.08 1.00 2.00 0.035 0.015 9.00～12.00 17.00～19.00 — Ti：5（C+N）～0.70',
   表2: '表2 钢的牌号和化学成分\n1 06Cr19Ni10 S30408 0.08 1.00 2.00 0.035 0.015 8.00~11.00 18.00~20.00\n2 022Cr19Ni10 S30403 0.030 1.00 2.00 0.035 0.015 8.00~12.00 18.00~20.00',
   表3: '表3 室温力学性能\n1 06Cr19Ni10 S30408 520 205 35\n2 022Cr19Ni10 S30403 480 175 35',
+  '6.5.1': '6.5.1 压扁\n壁厚不大于 10mm 的管子应按 NB/T 47019.1 的规定进行压扁试验。',
+  '6.8': '6.8 腐蚀试验\n管子应按 GB/T 4334—2020 中方法 E 的规定进行晶间腐蚀试验，试验后试样不应出现晶间腐蚀倾向。',
+  '6.9': '6.9 晶粒度\n07Cr19Ni10、07Cr17Ni12Mo2、07Cr19Ni11Ti、07Cr18Ni11Nb 牌号管子的晶粒度级别为 4 级～7 级。',
+  '6.10.1.1': '6.10.1.1 无缝管应逐根进行超声检测，对比样管纵向刻槽深度等级应符合 GB/T 5777—2019 中U2级的规定。',
+  '6.12': '6.12 表面粗糙度\n管子内外表面粗糙度 Ra 应不大于 0.8μm，并符合 NB/T 47019.1—2021 中 7.11.4 的规定。',
   '7.5.1': '7.5.1 钢管应逐根进行液压试验，最大试验压力不超过 20 MPa，稳压时间不少于 10s。',
 };
 
@@ -24,6 +30,60 @@ function makeRule(overrides: Partial<DraftRule> = {}): DraftRule {
   };
 }
 
+// v2 全量七族规则基线：覆盖 chemical/mechanical/process/metallographic/corrosion/ndt/surface，
+// 与 gates 缺省声明族（FULL_RULE_FAMILIES）对齐，数值均可溯源至 CLAUSE_TEXT_INDEX
+function makeFullFamilyRules(): DraftRule[] {
+  return [
+    makeRule(),
+    makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_strength', display_name: '抗拉强度 (Rm)', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' }),
+    makeRule({ rule_id: 'MECH_S30408_RP02', category: 'mechanical', property_key: 'yield_strength_rp02', display_name: '规定塑性延伸强度 (Rp0.2)', criteria: { min: 205, max: null, unit: 'MPa' }, source_clause: '表3' }),
+    makeRule({
+      rule_id: 'PROC_S30408_FLATTENING',
+      category: 'process',
+      property_key: 'flattening',
+      display_name: '压扁试验',
+      rule_type: 'dynamic_formula_pass',
+      criteria: { formula_distance_H: '(1 + 0.09) * S / (0.09 + S / D)', expected_visual_result: 'NO_CRACKS', test_standard: 'GB/T 246' },
+      source_clause: '6.5.1',
+    }),
+    makeRule({
+      rule_id: 'META_S30408_GRAIN_SIZE',
+      category: 'metallographic',
+      property_key: 'grain_size',
+      display_name: '晶粒度',
+      criteria: { min: 4, max: 7, unit: '级' },
+      source_clause: '6.9',
+    }),
+    makeRule({
+      rule_id: 'CORR_S30408_INTERGRANULAR',
+      category: 'corrosion',
+      property_key: 'intergranular_corrosion',
+      display_name: '晶间腐蚀试验',
+      rule_type: 'qualitative_enum',
+      criteria: { method: 'Method_E', test_standard: 'GB/T 4334-2020', expected: 'NO_CORROSION_TREND' },
+      source_clause: '6.8',
+    }),
+    makeRule({
+      rule_id: 'NDT_S30408_ULTRASONIC',
+      category: 'ndt',
+      property_key: 'ultrasonic_test',
+      display_name: '超声检测',
+      rule_type: 'qualitative_enum',
+      criteria: { required_level: 'U2', test_standard: 'GB/T 5777-2019' },
+      source_clause: '6.10.1.1',
+    }),
+    makeRule({
+      rule_id: 'SURF_S30408_ROUGHNESS',
+      category: 'surface',
+      property_key: 'surface_roughness',
+      display_name: '表面粗糙度 (Ra)',
+      requirement_level: 'OPTIONAL_AGREED',
+      criteria: { min: null, max: 0.8, unit: 'μm', rounding_decimals: 2 },
+      source_clause: '6.12',
+    }),
+  ];
+}
+
 function makeSlice(overrides: Partial<DraftSlice> = {}): DraftSlice {
   return {
     spec_key: 'S30408',
@@ -34,11 +94,7 @@ function makeSlice(overrides: Partial<DraftSlice> = {}): DraftSlice {
     structure_type: 'austenitic',
     description: 'GB/T 99999-2024 表2/表3 试验切片',
     aliases: [],
-    evaluation_rules: [
-      makeRule(),
-      makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_strength', display_name: '抗拉强度 (Rm)', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' }),
-      makeRule({ rule_id: 'MECH_S30408_RP02', category: 'mechanical', property_key: 'yield_strength_rp02', display_name: '规定塑性延伸强度 (Rp0.2)', criteria: { min: 205, max: null, unit: 'MPa' }, source_clause: '表3' }),
-    ],
+    evaluation_rules: makeFullFamilyRules(),
     ...overrides,
   };
 }
@@ -84,6 +140,7 @@ describe('S3 质量门禁：全绿基线', () => {
           }),
         ],
         clauseTextIndex: index,
+        declaredFamilies: ['chemical', 'mechanical'],
         expectedGradeRows: 1,
       }),
     );
@@ -200,14 +257,19 @@ describe('S3 质量门禁：property_key 注册表（命名漂移防护）', () 
         makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_str', display_name: '抗拉强度 (Rm)', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' }),
       ],
     });
-    const result = runGates(makeGateInput({ slices: [slice], propertyKeyRegistry: ['C', 'tensile_strength', 'yield_strength_rp02'] }));
+    const result = runGates(makeGateInput({ slices: [slice], declaredFamilies: ['chemical', 'mechanical'], propertyKeyRegistry: ['C', 'tensile_strength', 'yield_strength_rp02'] }));
     expect(result.issues.some((i) => i.code === 'LINT_PROPERTY_KEY_REGISTRY' && i.message.includes('tensile_str'))).toBe(true);
     expect(result.requiresManualReview).toBe(true);
   });
 
   it('命中注册表的 key 通过；命中即放行其余检查', () => {
     const result = runGates(
-      makeGateInput({ propertyKeyRegistry: new Set(['C', 'tensile_strength', 'yield_strength_rp02', 'elongation_A']) }),
+      makeGateInput({
+        propertyKeyRegistry: new Set([
+          'C', 'tensile_strength', 'yield_strength_rp02', 'elongation_A',
+          'flattening', 'grain_size', 'intergranular_corrosion', 'ultrasonic_test', 'surface_roughness',
+        ]),
+      }),
     );
     expect(result.issues.some((i) => i.code === 'LINT_PROPERTY_KEY_REGISTRY')).toBe(false);
     expect(result.passed).toBe(true);
@@ -217,7 +279,7 @@ describe('S3 质量门禁：property_key 注册表（命名漂移防护）', () 
     const slice = makeSlice({
       evaluation_rules: [makeRule({ property_key: 'brand_new_key' }), makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_strength', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' })],
     });
-    const result = runGates(makeGateInput({ slices: [slice], propertyKeyRegistry: [] }));
+    const result = runGates(makeGateInput({ slices: [slice], declaredFamilies: ['chemical', 'mechanical'], propertyKeyRegistry: [] }));
     expect(result.issues.some((i) => i.code === 'LINT_PROPERTY_KEY_REGISTRY')).toBe(false);
   });
 
@@ -235,19 +297,49 @@ describe('S3 质量门禁：类别覆盖由声明规则族驱动', () => {
     expect(result.passed).toBe(true);
   });
 
-  it('declaredFamilies 扩充到 process 时，缺少 process 类规则被拦截', () => {
-    const slice = makeSlice();
+  it('declaredFamilies 扩充到 process 且全库零 process 规则时，按整族漏提拦截（标准级检查）', () => {
+    // 仅含 chemical+mechanical 的切片，声明三族 -> process 在全库零规则，整族漏提被拦截
+    const slice = makeSlice({
+      evaluation_rules: [
+        makeRule(),
+        makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_strength', display_name: '抗拉强度 (Rm)', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' }),
+      ],
+    });
     const result = runGates(makeGateInput({ slices: [slice], declaredFamilies: ['chemical', 'mechanical', 'process'] }));
     const coverage = result.issues.find((i) => i.code === 'LINT_CATEGORY_COVERAGE');
     expect(coverage).toBeDefined();
     expect(coverage!.message).toContain('process');
-    expect(coverage!.message).toContain('声明提取范围');
+    expect(coverage!.message).toContain('零规则');
   });
 
-  it('declaredFamilies 为空数组时回退缺省 chemical+mechanical', () => {
+  it('条件适用族仅在部分切片存在时不逐切片拦截（晶粒度仅 07 系四牌号场景）', () => {
+    // metallographic 仅一个切片持有：合法的条件适用，不得产生覆盖 issue
+    const withGrain = makeSlice({
+      evaluation_rules: [
+        makeRule(),
+        makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_strength', display_name: '抗拉强度 (Rm)', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' }),
+        makeRule({ rule_id: 'METALLO_S30409_GRAIN', category: 'metallographic', property_key: 'grain_size', display_name: '晶粒度级别', criteria: { min: 4, max: 7, unit: '级' }, source_clause: '6.9' }),
+      ],
+    });
+    const withoutGrain = makeSlice({
+      spec_key: 'S32168',
+      primary_grade: '06Cr18Ni11Ti',
+      evaluation_rules: [
+        makeRule({ rule_id: 'CHEM_S32168_C' }),
+        makeRule({ rule_id: 'MECH_S32168_RM', category: 'mechanical', property_key: 'tensile_strength', display_name: '抗拉强度 (Rm)', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' }),
+      ],
+    });
+    const result = runGates(makeGateInput({ slices: [withGrain, withoutGrain], declaredFamilies: ['chemical', 'mechanical', 'metallographic'] }));
+    expect(result.issues.filter((i) => i.code === 'LINT_CATEGORY_COVERAGE')).toEqual([]);
+  });
+
+  it('declaredFamilies 为空数组时回退缺省 v2 全量七族', () => {
     const slice = makeSlice({ evaluation_rules: [makeRule()] });
     const result = runGates(makeGateInput({ slices: [slice], declaredFamilies: [] }));
     expect(result.issues.some((i) => i.code === 'LINT_CATEGORY_COVERAGE' && i.message.includes('mechanical'))).toBe(true);
+    // v2 全量缺省：ndt/surface 等其余新族同样被声明，一并拦截
+    expect(result.issues.some((i) => i.code === 'LINT_CATEGORY_COVERAGE' && i.message.includes('ndt'))).toBe(true);
+    expect(result.issues.some((i) => i.code === 'LINT_CATEGORY_COVERAGE' && i.message.includes('surface'))).toBe(true);
   });
 });
 
@@ -282,6 +374,185 @@ describe('S3 质量门禁：牌号行数对账', () => {
   it('expectedGradeRows 为 null 时跳过对账', () => {
     const result = runGates(makeGateInput({ expectedGradeRows: null }));
     expect(result.passed).toBe(true);
+  });
+});
+
+describe('S3 质量门禁：动态公式 lint（v2）', () => {
+  interface TiRuleOverrides {
+    rule_id?: string;
+    source_clause?: string;
+    criteria?: Record<string, unknown>;
+  }
+
+  const tiRule = (overrides: TiRuleOverrides = {}): DraftRule => {
+    const { criteria: criteriaOverrides, ...rest } = overrides;
+    return makeRule({
+      rule_id: 'CHEM_S32168_Ti',
+      category: 'chemical',
+      property_key: 'Ti',
+      display_name: '钛含量 (Ti)',
+      rule_type: 'dynamic_expression',
+      criteria: { formula_min: '5 * (ctx.chemical.C + ctx.chemical.N)', formula_max: null, min: null, max: 0.7, unit: '%', rounding_decimals: 3, ...criteriaOverrides },
+      source_clause: '表1',
+      ...rest,
+    });
+  };
+
+  it('白名单公式（ctx.chemical.<元素>/数字/四则/括号）通过 lint 与数值溯源', () => {
+    const slice = makeSlice({ evaluation_rules: [...makeFullFamilyRules(), tiRule()] });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_FORMULA')).toBe(false);
+    expect(result.issues.some((i) => i.code === 'TRACE_FORMULA_LITERAL')).toBe(false);
+    expect(result.passed).toBe(true);
+  });
+
+  it('白名单外标识符（ctx.header.X / 函数调用）被 LINT_FORMULA 拦截', () => {
+    const bad1 = tiRule({ rule_id: 'CHEM_S32168_Ti_A', criteria: { formula_min: 'ctx.header.X * 5' } });
+    const bad2 = tiRule({ rule_id: 'CHEM_S32168_Ti_B', criteria: { formula_min: 'max(5 * (ctx.chemical.C + ctx.chemical.N), 0.1)' } });
+    const slice = makeSlice({ evaluation_rules: [...makeFullFamilyRules(), bad1, bad2] });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    const formulaIssues = result.issues.filter((i) => i.code === 'LINT_FORMULA');
+    expect(formulaIssues.length).toBeGreaterThanOrEqual(2);
+    expect(formulaIssues.some((i) => i.message.includes('ctx.header.X'))).toBe(true);
+    expect(formulaIssues.some((i) => i.message.includes('max'))).toBe(true);
+  });
+
+  it('formula_min/formula_max 均为空时被拦截（应降级为 numeric_range，禁止静默放行）', () => {
+    const bad = tiRule({ rule_id: 'CHEM_S32168_Ti_C', criteria: { formula_min: null, formula_max: '' } });
+    const slice = makeSlice({ evaluation_rules: [...makeFullFamilyRules(), bad] });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_FORMULA' && i.message.includes('缺少非空 formula_min/formula_max'))).toBe(true);
+  });
+
+  it('公式数值溯源：常量未在声明来源条款原文中字面出现判为幻觉', () => {
+    // 原文为 0.70，公式常量 0.8 未字面出现 -> 拦截
+    const bad = tiRule({ rule_id: 'CHEM_S32168_Ti_D', criteria: { formula_min: '0.8 * (ctx.chemical.C + ctx.chemical.N)' } });
+    const slice = makeSlice({ evaluation_rules: [...makeFullFamilyRules(), bad] });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'TRACE_FORMULA_LITERAL' && i.message.includes('0.8'))).toBe(true);
+    expect(result.requiresManualReview).toBe(true);
+  });
+
+  it('dynamic_expression 声明的 source_clause 不存在 -> TRACE_SOURCE_CLAUSE', () => {
+    const bad = tiRule({ source_clause: '表9' });
+    const slice = makeSlice({ evaluation_rules: [...makeFullFamilyRules(), bad] });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'TRACE_SOURCE_CLAUSE')).toBe(true);
+  });
+});
+
+describe('S3 质量门禁：牌号适用性白名单校验（v2 防臆造牌号）', () => {
+  it('applies_to_grades 含切片牌号全集外的牌号被拦截', () => {
+    const rule = makeRule({
+      rule_id: 'PROC_S30408_FLATTENING',
+      category: 'process',
+      property_key: 'flattening',
+      display_name: '压扁试验',
+      rule_type: 'dynamic_formula_pass',
+      criteria: { formula_distance_H: '(1 + 0.09) * S / (0.09 + S / D)', expected_visual_result: 'NO_CRACKS' },
+      source_clause: '6.5.1',
+      applies_to_grades: ['S30408', 'S99999'],
+    });
+    const slice = makeSlice({ evaluation_rules: [...makeFullFamilyRules(), rule] });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_APPLIES_TO_GRADES' && i.message.includes('S99999'))).toBe(true);
+    expect(result.requiresManualReview).toBe(true);
+  });
+
+  it('applies_to_grades 为 ALL 或 ⊆ 全集时通过', () => {
+    const allRule = makeRule({
+      rule_id: 'PROC_ALL_SURFACE',
+      category: 'surface',
+      property_key: 'surface_quality',
+      display_name: '表面外观质量',
+      rule_type: 'qualitative_pass',
+      criteria: { expected: 'CLEAN_PASS' },
+      source_clause: '6.12',
+      applies_to_grades: ['ALL'],
+    });
+    const gradeRule = { ...allRule, rule_id: 'PROC_PARTIAL_SURFACE', applies_to_grades: ['06Cr19Ni10', 'S30408'] };
+    const slice = makeSlice({ evaluation_rules: [...makeFullFamilyRules(), allRule, gradeRule] });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_APPLIES_TO_GRADES')).toBe(false);
+  });
+
+  it('S2 展开后未挂载到任何切片的规则被拦截（严禁静默丢弃）', () => {
+    const orphan = makeRule({
+      rule_id: 'PROC_ORPHAN',
+      category: 'process',
+      property_key: 'flaring',
+      display_name: '扩口试验',
+      rule_type: 'qualitative_and_numeric',
+      criteria: { cone_angle_deg: 60, flaring_rate_min_percent: 18, expected_visual_result: 'NO_CRACKS' },
+      source_clause: '6.5.1',
+      applies_to_grades: ['S00000'],
+    });
+    const result = runGates(makeGateInput({ unmountedRules: [orphan] }));
+    expect(result.issues.some((i) => i.code === 'LINT_APPLIES_TO_GRADES' && i.message.includes('未匹配到任何切片'))).toBe(true);
+    expect(result.requiresManualReview).toBe(true);
+  });
+});
+
+describe('S3 质量门禁：尺寸公差表 lint（v2）', () => {
+  const validTable = {
+    table_id: 'TABLE_1',
+    table_name: '表1 钢管公称外径的允许偏差',
+    source_block: '表1',
+    rules: [
+      {
+        dimension_property: 'outer_diameter',
+        process: 'cold_drawn',
+        delivery_mode: 'min_wall',
+        range_min: 6,
+        range_max: 38,
+        plus_tolerance_value: 0.4,
+        plus_tolerance_is_percent: false,
+        minus_tolerance_value: -0.4,
+        minus_tolerance_is_percent: false,
+        note: '外径 6~38mm: ±0.40mm',
+      },
+    ],
+  };
+
+  it('结构合法的公差表通过契约校验', () => {
+    const result = runGates(makeGateInput({ toleranceTables: [validTable] }));
+    expect(result.issues.some((i) => i.code === 'LINT_TOLERANCE_TABLE')).toBe(false);
+    expect(result.passed).toBe(true);
+  });
+
+  it('结构非法的公差表（dimension_property 越枚举）被拦截', () => {
+    const bad = {
+      ...validTable,
+      table_id: 'TABLE_BAD',
+      rules: [{ ...validTable.rules[0]!, dimension_property: 'length' }],
+    };
+    const result = runGates(makeGateInput({ toleranceTables: [bad] }));
+    expect(result.issues.some((i) => i.code === 'LINT_TOLERANCE_TABLE' && i.message.includes('TABLE_BAD'))).toBe(true);
+  });
+
+  it('跨标准外部引用：rules 为空产生 MANUAL_REVIEW 级 issue 提示补录被引标准', () => {
+    const external = {
+      table_id: 'NB_T_47019_1_TABLE_2',
+      table_name: 'NB/T 47019.1 表2 冷拔(轧)无缝管公称外径允许偏差',
+      source_block: '表1',
+      external_reference: 'NB/T 47019.1 表2',
+      rules: [],
+    };
+    const result = runGates(makeGateInput({ toleranceTables: [external] }));
+    expect(result.issues.some((i) => i.code === 'EXTERNAL_TOLERANCE_REFERENCE' && i.message.includes('NB/T 47019.1 表2'))).toBe(true);
+    expect(result.requiresManualReview).toBe(true);
+    expect(result.passed).toBe(false);
+  });
+
+  it('外部引用携带臆造 rules 被 LINT_TOLERANCE_TABLE 拦截（严禁臆造被引标准数据）', () => {
+    const fabricated = {
+      ...validTable,
+      table_id: 'NB_T_47019_1_TABLE_2',
+      external_reference: 'NB/T 47019.1 表2',
+    };
+    const result = runGates(makeGateInput({ toleranceTables: [fabricated] }));
+    expect(result.issues.some((i) => i.code === 'LINT_TOLERANCE_TABLE' && i.message.includes('严禁臆造'))).toBe(true);
+    expect(result.issues.some((i) => i.code === 'EXTERNAL_TOLERANCE_REFERENCE')).toBe(true);
   });
 });
 

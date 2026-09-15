@@ -6,8 +6,9 @@ import { promoteStaging, PromoteError } from '../src/ingestion/promote.ts';
 /* ==========================================================================
    标准文档 PDF 离线入库 CLI
    用法:
-     node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--force]
+     node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--force]
        —— 执行 S0-S4 管线，产物只写 staging（缺省 .cache/standard-ingest/staging/<STD_DIR>/），不触碰正式库
+       —— --families 显式声明提取规则族（逗号分隔，如 chemical,mechanical），缺省 v2 全量七族
      node --experimental-strip-types scripts/ingest-standard.ts --promote <STD_DIR 或 staging 路径> [--out <正式库根>] [--force]
        —— 将 staging 产物晋级正式库：已存在标准走按规则族合并 + no-net-loss 门禁，
           净减须 --force 显式确认；完成门禁（validateAllStandards + 数据敏感测试套件）不过自动回滚
@@ -21,12 +22,13 @@ interface CliArgs {
   promotePath?: string;
   outRoot?: string;
   stagingRoot?: string;
+  families?: string[];
   force: boolean;
 }
 
 const USAGE =
   '用法:\n' +
-  '  node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--force]\n' +
+  '  node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--force]\n' +
   '  node --experimental-strip-types scripts/ingest-standard.ts --promote <STD_DIR 或 staging 路径> [--out <正式库根>] [--force]';
 
 function parseArgs(argv: string[]): CliArgs {
@@ -43,6 +45,15 @@ function parseArgs(argv: string[]): CliArgs {
       args.outRoot = argv[++i];
     } else if (arg === '--staging-root') {
       args.stagingRoot = argv[++i];
+    } else if (arg === '--families') {
+      const raw = argv[++i];
+      if (!raw) {
+        throw new Error('--families 需要参数（逗号分隔的规则族，如 chemical,mechanical）');
+      }
+      args.families = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+      if (args.families.length === 0) {
+        throw new Error('--families 参数解析后为空（逗号分隔的规则族，如 chemical,mechanical）');
+      }
     } else if (arg === '--force') {
       args.force = true;
     } else if (!arg.startsWith('--') && args.pdfPath.length === 0) {
@@ -93,6 +104,7 @@ async function runIngest(args: CliArgs): Promise<void> {
     pdfPath: args.pdfPath,
     outRoot: args.outRoot,
     stagingRoot: args.stagingRoot,
+    declaredFamilies: args.families,
     force: args.force,
     onProgress: (msg) => console.log('  ▸ ' + msg),
   });

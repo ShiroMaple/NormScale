@@ -234,19 +234,6 @@
       }
     },
     {
-      "rule_id": "METALLO_NB_S31008_GRAIN",
-      "category": "metallographic",
-      "property_key": "grain_size",
-      "display_name": "晶粒度评级 (Grain Size)",
-      "description": "依据 NB/T 47019.5-2021 第6.9条及表5，平均晶粒度按 GB/T 6394 测定",
-      "rule_type": "qualitative_enum",
-      "requirement_level": "MANDATORY",
-      "criteria": {
-        "min_level": "7",
-        "test_standard": "GB/T 6394"
-      }
-    },
-    {
       "rule_id": "CORROSION_NB_S31008_INTERGRANULAR",
       "category": "corrosion",
       "property_key": "intergranular_corrosion",

@@ -1,20 +1,25 @@
 import {
+  DimensionToleranceTableSchema,
   SpecificationSliceSchema,
   StandardClauseSchema,
   StandardMetaSchema,
 } from '../schemas/standard.schema.ts';
-import type { DraftClause, DraftRule, DraftSlice, TextBlock } from './types.ts';
+import type { DraftClause, DraftRule, DraftSlice, DraftToleranceTable, TextBlock } from './types.ts';
 
 /* ==========================================================================
    S3 质量门禁 (Gates) —— 防幻觉核心，纯函数便于单测
-   1. Zod 契约校验（复用 standard.schema.ts）
+   1. Zod 契约校验（复用 standard.schema.ts，含 meta.tolerance_tables 公差表）
    2. 领域 linter：numeric min<=max；化学成分数值 ∈ [0,100]；rule_id 全局唯一；
-      unit 白名单；每切片覆盖声明规则族（declaredFamilies，缺省 chem+mech）；
+      unit 白名单；每切片覆盖声明规则族（declaredFamilies，缺省 v2 全量七族）；
       中文标准文本字段语言一致性（须含 CJK，防 LLM 译成英文）；
       切片关键字段 strict 必填（spec_type/standard_code/description/display_name，
-      防止 Zod 缺省值静默补齐）；property_key 注册表防命名漂移
+      防止 Zod 缺省值静默补齐）；property_key 注册表防命名漂移；
+      dynamic_expression 公式白名单 lint（仅 ctx.chemical.<元素>/数字/四则/括号）；
+      applies_to_grades 牌号适用性 ⊆ 切片牌号全集（防臆造牌号）；
+      公差表结构 lint（外部引用严禁携带臆造 rules）
    3. 溯源断言：每条 numeric 规则的 min/max 必须在其声明 source_clause 对应的
-      原文块文本中字面出现（去除空白后包含），否则判 hallucination
+      原文块文本中字面出现（去除空白后包含），否则判 hallucination；
+      dynamic_expression 公式中的数值常量同样必须在原文中字面出现（公式数值溯源）
    4. 对账：原文牌号表行数 vs 生成切片数
    任何失败显式报出并标记 MANUAL_REVIEW，绝不静默通过
    ========================================================================== */
@@ -29,8 +34,13 @@ export type GateIssueCode =
   | 'LINT_LANGUAGE_CONSISTENCY'
   | 'LINT_REQUIRED_FIELDS'
   | 'LINT_PROPERTY_KEY_REGISTRY'
+  | 'LINT_FORMULA'
+  | 'LINT_APPLIES_TO_GRADES'
+  | 'LINT_TOLERANCE_TABLE'
   | 'TRACE_SOURCE_CLAUSE'
   | 'TRACE_NUMBER_LITERAL'
+  | 'TRACE_FORMULA_LITERAL'
+  | 'EXTERNAL_TOLERANCE_REFERENCE'
   | 'RECONCILE_GRADE_COUNT';
 
 export interface GateIssue {
@@ -38,6 +48,20 @@ export interface GateIssue {
   code: GateIssueCode;
   message: string;
 }
+
+/**
+ * v2 全量提取规则族（S2 提取范围）：管线缺省声明族与 gates 类别覆盖 lint 缺省回退均以此为基准；
+ * 管线/CLI 可显式声明部分族（declaredFamilies）收窄范围
+ */
+export const FULL_RULE_FAMILIES: readonly string[] = [
+  'chemical',
+  'mechanical',
+  'process',
+  'metallographic',
+  'corrosion',
+  'ndt',
+  'surface',
+];
 
 export interface GateInput {
   meta: Record<string, unknown>;
@@ -49,7 +73,7 @@ export interface GateInput {
   expectedGradeRows: number | null;
   /**
    * 声明的提取规则族（如 ['chemical','mechanical']，写入 drafts/meta.extracted_families）；
-   * 类别覆盖 lint 由声明范围驱动而非写死双族。缺省回退 ['chemical','mechanical']（v1 提取范围）
+   * 类别覆盖 lint 由声明范围驱动而非写死双族。缺省回退 v2 全量七族（FULL_RULE_FAMILIES）
    */
   declaredFamilies?: readonly string[];
   /**
@@ -57,6 +81,10 @@ export interface GateInput {
    * 产物出现注册表外的 key 判为疑似命名漂移；空集/缺省时跳过该 lint（全新标准品类扩张合法）
    */
   propertyKeyRegistry?: ReadonlySet<string> | readonly string[];
+  /** v2 尺寸公差表草稿（S2 tolerance_tables 任务产物）；缺省空数组 */
+  toleranceTables?: DraftToleranceTable[];
+  /** v2 牌号适用性展开后未挂载到任何切片的规则（S2 移交，严禁静默丢弃，须拦截） */
+  unmountedRules?: DraftRule[];
 }
 
 export interface GateResult {
@@ -151,6 +179,33 @@ function collectUnits(rule: DraftRule): string[] {
   return units;
 }
 
+/* ---------- v2：动态公式 lint 与公式数值溯源 ---------- */
+
+// 公式白名单 token：ctx.chemical.<元素符号> | 数字（含小数） | 四则运算符 | 括号 | 空白；
+// 剥离全部合法 token 后仍有残留即判非法（防注入、防未知变量、防函数调用）
+const FORMULA_ALLOWED_TOKEN_RE = /ctx\.chemical\.[A-Z][a-z]?|\d+(?:\.\d+)?|[+\-*/()\s]/g;
+
+function lintFormula(ref: string, formula: unknown, issue: (code: GateIssueCode, message: string) => void): void {
+  if (formula === undefined || formula === null) return;
+  if (typeof formula !== 'string' || formula.trim().length === 0) {
+    issue('LINT_FORMULA', `${ref} 公式字段存在但为空或非字符串`);
+    return;
+  }
+  const remainder = formula.replace(FORMULA_ALLOWED_TOKEN_RE, '');
+  if (remainder.length > 0) {
+    issue(
+      'LINT_FORMULA',
+      `${ref} 公式 "${formula}" 含白名单外内容 "${remainder}"（仅允许 ctx.chemical.<元素符号>、数字与四则运算符/括号）`,
+    );
+  }
+}
+
+/** 提取公式中的数值常量（保序，含小数；元素符号与 ctx 路径不含数字，无干扰） */
+function extractFormulaNumberLiterals(formula: string): number[] {
+  const matches = formula.match(/\d+(?:\.\d+)?/g) || [];
+  return matches.map((m) => Number(m));
+}
+
 /**
  * S3 主入口：执行全部质量门禁并返回结果
  */
@@ -186,7 +241,7 @@ export function runGates(input: GateInput): GateResult {
   const declaredFamilies =
     input.declaredFamilies && input.declaredFamilies.length > 0
       ? [...input.declaredFamilies]
-      : ['chemical', 'mechanical'];
+      : [...FULL_RULE_FAMILIES];
   // 既有标准库 property_key 注册表：全局注册表 ∪ 本标准存量 key 命中其一即可；
   // 全新标准品类扩张合法，因此空注册表（标准库为空）时跳过该 lint
   const propertyKeyRegistry = input.propertyKeyRegistry
@@ -234,9 +289,14 @@ export function runGates(input: GateInput): GateResult {
   }
 
   const seenRuleIds = new Map<string, string>();
+  // 类别覆盖分两级：
+  // - 逐切片级仅约束全牌号普适的表驱动族（chemical/mechanical 来自牌号×指标矩阵，每切片必有）；
+  // - 条件适用族（process/metallographic/corrosion/ndt/surface 由条款挂载，可能仅适用部分牌号，
+  //   如晶粒度仅 07 系四牌号）做标准级检查：声明族在全库零规则才算整族漏提
+  const PER_SLICE_FAMILIES = ['chemical', 'mechanical'];
   for (const slice of validSlices) {
     const categories = new Set(slice.evaluation_rules.map((r) => r.category));
-    const missingFamilies = declaredFamilies.filter((f) => !categories.has(f));
+    const missingFamilies = declaredFamilies.filter((f) => PER_SLICE_FAMILIES.includes(f) && !categories.has(f));
     if (missingFamilies.length > 0) {
       issue('LINT_CATEGORY_COVERAGE', `切片 ${slice.spec_key} 类别覆盖不全（声明提取范围 ${declaredFamilies.join('/')}）：缺少 ${missingFamilies.join('、')} 类规则`);
     }
@@ -262,6 +322,20 @@ export function runGates(input: GateInput): GateResult {
         }
       }
 
+      // v2 动态公式 lint：formula_min/formula_max 白名单（ctx.chemical.<元素>/数字/四则/括号），
+      // 且二者至少一个非空——无公式的 dynamic_expression 应降级为 numeric_range，禁止静默放行
+      if (rule.rule_type === 'dynamic_expression') {
+        const c = rule.criteria as { formula_min?: unknown; formula_max?: unknown };
+        lintFormula(ref, c.formula_min, issue);
+        lintFormula(ref, c.formula_max, issue);
+        const hasFormula =
+          (typeof c.formula_min === 'string' && c.formula_min.trim().length > 0) ||
+          (typeof c.formula_max === 'string' && c.formula_max.trim().length > 0);
+        if (!hasFormula) {
+          issue('LINT_FORMULA', `${ref} dynamic_expression 规则缺少非空 formula_min/formula_max`);
+        }
+      }
+
       for (const unit of collectUnits(rule)) {
         if (!UNIT_WHITELIST.has(unit)) {
           issue('LINT_UNIT', `${ref} 单位 "${unit}" 不在白名单内`);
@@ -274,10 +348,75 @@ export function runGates(input: GateInput): GateResult {
     }
   }
 
+  // 2.3.1 条件适用族标准级检查：声明族在全库零规则 = 整族漏提（如晶粒度条款整段未提取）；
+  //       族在部分切片存在属合法的条件适用（如晶粒度仅 07 系四牌号），不逐切片强约束
+  const standardLevelFamilies = declaredFamilies.filter((f) => !['chemical', 'mechanical'].includes(f));
+  for (const family of standardLevelFamilies) {
+    const total = validSlices.reduce(
+      (sum, s) => sum + s.evaluation_rules.filter((r) => r.category === family).length,
+      0,
+    );
+    if (total === 0) {
+      issue('LINT_CATEGORY_COVERAGE', `声明提取族 ${family} 在全部切片中零规则，判定整族漏提（若为该标准确无此类要求，请从 declaredFamilies 中移除该族）`);
+    }
+  }
+
+  // 2.4 v2 牌号适用性白名单校验：挂载后规则的 applies_to_grades 必须 ⊆ 切片牌号全集（防臆造牌号）；
+  //     S2 展开未挂载到任何切片的规则一律拦截（严禁静默丢弃，防 LLM 整族漏提/牌号漂移）
+  const gradeUniverse = new Set<string>();
+  for (const slice of input.slices) {
+    for (const token of [slice.spec_key, slice.primary_grade, slice.unified_code]) {
+      if (typeof token === 'string' && token.trim().length > 0) gradeUniverse.add(token.trim());
+    }
+  }
+  for (const slice of validSlices) {
+    for (const rule of slice.evaluation_rules) {
+      if (!rule.applies_to_grades || rule.applies_to_grades.length === 0) continue;
+      const unknown = rule.applies_to_grades.filter((g) => g !== 'ALL' && !gradeUniverse.has(g));
+      if (unknown.length > 0) {
+        issue('LINT_APPLIES_TO_GRADES', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 的 applies_to_grades 含切片牌号全集外的牌号: ${unknown.join('、')}（防臆造牌号）`);
+      }
+    }
+  }
+  for (const rule of input.unmountedRules ?? []) {
+    const applies = rule.applies_to_grades ?? [];
+    issue(
+      'LINT_APPLIES_TO_GRADES',
+      `规则 ${rule.rule_id || '(无 rule_id)'}（${rule.category}/${rule.property_key}）applies_to_grades=[${applies.join('、') || '缺失'}] 未匹配到任何切片，已拦截（严禁静默丢弃）`,
+    );
+  }
+
+  // 2.5 v2 尺寸公差表 lint：结构契约校验；跨标准外部引用严禁携带臆造 rules，
+  //     并产生 MANUAL_REVIEW 级 issue 提示人工补录被引标准数据
+  for (const table of input.toleranceTables ?? []) {
+    if (table.external_reference) {
+      if (table.rules.length > 0) {
+        issue('LINT_TOLERANCE_TABLE', `公差表 ${table.table_id} 声明外部引用 "${table.external_reference}" 但携带 ${table.rules.length} 条 rules（严禁臆造被引标准数据）`);
+      }
+      issue(
+        'EXTERNAL_TOLERANCE_REFERENCE',
+        `公差表 ${table.table_id}（${table.table_name}）为跨标准外部引用: ${table.external_reference}——被引标准公差数据未入库，需人工补录后方可参与几何判定`,
+      );
+      continue;
+    }
+    const parsedTable = DimensionToleranceTableSchema.safeParse({
+      table_id: table.table_id,
+      table_name: table.table_name,
+      rules: table.rules,
+    });
+    if (!parsedTable.success) {
+      issue('LINT_TOLERANCE_TABLE', `公差表 ${table.table_id || '(无 table_id)'} 结构契约校验失败: ${parsedTable.error.issues.map((i) => i.path.join('.') + ' ' + i.message).join('; ')}`);
+    }
+  }
+
   // 3. 溯源断言（防幻觉核心）
   for (const slice of validSlices) {
     for (const rule of slice.evaluation_rules) {
-      if (rule.rule_type !== 'numeric_range' && rule.rule_type !== 'or_choice_group') continue;
+      const needsTrace =
+        rule.rule_type === 'numeric_range' ||
+        rule.rule_type === 'or_choice_group' ||
+        rule.rule_type === 'dynamic_expression';
+      if (!needsTrace) continue;
       if (!rule.source_clause) {
         issue('TRACE_SOURCE_CLAUSE', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 缺少 source_clause`);
         continue;
@@ -287,9 +426,22 @@ export function runGates(input: GateInput): GateResult {
         issue('TRACE_SOURCE_CLAUSE', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 声明的 source_clause="${rule.source_clause}" 在原文切块中不存在`);
         continue;
       }
-      for (const value of collectTraceableValues(rule)) {
-        if (!literallyContains(sourceText, value)) {
-          issue('TRACE_NUMBER_LITERAL', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 数值 ${value} 未在其声明来源条款 ${rule.source_clause} 的原文中字面出现，判为幻觉`);
+      if (rule.rule_type === 'dynamic_expression') {
+        // v2 公式数值溯源：公式中的数值常量必须在原文中字面出现（如 5、0.70）
+        const c = rule.criteria as { formula_min?: unknown; formula_max?: unknown };
+        for (const formula of [c.formula_min, c.formula_max]) {
+          if (typeof formula !== 'string') continue;
+          for (const value of extractFormulaNumberLiterals(formula)) {
+            if (!literallyContains(sourceText, value)) {
+              issue('TRACE_FORMULA_LITERAL', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 公式 "${formula}" 中常量 ${value} 未在其声明来源条款 ${rule.source_clause} 的原文中字面出现，判为幻觉`);
+            }
+          }
+        }
+      } else {
+        for (const value of collectTraceableValues(rule)) {
+          if (!literallyContains(sourceText, value)) {
+            issue('TRACE_NUMBER_LITERAL', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 数值 ${value} 未在其声明来源条款 ${rule.source_clause} 的原文中字面出现，判为幻觉`);
+          }
         }
       }
     }

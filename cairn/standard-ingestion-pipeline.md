@@ -39,7 +39,8 @@ PDF → S0 预处理 → S1 确定性切块 → S2 LLM 分块初提 → S3 确�
 - **S0**：pdfjs-dist（legacy build，Node）提取矢量文本层；MD5 内容寻址缓存至 `.cache/standard-ingest/{md5}/`；扫描件（<200 字符文本层）显式抛 `NoTextLayerError`。
 - **S1**：纯函数锚点切块（章节号 / `表 N` / `附录 X` / 前言），路由为 chemistry_table / mechanical_table / tolerance_table / process_ndt_clauses / scope_text / garbled / other；行级乱码检测（无 CJK 且标点占比 >0.3 且符号种类 ≥6）。
 - **S2**：chat 客户端可注入（测试零网络）；默认走 config.json 默认 LLM（OpenAI 兼容，temperature=1，max_tokens=32768，超时独立 `llm.ingestTimeoutMs` 缺省 300s）；按块类型分任务、**逐块调用**；每条规则强制携带 `source_clause`；有限重试 ≤2 次并携带错误上下文。切片 harness 字段（spec_type/standard_code/description）由 `fillSliceHarnessFields` 确定性补齐（同输入同输出，严禁依赖 Zod 缺省值静默补齐）。
-- **S3**（防幻觉核心，纯函数）：Zod 契约 + 领域 linter（min≤max、化学成分 ∈[0,100]、rule_id 全局唯一、unit 白名单、**类别覆盖由声明规则族 declaredFamilies 驱动**、**中文标准（GB/NB 开头）文本字段必须含 CJK**、**切片关键字段 strict 必填**、**property_key 注册表防命名漂移**——注册表为正式库全量扫描，空库跳过）+ **溯源断言**（numeric 数值必须在 source_clause 原文块中字面出现，去空白比对）+ 牌号行数对账；失败标记 MANUAL_REVIEW，绝不静默通过。
+- **S2 v2 提取任务（T4）**：在 meta/化学切片/力学切片/条款之外新增三通道——`process_rules`（工艺/探伤/金相/腐蚀/表面规则，rule_type 覆盖 qualitative_enum/alternative_group/or_choice_group/dynamic_formula_pass 等，每条带 `applies_to_grades` 由 `mountRulesByGrades` 确定性展开挂载）、`dynamic_formulas`（Ti≥5×(C+N) 等 dynamic_expression）、`tolerance_tables`（公差阶梯表；**跨标准外部引用严禁臆造数值**，产出空 rules + MANUAL_REVIEW issue）；property_key 注册表以闭集白名单形式注入 prompt（语义匹配严格选既有 key，防命名漂移）；检验项目一览表块（表5/表6 形态）排除出规则提取通道；同切片按 property_key 确定性去重（保留 criteria 更丰富者）。
+- **S3**（防幻觉核心，纯函数）：Zod 契约 + 领域 linter（min≤max、化学成分 ∈[0,100]、rule_id 全局唯一、unit 白名单、**类别覆盖两级制**——chemical/mechanical 逐切片强约束，process/metallographic/corrosion/ndt/surface 标准级零规则才判整族漏提（条件适用族如晶粒度仅 07 系四牌号属合法）、**中文标准（GB/NB 开头）文本字段必须含 CJK**、**切片关键字段 strict 必填**、**property_key 注册表防命名漂移**、**公式 lint**（白名单标识符 ctx.chemical.* + 常数溯源）+ **applies_to_grades 白名单校验**（⊆ 牌号全集 + unmounted 拦截））+ **溯源断言**（numeric 数值必须在 source_clause 原文块中字面出现，去空白比对）+ 牌号行数对账；失败标记 MANUAL_REVIEW，绝不静默通过。
 - **S4**：门禁全过只写 **staging**（`.cache/standard-ingest/staging/<STD_DIR>/`，meta.json/clauses.json/slices/review-report.md），**绝不直接触碰 data/standards**；部分覆盖产物切片携带 `coverage:'partial'` + `extracted_families` 标记（整标准全量提取通道 `fullCoverage` 不标记）；review-report.md 含与存量同标准的**规则级全量 diff**（新增/丢失/变更，按 rule_id + property_key + criteria 数值比对），存在丢失项按验收口径不得判定"全部通过"。
 - **S5 promote**（`promote.ts`）：正式库仅接受显式晋级——① 带 `extracted_families` 的部分覆盖产物**按规则族合并**（候选只接管声明族的规则，存量其余族保留；合并后更新/清除 coverage 标记；无 families 元数据禁止晋级已存在目录）；② **no-net-loss 门禁**（规则总数/property_key 集合/规则字段集合/meta 字段集合含 tolerance_tables 不得净减，净减须 `--force` 并在 meta 记录 forced 标记）；③ 完成门禁 `validateAllStandards` + 数据敏感套件（`tests/engine tests/repository tests/api tests/e2e`，spawnSync 真实执行，可注入 mock），不过自动回滚。
 - **版本门禁**：`ingestConfigVersion`（ingest-pipeline.ts，T1 起 1.1.0）变更即清空缓存重提；drafts.json 缓存使中断重跑零重复 LLM 调用。
@@ -52,11 +53,12 @@ node --experimental-strip-types scripts/ingest-standard.ts --promote <STD_DIR �
 node --experimental-strip-types scripts/ingest-standard.ts <pdf> --out <临时目录>  # 验证性运行
 ```
 
-## 端到端验证结论（2026-09-14，2026-09-15 修订口径）
+## 端到端验证结论（2026-09-14，2026-09-15 修订口径，2026-09-15 T4 扩充）
 
 - NB/T 47019.5-2021 真实 PDF 全链路入库：22 个切片（含铁素体型 S11306），门禁全绿；
 - **修订（纠正昨日误导性表述）**：此前记录"与 golden 对比 30/30 一致"仅是 **5 个重叠牌号 × 6 项核心指标（C/Cr/Ni/Rm/Rp0.2/A）数值抽查**，对规则族丢失**零发现能力**——v1 提取通道只有 chemical/mechanical，工艺/探伤/晶粒度等族被整体丢弃而抽查完全无感。规则级完整性验收以 S4/S5 的规则级全量 diff 为准；
-- 全量单测 + `standard:validate` 全绿（2026-09-15：62 套件 373 项）。
+- **T4 v2 验证（ingestConfigVersion 1.2.2，真实 LLM）**：七族提取通道全开后，与 golden 五族规则清单（`tests/fixtures/nb-golden-family-rules.json`，31 条）按 spec_key+property_key 对账：**丢失 0 条**；新增均为合法项（edge_curling 卷边试验=表5 约定项目；surface_roughness 定性形态=本文件仅外部引用 NB/T 47019.1 7.11.4 无数值，严禁编造的忠实结果）；结构保真残留：pressure_tightness 未聚合成 alternative_group、flattening 未带压扁公式（内容仍在但结构弱于 golden，promote 时 no-net-loss 会拦截降级）；
+- 全量单测 + `standard:validate` 全绿（2026-09-15 T4 后：66 套件 415 项）。
 
 ## 事故教训（2026-09-15）
 
@@ -75,6 +77,11 @@ node --experimental-strip-types scripts/ingest-standard.ts <pdf> --out <临时�
 3. **附录（资料性）表格是正文表的子集重复**：`表A.1` 锚点不含"附录"字样，仅按 `附录` 前缀过滤会漏；统一 `isAppendixLikeRef`（附录前缀或 `表<字母>.` 模式）同时约束提取路由与对账基准，并以 rule_id 幂等去重兜底（保留先出现者）。
 4. **PDF 表格文本层列粘连**：组织类型列文本（"体型"）会与序号行粘连导致行计数漏行，行计数正则须容忍行首 1-4 个 CJK 字前缀。
 5. **CJK 语言一致性 lint 的误报边界**：切片 display_name 采用牌号代号式命名（如 "06Cr19Ni10 (S30408)"）是标准库既定惯例，纯 ASCII 不代表被翻译；lint 仅当 display_name 不含 spec_key/primary_grade 特征时才要求 CJK，否则真实重跑必触发假 MANUAL_REVIEW。
+6. **property_key 命名漂移洪水与闭集收敛**：v2 首轮真实 E2E 产出 330 条注册表 lint（LLM 自由发明 key）；将注册表按类别分组注入 prompt 作为闭集白名单后收敛至个位数（残留为真新增指标，走人工抽检——设计意图）。凡 LLM 需产出受控词汇表的场景，一律闭集注入而非事后拦截。
+7. **检验项目一览表不是规则本体**：表5/表6 这类"序号+试验项目+取样数量"清单与正文条款并存，双重提取产生大量重复规则；一览表块确定性排除出规则提取通道（仅作覆盖核对参考）。
+8. **子孙条款类型继承**：纯 CJK 正文行（<40 字）会被标题正则误判独立成块且不含路由关键词落 other（如 6.11.1 表面质量正文），由 `inheritAncestorBlockType` 按 clauseRef 层级继承最近非 other 祖先进程，否则整段条款静默漏提。
+9. **类别覆盖 lint 的两级制**：条件适用族（晶粒度仅 07 系四牌号）逐切片强约束必然误报；chemical/mechanical 逐切片强约束（表驱动普适），其余族标准级零规则才判整族漏提。
+10. **模型结构遵从度非确定性**：alternative_group 聚合与 dynamic_formula_pass 公式结构即便注入 golden 范式示例也不保证遵守（T4 E2E 残留）；no-net-loss 门禁在 promote 时拦截此类"内容在但结构降级"的产物，不得依赖 prompt  alone 保证结构保真。
 
 ## 明确边界
 

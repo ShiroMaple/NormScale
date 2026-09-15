@@ -46,6 +46,12 @@ export interface DraftRule {
   trigger_condition?: string;
   criteria: Record<string, unknown>;
   source_clause: string;
+  /**
+   * S2 内部字段（v2 工艺/探伤/公式规则）：牌号适用性，取值 "ALL" 或牌号/统一代号数组。
+   * 由 S2 确定性展开挂载到对应切片草稿；S3 校验其 ⊆ 切片牌号全集（防臆造牌号），
+   * 落盘时随 source_clause 一并剥离
+   */
+  applies_to_grades?: string[];
 }
 
 // S2 规格切片草稿：gates 通过并剥离 source_clause 后落盘为 SpecificationSlice
@@ -70,11 +76,32 @@ export interface DraftClause {
   source_block: string;
 }
 
+// S2 尺寸公差表草稿（v2 tolerance_tables 任务）：在 DimensionToleranceTable 基础上保留来源块锚点
+export interface DraftToleranceTable {
+  table_id: string;
+  table_name: string;
+  rules: Record<string, unknown>[];
+  /**
+   * 跨标准外部引用（如 "NB/T 47019.1 表2"）：公差条款引用外部标准表时显式记录，
+   * 此时 rules 必须为空数组——严禁臆造被引标准数据；S3 据此产生 MANUAL_REVIEW 级 issue
+   */
+  external_reference?: string;
+  /** 来源块锚点（溯源用） */
+  source_block: string;
+}
+
 // S2 全量提取草稿
 export interface ExtractionDrafts {
   meta: Record<string, unknown>;
   slices: DraftSlice[];
   clauses: DraftClause[];
+  /** v2 尺寸公差表草稿（缺省为空数组，兼容 v1 缓存产物） */
+  tolerance_tables: DraftToleranceTable[];
+  /**
+   * v2 牌号适用性展开后未挂载到任何切片的规则（applies_to_grades 无匹配牌号）：
+   * 绝不静默丢弃，移交 S3 报 LINT_APPLIES_TO_GRADES 拦截
+   */
+  unmounted_rules?: DraftRule[];
 }
 
 // S2 可注入聊天客户端签名：便于测试注入预制响应，默认实现走 OpenAI 兼容接口
@@ -83,7 +110,14 @@ export interface ChatMessage {
   content: string;
 }
 
-export type ChatTask = 'meta' | 'slices_chemical' | 'slices_mechanical' | 'clauses';
+export type ChatTask =
+  | 'meta'
+  | 'slices_chemical'
+  | 'slices_mechanical'
+  | 'clauses'
+  | 'process_rules'      // v2：工艺/探伤/金相/腐蚀/表面规则（含牌号适用性展开）
+  | 'dynamic_formulas'   // v2：化学表"其他"列动态公式规则（如 Ti ≥ 5×(C+N)）
+  | 'tolerance_tables';  // v2：尺寸公差表（含跨标准外部引用显式记录）
 
 export interface ChatCallOptions {
   task: ChatTask;

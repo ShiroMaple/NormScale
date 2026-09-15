@@ -91,12 +91,11 @@ export function stdDirNameFromMeta(meta: Record<string, unknown>): string {
 }
 
 /**
- * 扫描标准库根目录，汇集全部 property_key 作为注册表（模块化目录与单体 JSON 均覆盖）。
- * 注册表用于 S3 命名漂移 lint；扫描为 advisory 性质，单文件损坏跳过（正式契约由 validateAllStandards 把守）。
+ * 遍历标准库根目录中的全部规则（模块化目录 slices/*.json 与单体 JSON 的 slices/grade_rules 均覆盖）。
+ * 扫描为 advisory 性质：单文件损坏跳过（正式契约由 validateAllStandards 把守）。
  */
-export function scanPropertyKeyRegistry(standardsRoot: string): Set<string> {
-  const registry = new Set<string>();
-  if (!fs.existsSync(standardsRoot)) return registry;
+function forEachStandardRule(standardsRoot: string, visit: (rule: Record<string, unknown>) => void): void {
+  if (!fs.existsSync(standardsRoot)) return;
 
   const collectFromSlices = (slices: unknown): void => {
     if (!Array.isArray(slices)) return;
@@ -104,8 +103,7 @@ export function scanPropertyKeyRegistry(standardsRoot: string): Set<string> {
       const rules = (slice as { evaluation_rules?: unknown })?.evaluation_rules;
       if (!Array.isArray(rules)) continue;
       for (const rule of rules) {
-        const key = (rule as { property_key?: unknown })?.property_key;
-        if (typeof key === 'string' && key.length > 0) registry.add(key);
+        if (rule && typeof rule === 'object') visit(rule as Record<string, unknown>);
       }
     }
   };
@@ -127,8 +125,7 @@ export function scanPropertyKeyRegistry(standardsRoot: string): Set<string> {
             const rules = (gr as { evaluation_rules?: unknown })?.evaluation_rules;
             if (Array.isArray(rules)) {
               for (const rule of rules) {
-                const key = (rule as { property_key?: unknown })?.property_key;
-                if (typeof key === 'string' && key.length > 0) registry.add(key);
+                if (rule && typeof rule === 'object') visit(rule as Record<string, unknown>);
               }
             }
           }
@@ -138,7 +135,42 @@ export function scanPropertyKeyRegistry(standardsRoot: string): Set<string> {
       // 注册表扫描为 advisory：跳过损坏文件，契约级校验由 validateAllStandards 负责
     }
   }
+}
+
+/**
+ * 扫描标准库根目录，汇集全部 property_key 作为注册表。
+ * 注册表用于 S3 命名漂移 lint。
+ */
+export function scanPropertyKeyRegistry(standardsRoot: string): Set<string> {
+  const registry = new Set<string>();
+  forEachStandardRule(standardsRoot, (rule) => {
+    const key = rule.property_key;
+    if (typeof key === 'string' && key.length > 0) registry.add(key);
+  });
   return registry;
+}
+
+export interface PropertyKeyCatalogEntry {
+  category: string;
+  display_name: string;
+}
+
+/**
+ * 扫描标准库根目录，汇集 property_key -> {category, display_name} 目录（同名 key 首次出现者胜，
+ * 确定性依赖目录列举顺序）。供 S2 v2 prompt 闭集注入：按类别分组呈现既有命名惯例，
+ * 抑制 LLM 自由发明导致的命名漂移洪水；空库/扫描失败返回空 Map（降级不注入，绝不阻断）。
+ */
+export function scanPropertyKeyCatalog(standardsRoot: string): Map<string, PropertyKeyCatalogEntry> {
+  const catalog = new Map<string, PropertyKeyCatalogEntry>();
+  forEachStandardRule(standardsRoot, (rule) => {
+    const key = rule.property_key;
+    if (typeof key !== 'string' || key.length === 0 || catalog.has(key)) return;
+    catalog.set(key, {
+      category: typeof rule.category === 'string' ? rule.category : '',
+      display_name: typeof rule.display_name === 'string' ? rule.display_name : '',
+    });
+  });
+  return catalog;
 }
 
 /**

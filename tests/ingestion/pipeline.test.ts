@@ -139,6 +139,12 @@ function createMockChat(overrides: MockResponse = {}): ChatClient {
             ],
           },
         );
+      case 'process_rules':
+      case 'dynamic_formulas':
+        // v2 任务默认返回空规则集（既有用例仅验证 v1 两族通道，声明部分族收窄范围）
+        return JSON.stringify({ rules: [] });
+      case 'tolerance_tables':
+        return JSON.stringify({ tables: [] });
       default:
         throw new Error(`未知任务类型: ${opts.task}`);
     }
@@ -165,6 +171,8 @@ describe('S1->S4 入库管线集成测试（mock LLM，临时目录）', () => {
     const result = await ingestStandard({
       rawText: FIXTURE_TEXT,
       chatClient: createMockChat(),
+      // 显式声明部分族：这些用例聚焦 v1 双族通道行为（缺省为 v2 全量七族）
+      declaredFamilies: ['chemical', 'mechanical'],
       outRoot,
       cacheRoot,
     });
@@ -265,6 +273,8 @@ describe('S1->S4 入库管线集成测试（mock LLM，临时目录）', () => {
     const result = await ingestStandard({
       rawText: FIXTURE_TEXT,
       chatClient: createMockChat(),
+      // 显式声明部分族：这些用例聚焦 v1 双族通道行为（缺省为 v2 全量七族）
+      declaredFamilies: ['chemical', 'mechanical'],
       outRoot,
       cacheRoot,
     });
@@ -342,6 +352,8 @@ describe('S1->S4 入库管线集成测试（mock LLM，临时目录）', () => {
     const result = await ingestStandard({
       rawText: FIXTURE_TEXT,
       chatClient: driftChat,
+      // 显式声明部分族：聚焦命名漂移 lint（缺省为 v2 全量七族）
+      declaredFamilies: ['chemical', 'mechanical'],
       outRoot: driftOut,
       cacheRoot: driftCache,
     });
@@ -379,6 +391,8 @@ describe('S1->S4 入库管线集成测试（mock LLM，临时目录）', () => {
     const result = await ingestStandard({
       rawText: FIXTURE_TEXT,
       chatClient: badChat,
+      // 显式声明部分族：聚焦数值溯源断言（缺省为 v2 全量七族）
+      declaredFamilies: ['chemical', 'mechanical'],
       outRoot: hallucinatedDir,
       cacheRoot: hallucCache,
     });

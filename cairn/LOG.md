@@ -4,6 +4,16 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-15 · T4 v2 提取范围扩充落地：七族通道全开 + golden 五族对账零丢失
+
+- T4 实施（`llm-extract.ts` / `gates.ts` / `segmenter.ts` / `ingest-pipeline.ts`，`ingestConfigVersion` 1.2.2）：
+  1. 三新通道：process_rules（工艺/探伤/金相/腐蚀/表面，含 applies_to_grades 确定性展开挂载）、dynamic_formulas（Ti≥5×(C+N) 等，公式白名单 lint + 常数溯源）、tolerance_tables（跨标准外部引用严禁臆造，空 rules + MANUAL_REVIEW issue）；
+  2. 真实 E2E 三轮收敛：property_key 注册表闭集注入 prompt（330 条命名漂移 lint → 仅余 edge_curling 1 个真新增 key）、检验一览表块排除 + 同切片 property_key 去重、meta 中文约束、子孙条款类型继承（6.11.1 表面质量正文回归通道）、类别覆盖两级制（条件适用族不再误报）；
+  3. golden 对账：NB 5 牌号 × 5 族 31 条规则清单（`tests/fixtures/nb-golden-family-rules.json` + `golden-family-diff.ts` + 新鲜度守护单测），v2 产物**丢失 0 条**；结构保真残留（alternative_group 聚合/压扁公式）由 no-net-loss 在 promote 拦截；
+  4. 附带数据纠正：按任务书移除 S30408/S31008/S31603/S34778 四份 golden 切片的误配晶粒度规则（标准 6.9 条仅适用 07 系四牌号），清单重导出；
+  5. 验证就绪：全量 66 套件 415 项单测 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过。
+- 详情沉淀: [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)（架构 S2 v2 节 + 踩坑 6-10）。
+
 ## 2026-09-15 · 标准入库管线 T1/T2/T3 修复落地：staging+promote 晋级制、门禁扩容、规则级全量 diff 验收
 
 - **T1 落盘语义**：S4 删除 `rmSync` 正式库整目录重写，产物只写 staging（`.cache/standard-ingest/staging/<STD>/`）；新增 `src/ingestion/promote.ts`（S5）：显式 promote + 按规则族合并（无 `extracted_families` 禁止晋级已存在目录）+ no-net-loss 门禁（净减须 `--force` 并留 forced 标记）+ 完成门禁（validateAllStandards + 数据敏感套件 spawnSync 真实执行，不过自动回滚）；CLI 增加 `--promote/--force` 子命令。

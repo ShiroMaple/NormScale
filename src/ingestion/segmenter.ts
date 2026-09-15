@@ -2,7 +2,7 @@ import type { BlockType, TextBlock } from './types.ts';
 
 /* ==========================================================================
    S1 标准文本确定性切块器 (Segmenter)
-   - 纯函数、无 IO：全文文本 -> 锚点切块 -> 块类型路由
+   - 纯函数、无 IO：全文文本 -> 锚点切块 -> 块类型路由 -> 子孙条款类型继承后处理
    - 锚点：章节号（4 / 5.2 / 5.2.1）、表 N、附录 X、前言
    - 表格块内部不再按章节号切分（表格行以序号开头，形似小节号）
    - 另含行级乱码检测：字体子集化无 ToUnicode 的 PDF 表格页输出乱码，
@@ -81,7 +81,7 @@ export function classifyBlock(clauseRef: string, text: string): BlockType {
   const isAppendix = clauseRef.startsWith('附录');
   const isTableRef = clauseRef.startsWith('表') || isAppendix;
   if (isTableRef) {
-    if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间|无损|射线|渗透|致密/.test(text)) return 'process_ndt_clauses';
+    if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间|无损|射线|渗透|致密|晶粒度|金相|粗糙度|表面质量/.test(text)) return 'process_ndt_clauses';
     if (/化学成分|熔炼分析/.test(text) && looksLikeGradeTable(text)) return 'chemistry_table';
     if (/力学性能|抗拉强度|屈服强度|断后伸长率|拉伸/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
     // 公差表仅从正文表（非附录）路由，且必须具备外径/壁厚语境
@@ -89,7 +89,7 @@ export function classifyBlock(clauseRef: string, text: string): BlockType {
     return 'other';
   }
 
-  if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间腐蚀|无损|射线|渗透|致密/.test(text)) return 'process_ndt_clauses';
+  if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间腐蚀|无损|射线|渗透|致密|晶粒度|金相|粗糙度|表面质量/.test(text)) return 'process_ndt_clauses';
   if (/化学成分|熔炼分析/.test(text) && looksLikeGradeTable(text)) return 'chemistry_table';
   if (/力学性能|抗拉强度|屈服强度|断后伸长率/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
   return 'other';
@@ -162,7 +162,7 @@ export function segmentText(fullText: string): TextBlock[] {
   }
   flush();
 
-  return segments
+  const blocks = segments
     .map((s) => {
       const text = s.lines.join('\n').trim();
       return {
@@ -172,6 +172,35 @@ export function segmentText(fullText: string): TextBlock[] {
       };
     })
     .filter((b) => b.text.length > 0);
+  // 子孙条款类型继承后处理（S1 产物契约）：误判为标题的正文行（如 "6.11.1 无缝管的内外表面不应有裂缝……"）
+  // 独立成块后因不含路由关键词被归为 other，进不了工艺/探伤提取通道；按最近祖先块继承类型修正
+  return inheritAncestorBlockType(blocks);
+}
+
+/**
+ * 子孙条款类型继承（纯函数）：clauseRef 为 X.Y.Z（三级及以上）且自身归类为 other 的块，
+ * 自 X.Y 向 X 逐级查找最近祖先块——祖先缺失继续向上；最近祖先为 other/garbled 不继承；
+ * 最近祖先为其他类型（如 process_ndt_clauses）则继承其类型。
+ * 背景：CLAUSE_HEADING_RE 会将纯 CJK 正文行误判为标题独立成块（真实 E2E 曾致
+ * surface_quality 条款块以 other 落块而丢失规则）；祖先块（如 6.11 表面质量）已带族类型，
+ * 子孙块按最近祖先继承即可回到正确通道。同输入同输出。
+ */
+export function inheritAncestorBlockType(blocks: TextBlock[]): TextBlock[] {
+  const byRef = new Map(blocks.map((b) => [b.clauseRef, b]));
+  const inherit = (block: TextBlock): TextBlock => {
+    if (block.blockType !== 'other') return block;
+    const ref = block.clauseRef;
+    if (!/^\d{1,2}\.\d{1,2}\.\d{1,2}(\.\d{1,2})?$/.test(ref)) return block;
+    const parts = ref.split('.');
+    for (let depth = parts.length - 1; depth >= 1; depth--) {
+      const ancestor = byRef.get(parts.slice(0, depth).join('.'));
+      if (!ancestor) continue; // 该级祖先块缺失，继续向上
+      if (ancestor.blockType === 'other' || ancestor.blockType === 'garbled') return block; // 最近祖先无类型可继承
+      return { ...block, blockType: ancestor.blockType };
+    }
+    return block;
+  };
+  return blocks.map(inherit);
 }
 
 /**
