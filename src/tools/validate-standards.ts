@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { StandardMetaSchema, SpecificationSliceSchema, StandardRuleSetSchema } from '../schemas/standard.schema';
+import { StandardMetaSchema, SpecificationSliceSchema, StandardRuleSetSchema } from '../schemas/standard.schema.ts';
 
 export function validateAllStandards(standardsDir?: string): { success: boolean; totalStandards: number; totalSlices: number; errors: string[] } {
   const baseDir = standardsDir || path.resolve(process.cwd(), 'data/standards');

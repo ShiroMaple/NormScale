@@ -4,6 +4,15 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-14 · 标准文档离线入库管线落地：确定性 harness + LLM 有界初提（开放问题 7 闭环）
+
+- 五阶段管线 (`src/ingestion/` + `scripts/ingest-standard.ts`，新增 `pnpm standard:ingest`):
+  1. 形态决策：确定性 harness 编排 + LLM 有界初提，否定纯 SKILL 形态（同输入同输出、门禁硬执行、可 CI 回归、MD5 缓存零重复 Token）；
+  2. S0 pdfjs-dist 矢量文本提取 + MD5 缓存；S1 纯函数锚点切块与行级乱码检测；S2 可注入 chat 客户端逐块提取（独立 300s 超时 + max_tokens 32768 + ≤2 次带错重试）；S3 Zod+linter+溯源断言+牌号对账四重门禁，失败标记 MANUAL_REVIEW 绝不静默通过；S4 落盘 + review-report.md 抽检报告 + validateAllStandards 回归；
+  3. E2E 真实验证：NB/T 47019.5-2021 全链路入库 22 切片，与已有人工切片 golden 对比 30/30 指标完全一致；GB 13296-2023.pdf 因字体子集化乱码被显式拒绝（能力边界，待 OCR/多模态路线）；
+  4. 验证就绪：新增 `tests/ingestion/` 29 项单测，全量 58 套件 305 项 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过。
+- 详情沉淀: 详见 [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)。
+
 ## 2026-09-14 · 根治切图相对路由透传引发的大模型 Base64 非法字符 (byte 25) 异常
 
 - 修复 `/api/documents/parse` 切图输入门禁 (`parse/route.ts`, `parse-route-no-mock.test.ts`):

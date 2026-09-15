@@ -1,13 +1,13 @@
 {
-  "spec_key": "S31008",
-  "primary_grade": "06Cr25Ni20",
-  "unified_code": "S31008",
+  "spec_key": "S31252",
+  "primary_grade": "015Cr20Ni18Mo6CuN",
+  "unified_code": "S31252",
   "structure_type": "austenitic",
-  "display_name": "06Cr25Ni20 (S31008)",
+  "display_name": "015Cr20Ni18Mo6CuN (S31252)",
   "aliases": [],
   "evaluation_rules": [
     {
-      "rule_id": "CHEM_S31008_C",
+      "rule_id": "CHEM_S31252_C",
       "category": "chemical",
       "property_key": "C",
       "display_name": "C含量 (C)",
@@ -15,16 +15,30 @@
       "requirement_level": "MANDATORY",
       "criteria": {
         "min": null,
-        "max": 0.08,
+        "max": 0.02,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "CHEM_S31252_Si",
+      "category": "chemical",
+      "property_key": "Si",
+      "display_name": "Si含量 (Si)",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": null,
+        "max": 0.8,
         "unit": "%",
         "rounding_decimals": 2
       }
     },
     {
-      "rule_id": "CHEM_S31008_Si",
+      "rule_id": "CHEM_S31252_Mn",
       "category": "chemical",
-      "property_key": "Si",
-      "display_name": "Si含量 (Si)",
+      "property_key": "Mn",
+      "display_name": "Mn含量 (Mn)",
       "rule_type": "numeric_range",
       "requirement_level": "MANDATORY",
       "criteria": {
@@ -35,21 +49,7 @@
       }
     },
     {
-      "rule_id": "CHEM_S31008_Mn",
-      "category": "chemical",
-      "property_key": "Mn",
-      "display_name": "Mn含量 (Mn)",
-      "rule_type": "numeric_range",
-      "requirement_level": "MANDATORY",
-      "criteria": {
-        "min": null,
-        "max": 2,
-        "unit": "%",
-        "rounding_decimals": 2
-      }
-    },
-    {
-      "rule_id": "CHEM_S31008_P",
+      "rule_id": "CHEM_S31252_P",
       "category": "chemical",
       "property_key": "P",
       "display_name": "P含量 (P)",
@@ -57,13 +57,13 @@
       "requirement_level": "MANDATORY",
       "criteria": {
         "min": null,
-        "max": 0.035,
+        "max": 0.03,
         "unit": "%",
         "rounding_decimals": 3
       }
     },
     {
-      "rule_id": "CHEM_S31008_S",
+      "rule_id": "CHEM_S31252_S",
       "category": "chemical",
       "property_key": "S",
       "display_name": "S含量 (S)",
@@ -71,67 +71,109 @@
       "requirement_level": "MANDATORY",
       "criteria": {
         "min": null,
-        "max": 0.015,
+        "max": 0.01,
         "unit": "%",
         "rounding_decimals": 3
       }
     },
     {
-      "rule_id": "CHEM_S31008_Ni",
+      "rule_id": "CHEM_S31252_Ni",
       "category": "chemical",
       "property_key": "Ni",
       "display_name": "Ni含量 (Ni)",
       "rule_type": "numeric_range",
       "requirement_level": "MANDATORY",
       "criteria": {
-        "min": 19,
-        "max": 22,
+        "min": 17.5,
+        "max": 18.5,
         "unit": "%",
         "rounding_decimals": 2
       }
     },
     {
-      "rule_id": "CHEM_S31008_Cr",
+      "rule_id": "CHEM_S31252_Cr",
       "category": "chemical",
       "property_key": "Cr",
       "display_name": "Cr含量 (Cr)",
       "rule_type": "numeric_range",
       "requirement_level": "MANDATORY",
       "criteria": {
-        "min": 24,
-        "max": 26,
+        "min": 19.5,
+        "max": 20.5,
         "unit": "%",
         "rounding_decimals": 2
       }
     },
     {
-      "rule_id": "MECH_S31008_tensile_strength",
+      "rule_id": "CHEM_S31252_Mo",
+      "category": "chemical",
+      "property_key": "Mo",
+      "display_name": "Mo含量 (Mo)",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 6,
+        "max": 6.5,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_S31252_N",
+      "category": "chemical",
+      "property_key": "N",
+      "display_name": "N含量 (N)",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 0.18,
+        "max": 0.22,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_S31252_Cu",
+      "category": "chemical",
+      "property_key": "Cu",
+      "display_name": "Cu含量 (Cu)",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 0.5,
+        "max": 1,
+        "unit": "%",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "MECH_S31252_tensile_strength",
       "category": "mechanical",
       "property_key": "tensile_strength",
       "display_name": "抗拉强度 (Rm)",
       "rule_type": "numeric_range",
       "requirement_level": "MANDATORY",
       "criteria": {
-        "min": 520,
+        "min": 675,
         "max": null,
         "unit": "MPa"
       }
     },
     {
-      "rule_id": "MECH_S31008_yield_strength_rp02",
+      "rule_id": "MECH_S31252_yield_strength_rp02",
       "category": "mechanical",
       "property_key": "yield_strength_rp02",
       "display_name": "规定塑性延伸强度 (Rp0.2)",
       "rule_type": "numeric_range",
       "requirement_level": "MANDATORY",
       "criteria": {
-        "min": 205,
+        "min": 310,
         "max": null,
         "unit": "MPa"
       }
     },
     {
-      "rule_id": "MECH_S31008_elongation_A",
+      "rule_id": "MECH_S31252_elongation_A",
       "category": "mechanical",
       "property_key": "elongation_A",
       "display_name": "断后伸长率 (A)",
