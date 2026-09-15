@@ -366,6 +366,26 @@ export function dedupeDraftRules(drafts: ExtractionDrafts): ExtractionDrafts {
 }
 
 /**
+ * 切片草稿 harness 字段确定性补齐（S2 产物契约，同输入同输出）：
+ * - spec_type: v1 提取通道均为牌号切片，固定 'grade'（严禁依赖 Zod 缺省值静默补齐）
+ * - standard_code: 统一取自 meta.standard_id（防 LLM 逐切片漂移）
+ * - description: 缺省时按标准号 + 牌号确定性生成中文描述
+ * 对新鲜与缓存草稿同等生效（幂等）。
+ */
+export function fillSliceHarnessFields(drafts: ExtractionDrafts): ExtractionDrafts {
+  const stdId = typeof drafts.meta.standard_id === 'string' ? drafts.meta.standard_id : '';
+  for (const slice of drafts.slices) {
+    slice.spec_type = 'grade';
+    slice.standard_code = stdId;
+    if (typeof slice.description !== 'string' || slice.description.trim().length === 0) {
+      const grade = slice.primary_grade || slice.spec_key;
+      slice.description = `${stdId} ${grade} (${slice.spec_key}) 化学成分与力学性能切片`;
+    }
+  }
+  return drafts;
+}
+
+/**
  * S2 主入口：按块类型路由执行 LLM 提取并合并草稿
  * 附录（资料性）表格不参与切片提取，避免干扰正式牌号表对账
  */
@@ -404,5 +424,5 @@ export async function extractAll(
     clauses.push(...(await extractClauses(chat, [block])));
   }
 
-  return { meta, slices: mergeSliceDrafts(chemSlices, mechSlices), clauses };
+  return fillSliceHarnessFields({ meta, slices: mergeSliceDrafts(chemSlices, mechSlices), clauses });
 }

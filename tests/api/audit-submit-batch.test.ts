@@ -104,7 +104,7 @@ describe('POST /api/audit/submit 批次对象与多标准直通核验测试', ()
     expect(elongResult.multi_standard_evaluations?.length).toBe(2);
   });
 
-  it('测试质保书1 (Z26022C-DB7) 真实载荷核验：Ti不等式公式通过、工艺及表面质量全过、晶粒度精准触发结构性剪刀差', async () => {
+  it('测试质保书1 (Z26022C-DB7) 真实载荷核验：Ti不等式公式通过、工艺及表面质量全过、S32168 晶粒度误配纠正回归锁', async () => {
     const realBatch = {
       batchNo: 'Z26022C-DB7',
       certificateNo: '20260704203',
@@ -190,14 +190,10 @@ describe('POST /api/audit/submit 批次对象与多标准直通核验测试', ()
     expect(surfItem).toBeDefined();
     expect(surfItem.status).toBe('PASS');
 
-    // 6. 晶粒度评级 (6.5 级 < 7 级) 触发结构性加严剪刀差
+    // 6. 晶粒度误配纠正回归锁：标准第 6.9 条晶粒度仅适用 07 系四牌号，
+    //    S32168 合成切片不得携带 grain_size 规则（历史误配已纠正）
     const grainItem = items.find((r: any) => r.property_key === 'grain_size');
-    expect(grainItem).toBeDefined();
-    expect(grainItem.status).toBe('FAIL');
-    expect(grainItem.is_scissors_difference).toBe(true);
-    expect(grainItem.scissors_attribution).toContain('NB/T 47019.5');
-    expect(grainItem.scissors_attribution).toContain('GB/T 13296');
-    expect(grainItem.multi_standard_evaluations?.length).toBeGreaterThanOrEqual(2);
+    expect(grainItem).toBeUndefined();
 
     // 7. 硬度试验：薄壁管 (WT 0.8mm < 1.7mm) 法定免检，但供方主动报送实测值 (139.3 HV1 <= 200 HV)，激活“报送即检”并判定为 PASS
     const hardnessItem = items.find((r: any) => r.property_key === 'hardness');
@@ -205,6 +201,56 @@ describe('POST /api/audit/submit 批次对象与多标准直通核验测试', ()
     expect(hardnessItem.status).toBe('PASS');
     expect(hardnessItem.message).toContain('法定');
     expect(hardnessItem.message).toContain('主动报送');
+  });
+
+  it('晶粒度规则按标准第 6.9 条精准适用：S32169 (07Cr19Ni11Ti) 批次 6.5 级落入 4~7 级区间判 PASS', async () => {
+    const batch = {
+      batchNo: 'GRAIN-SCOPE-S32169',
+      grade: '07Cr19Ni11Ti (S32169)',
+      standard: 'NB/T 47019.5-2021、GB/T 13296-2023',
+      dimensions: 'OD 25.0mm × WT 2.0mm',
+      chemical: [
+        { element: 'C', value: '0.06' },
+        { element: 'Si', value: '0.50' },
+        { element: 'Mn', value: '1.20' },
+        { element: 'P', value: '0.020' },
+        { element: 'S', value: '0.010' },
+        { element: 'Ni', value: '10.50' },
+        { element: 'Cr', value: '18.00' },
+        { element: 'Ti', value: '0.50' },
+        { element: 'N', value: '0.02' },
+      ],
+      mechanical: {
+        tensile_strength: '550 MPa',
+        yield_strength_rp02: '230 MPa',
+        elongation_A: '46 %',
+      },
+      process: {
+        grainSize: '6.5 级',
+      },
+    };
+
+    const req = new Request('http://localhost:3000/api/audit/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        batchSpecimen: batch,
+        standardIds: ['NB/T 47019.5-2021', 'GB/T 13296-2023'],
+        gradeKey: 'S32169',
+      }),
+    });
+
+    const res = await submitAudit(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    const items = json.finalReport.item_results;
+
+    // 晶粒度规则存在且双标准同区间 (4~7 级)，6.5 级判定 PASS，无剪刀差
+    const grainItem = items.find((r: any) => r.property_key === 'grain_size');
+    expect(grainItem).toBeDefined();
+    expect(grainItem.status).toBe('PASS');
+    expect(grainItem.is_scissors_difference).toBeFalsy();
   });
 
   it('测试质保书2场景：钛含量3位统一修约对齐与表面质量/表面粗糙度原子化解耦', async () => {

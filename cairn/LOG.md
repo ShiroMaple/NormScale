@@ -4,6 +4,21 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-15 · 标准入库管线 T1/T2/T3 修复落地：staging+promote 晋级制、门禁扩容、规则级全量 diff 验收
+
+- **T1 落盘语义**：S4 删除 `rmSync` 正式库整目录重写，产物只写 staging（`.cache/standard-ingest/staging/<STD>/`）；新增 `src/ingestion/promote.ts`（S5）：显式 promote + 按规则族合并（无 `extracted_families` 禁止晋级已存在目录）+ no-net-loss 门禁（净减须 `--force` 并留 forced 标记）+ 完成门禁（validateAllStandards + 数据敏感套件 spawnSync 真实执行，不过自动回滚）；CLI 增加 `--promote/--force` 子命令。
+- **T2 门禁扩容**（`gates.ts`）：中文标准（GB/NB）文本字段 CJK lint、切片关键字段 strict 必填（spec_type/standard_code/description/display_name，堵 Zod 缺省静默补齐）、property_key 注册表防命名漂移（正式库全量扫描，空库跳过）、类别覆盖由 `declaredFamilies` 声明族驱动；S2 切片 harness 字段由 `fillSliceHarnessFields` 确定性补齐。
+- **T3 验收口径**：review-report 增加与存量规则级全量 diff（rule_id + property_key + criteria 数值，新增/丢失/变更三类），存在丢失项不得判定"全部通过"，与 no-net-loss 复用同一 `diffStandards` 实现；修正 `cairn/standard-ingestion-pipeline.md` 的"30/30 一致"误导性表述（仅 5 牌号 × 6 指标数值抽查，无规则族丢失发现能力）并补记事故教训。
+- 验证就绪：新增 `tests/ingestion/promote.test.ts`（14 项）；`tests/ingestion` 61 项全绿，全量 62 套件 373 项单测 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过；CLI promote 全路径（fresh/拦截/--force/回滚）临时目录冒烟验证通过。
+- 详情沉淀：[`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)（含事故教训小节）。
+
+## 2026-09-15 · 标准入库管线评审与修复任务书交付（含事故归因修正）
+
+- **归因修正（不静默覆盖）**：昨日评审曾推测"管线运行自动覆盖 data/standards"。经用户澄清：管线验证性产物仅写入 `scratch/e2e-out-nb/`，`data/standards/` 的覆盖是用户在未验收时手动执行的；`ingest-pipeline.ts:219` 的 `rmSync` 整目录重写逻辑本次未被触发，但作为默认路径仍是悬置风险，修复要求不变。
+- 评审确认：管线 v1 提取 schema 仅有 chemical/mechanical 两个规则通道（`llm-extract.ts:68,244,276`），工艺/探伤/公差表/动态公式全无通道；"30/30 一致"仅是 5 牌号 × 6 指标的数值抽查，无能力发现规则族丢失；晶粒度真相是"旧库误配牌号 → 新库彻底零覆盖"（S32169 等 4 个真正适用牌号也没有 grain_size 规则）。
+- 命名漂移复核结论：新切片 `yield_strength_rp02` 命名与 GB/T 13296 既有切片**一致**，是旧 NB 切片自身不一致，建议以新命名为基准统一。
+- 产出物：修复任务书 [`docs/dev/113_评审_标准入库管线修复任务书.md`](../docs/dev/113_评审_标准入库管线修复任务书.md)（T0 数据恢复 / T1 落盘 staging+promote+no-net-loss / T2 门禁扩容 / T3 验收口径 / T4 v2 范围），交隔壁管线会话执行；当前主分支 17 项测试红，待 T0 完成后恢复。
+
 ## 2026-09-14 · 重复提取与覆写误判的系统性治理：打标降级 + provenance 优先级 + Tier 2 fill-only（修正前日"三道防线"方案）
 
 - 背景：`测试质保书1.pdf` 批次 Z26022C-E1 复合串 `Rp0.2=334、343 MPa；…` 被首数字正则抓出 0.2、经 Tier 2 对齐覆写屈服强度正确值导致误判 FAIL。经第三方复盘，前日条目（下方 2026-09-14"三道防线"）的关键词枚举过滤思路被修正为分层信任治理：

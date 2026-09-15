@@ -156,6 +156,27 @@
         "max": null,
         "unit": "%"
       }
+    },
+    {
+      "rule_id": "METALLO_NB_S34779_GRAIN",
+      "category": "metallographic",
+      "property_key": "grain_size",
+      "display_name": "晶粒度级别 (Grain Size)",
+      "description": "依据 NB/T 47019.5-2021 第6.9条及表5：仅 07Cr19Ni10/07Cr17Ni12Mo2/07Cr19Ni11Ti/07Cr18Ni11Nb 四牌号管子要求晶粒度 4 级～7 级，按 GB/T 6394 测定",
+      "rule_type": "numeric_range",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "min": 4,
+        "max": 7,
+        "unit": "级",
+        "test_standard": "GB/T 6394"
+      }
     }
-  ]
+  ],
+  "coverage": "partial",
+  "extracted_families": [
+    "chemical",
+    "mechanical"
+  ],
+  "standard_code": "NB/T 47019.5-2021"
 }

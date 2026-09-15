@@ -157,7 +157,7 @@ describe('回归：Z26022C-E1 批次 0.2 误判 FAIL 事件的三层治理锁定
       );
       const report = ComplianceEngine.evaluate(nbRuleSet, extract);
 
-      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_rp02');
+      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_strength_rp02');
       expect(yieldItem).toBeDefined();
       expect(yieldItem?.status).toBe('PASS');
       expect(yieldItem?.rounded_value).toBe(334);
@@ -221,7 +221,7 @@ describe('回归：Z26022C-E1 批次 0.2 误判 FAIL 事件的三层治理锁定
         buildLegacyCert([legacyLegit334, legacyPolluted02])
       );
 
-      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_rp02');
+      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_strength_rp02');
       expect(yieldItem?.status).toBe('PASS');
       expect(yieldItem?.rounded_value).toBe(334);
       expect(report.summary.overall_status).toBe('PASS');
@@ -234,7 +234,7 @@ describe('回归：Z26022C-E1 批次 0.2 误判 FAIL 事件的三层治理锁定
         buildLegacyCert([legacyPolluted02, legacyLegit334])
       );
 
-      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_rp02');
+      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_strength_rp02');
       expect(yieldItem?.status).toBe('FAIL');
       // 评估确实采用了 0.2 记录；rounded_value 为 0 是因该规则 rounding_decimals=0，0.2 经 GB/T 8170 修约为 0
       expect(yieldItem?.measured_value_num).toBe(0.2);
@@ -248,7 +248,7 @@ describe('回归：Z26022C-E1 批次 0.2 误判 FAIL 事件的三层治理锁定
         { ...legacyLegit334, provenance: 'core' },
       ]));
 
-      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_rp02');
+      const yieldItem = report.item_results.find((r) => r.property_key === 'yield_strength_rp02');
       expect(yieldItem?.status).toBe('PASS');
       expect(yieldItem?.rounded_value).toBe(334);
       expect(report.summary.overall_status).toBe('PASS');

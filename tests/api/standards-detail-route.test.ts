@@ -34,7 +34,7 @@ describe('GET /api/standards/[standardId] 标准明细路由集成测试', () =>
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(json.data.standard_meta.standard_id).toBe('NB/T 47019.5-2021');
-    expect(json.data.slices.length).toBe(5);
+    expect(json.data.slices.length).toBe(22);
     expect(json.data.slices.some((s: any) => s.spec_key === 'S32168')).toBe(true);
   });
 

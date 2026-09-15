@@ -52,6 +52,7 @@ export interface DraftRule {
 export interface DraftSlice {
   spec_key: string;
   spec_type?: string;
+  standard_code?: string;
   display_name: string;
   primary_grade?: string;
   unified_code?: string;

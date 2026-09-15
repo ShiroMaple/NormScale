@@ -23,7 +23,7 @@ describe('FileRuleStore 规则检索仓库测试', () => {
 
     const nbt = list.find(s => s.standard_id === 'NB/T 47019.5-2021');
     expect(nbt).toBeDefined();
-    expect(nbt?.slice_count).toBe(5);
+    expect(nbt?.slice_count).toBe(22);
   });
 
   it('支持通过标准目录名别名或官方标准代号统一解析切片与完整标准', async () => {

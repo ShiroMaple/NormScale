@@ -379,7 +379,7 @@ describe('LLM Property Resolver (Tier 2 语义消歧与双模流转测试)', () 
     expect(update.normalizedCert?.test_records[0]?.property_key).not.toBe('surface_roughness');
   });
 
-  it('fill-only 核心槽位保护：LLM 高置信指向已被占用槽位 (yield_rp02) 时放弃覆写，原 334 MPa 记录不变并转入待决池', async () => {
+  it('fill-only 核心槽位保护：LLM 高置信指向已被占用槽位 (yield_strength_rp02) 时放弃覆写，原 334 MPa 记录不变并转入待决池', async () => {
     const mockService = new LlmPropertyResolverService({
       id: 'mock-slot-guard',
       name: 'Slot Guard Mock',
@@ -401,7 +401,7 @@ describe('LLM Property Resolver (Tier 2 语义消歧与双模流转测试)', () 
       resolutions: [
         {
           raw_name: '复合拉伸屈服综合试验项',
-          resolved_key: 'yield_rp02',
+          resolved_key: 'yield_strength_rp02',
           confidence: 0.96,
           reasoning: '语义指向规定塑性延伸强度',
         },
@@ -423,8 +423,9 @@ describe('LLM Property Resolver (Tier 2 语义消歧与双模流转测试)', () 
         },
         test_records: [
           {
+            // 旧缓存遗留的别名 key（更名前 NB 切片规则用 yield_rp02），用于验证 canonical 归一化占用判定
             category: 'mechanical',
-            property_key: 'yield_strength_rp02',
+            property_key: 'yield_rp02',
             measured_value_raw: '334',
             measured_value_num: 334,
             unit: 'MPa',
@@ -468,8 +469,8 @@ describe('LLM Property Resolver (Tier 2 语义消歧与双模流转测试)', () 
     expect(update.normalizedCert?.test_records[1]?.property_key).toBe('复合拉伸屈服综合试验项');
     expect((update.normalizedCert?.test_records[1] as Record<string, unknown> | undefined)?.['provenance']).toBeUndefined();
 
-    // 4. 原 334 MPa 的 yield_strength_rp02 记录保持不变
-    expect(update.normalizedCert?.test_records[0]?.property_key).toBe('yield_strength_rp02');
+    // 4. 原 334 MPa 的 yield_rp02（旧别名 key）记录保持不变
+    expect(update.normalizedCert?.test_records[0]?.property_key).toBe('yield_rp02');
     expect(update.normalizedCert?.test_records[0]?.measured_value_num).toBe(334);
   });
 

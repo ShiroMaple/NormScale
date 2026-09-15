@@ -27,9 +27,12 @@ function makeRule(overrides: Partial<DraftRule> = {}): DraftRule {
 function makeSlice(overrides: Partial<DraftSlice> = {}): DraftSlice {
   return {
     spec_key: 'S30408',
-    display_name: '06Cr19Ni10 (S30408)',
+    spec_type: 'grade',
+    standard_code: 'GB/T 99999-2024',
+    display_name: '06Cr19Ni10 (S30408) 不锈钢管',
     primary_grade: '06Cr19Ni10',
     structure_type: 'austenitic',
+    description: 'GB/T 99999-2024 表2/表3 试验切片',
     aliases: [],
     evaluation_rules: [
       makeRule(),
@@ -133,6 +136,118 @@ describe('S3 质量门禁：领域 linter', () => {
     const slice = makeSlice({ evaluation_rules: [makeRule()] });
     const result = runGates(makeGateInput({ slices: [slice] }));
     expect(result.issues.some((i) => i.code === 'LINT_CATEGORY_COVERAGE')).toBe(true);
+  });
+});
+
+describe('S3 质量门禁：中文标准文本字段语言一致性', () => {
+  it('中文标准切片 display_name 被译为英文（无 CJK）被拒', () => {
+    const slice = makeSlice({ display_name: 'Austenitic stainless steel tube' });
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_LANGUAGE_CONSISTENCY' && i.message.includes('display_name'))).toBe(true);
+    expect(result.requiresManualReview).toBe(true);
+  });
+
+  it('中文标准 meta.standard_name 无 CJK 被拒', () => {
+    const meta = { ...makeGateInput().meta, standard_name: 'Seamless stainless steel tubes for boiler' };
+    const result = runGates(makeGateInput({ meta }));
+    expect(result.issues.some((i) => i.code === 'LINT_LANGUAGE_CONSISTENCY' && i.message.includes('standard_name'))).toBe(true);
+  });
+
+  it('中文标准 description 无 CJK 被拒（meta 与切片同时检查）', () => {
+    const meta = { ...makeGateInput().meta, description: 'This standard specifies technical requirements.' };
+    const slice = makeSlice({ description: 'Grade slice for test only.' });
+    const result = runGates(makeGateInput({ meta, slices: [slice] }));
+    const langIssues = result.issues.filter((i) => i.code === 'LINT_LANGUAGE_CONSISTENCY');
+    expect(langIssues.some((i) => i.message.includes('meta.description'))).toBe(true);
+    expect(langIssues.some((i) => i.message.includes('切片') && i.message.includes('description'))).toBe(true);
+  });
+
+  it('非中文标准（如 ASTM）不适用 CJK lint', () => {
+    const meta = {
+      ...makeGateInput().meta,
+      standard_id: 'ASTM A999-24',
+      standard_name: 'Seamless stainless steel tubes',
+      description: 'Standard specification for test purposes.',
+    };
+    const slice = makeSlice({ display_name: 'S30400 (304)', description: 'Grade slice.' });
+    const result = runGates(makeGateInput({ meta, slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_LANGUAGE_CONSISTENCY')).toBe(false);
+  });
+
+  it('description 缺省/为空时跳过语言 lint（只 lint 实际给出的文本）', () => {
+    const meta = { ...makeGateInput().meta, description: undefined };
+    const slice = makeSlice({ description: undefined });
+    const result = runGates(makeGateInput({ meta, slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_LANGUAGE_CONSISTENCY')).toBe(false);
+  });
+});
+
+describe('S3 质量门禁：切片关键字段 strict 必填', () => {
+  it.each(['spec_type', 'standard_code', 'description', 'display_name'] as const)('切片缺少 %s 报 LINT_REQUIRED_FIELDS（Zod 缺省不兜底）', (field) => {
+    const slice = makeSlice();
+    delete (slice as unknown as Record<string, unknown>)[field];
+    const result = runGates(makeGateInput({ slices: [slice] }));
+    expect(result.issues.some((i) => i.code === 'LINT_REQUIRED_FIELDS' && i.message.includes(field))).toBe(true);
+    expect(result.passed).toBe(false);
+  });
+});
+
+describe('S3 质量门禁：property_key 注册表（命名漂移防护）', () => {
+  it('注册表外的 property_key 报 LINT_PROPERTY_KEY_REGISTRY', () => {
+    const slice = makeSlice({
+      evaluation_rules: [
+        makeRule(),
+        makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_str', display_name: '抗拉强度 (Rm)', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' }),
+      ],
+    });
+    const result = runGates(makeGateInput({ slices: [slice], propertyKeyRegistry: ['C', 'tensile_strength', 'yield_strength_rp02'] }));
+    expect(result.issues.some((i) => i.code === 'LINT_PROPERTY_KEY_REGISTRY' && i.message.includes('tensile_str'))).toBe(true);
+    expect(result.requiresManualReview).toBe(true);
+  });
+
+  it('命中注册表的 key 通过；命中即放行其余检查', () => {
+    const result = runGates(
+      makeGateInput({ propertyKeyRegistry: new Set(['C', 'tensile_strength', 'yield_strength_rp02', 'elongation_A']) }),
+    );
+    expect(result.issues.some((i) => i.code === 'LINT_PROPERTY_KEY_REGISTRY')).toBe(false);
+    expect(result.passed).toBe(true);
+  });
+
+  it('注册表为空（全新标准库）时跳过 lint，品类扩张合法', () => {
+    const slice = makeSlice({
+      evaluation_rules: [makeRule({ property_key: 'brand_new_key' }), makeRule({ rule_id: 'MECH_S30408_RM', category: 'mechanical', property_key: 'tensile_strength', criteria: { min: 520, max: null, unit: 'MPa' }, source_clause: '表3' })],
+    });
+    const result = runGates(makeGateInput({ slices: [slice], propertyKeyRegistry: [] }));
+    expect(result.issues.some((i) => i.code === 'LINT_PROPERTY_KEY_REGISTRY')).toBe(false);
+  });
+
+  it('未提供注册表时跳过 lint（纯函数缺省行为不变）', () => {
+    const result = runGates(makeGateInput());
+    expect(result.issues.some((i) => i.code === 'LINT_PROPERTY_KEY_REGISTRY')).toBe(false);
+  });
+});
+
+describe('S3 质量门禁：类别覆盖由声明规则族驱动', () => {
+  it('declaredFamilies 只声明 chemical 时，缺 mechanical 不拦截', () => {
+    const slice = makeSlice({ evaluation_rules: [makeRule()] });
+    const result = runGates(makeGateInput({ slices: [slice], declaredFamilies: ['chemical'] }));
+    expect(result.issues.some((i) => i.code === 'LINT_CATEGORY_COVERAGE')).toBe(false);
+    expect(result.passed).toBe(true);
+  });
+
+  it('declaredFamilies 扩充到 process 时，缺少 process 类规则被拦截', () => {
+    const slice = makeSlice();
+    const result = runGates(makeGateInput({ slices: [slice], declaredFamilies: ['chemical', 'mechanical', 'process'] }));
+    const coverage = result.issues.find((i) => i.code === 'LINT_CATEGORY_COVERAGE');
+    expect(coverage).toBeDefined();
+    expect(coverage!.message).toContain('process');
+    expect(coverage!.message).toContain('声明提取范围');
+  });
+
+  it('declaredFamilies 为空数组时回退缺省 chemical+mechanical', () => {
+    const slice = makeSlice({ evaluation_rules: [makeRule()] });
+    const result = runGates(makeGateInput({ slices: [slice], declaredFamilies: [] }));
+    expect(result.issues.some((i) => i.code === 'LINT_CATEGORY_COVERAGE' && i.message.includes('mechanical'))).toBe(true);
   });
 });
 

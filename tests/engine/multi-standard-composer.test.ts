@@ -41,7 +41,8 @@ describe('MultiStandardComposer 多标准规则切片合成器测试', () => {
     // 验证 NB/T 专属检验项被并入合成切片
     const keys = composite.evaluation_rules.map(r => r.property_key);
     expect(keys).toContain('flaring_test'); // 扩口试验
-    expect(keys).toContain('grain_size');   // 晶粒度评级
+    // 晶粒度规则已按标准第 6.9 条纠正：仅 07 系四牌号适用，S32168 不得携带（防误配回归锁）
+    expect(keys).not.toContain('grain_size');
     expect(keys).toContain('surface_quality'); // 表面质量
   });
 

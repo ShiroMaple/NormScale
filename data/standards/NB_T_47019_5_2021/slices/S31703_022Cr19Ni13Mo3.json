@@ -157,5 +157,11 @@
         "unit": "%"
       }
     }
-  ]
+  ],
+  "coverage": "partial",
+  "extracted_families": [
+    "chemical",
+    "mechanical"
+  ],
+  "standard_code": "NB/T 47019.5-2021"
 }
