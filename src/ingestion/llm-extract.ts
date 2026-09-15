@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type {
   BlockType,
+  ChatCallOptions,
   ChatClient,
   ChatMessage,
   DraftClause,
@@ -116,7 +117,7 @@ export function createDefaultChatClient(): ChatClient {
   const { baseUrl, model, apiKey: apiKeyField, timeoutMs } = loadDefaultLlmConfig();
   const endpoint = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
-  return async (messages: ChatMessage[]) => {
+  return async (messages: ChatMessage[], opts?: ChatCallOptions) => {
     const apiKey = resolveApiKey(apiKeyField);
     if (!apiKey) {
       throw new MissingApiKeyError(`未配置有效的大模型 API 凭证 (环境变量 ${apiKeyField || 'KIMI_API_KEY'} 未设置)。`);
@@ -136,7 +137,8 @@ export function createDefaultChatClient(): ChatClient {
           messages,
           temperature: 1, // Kimi 及主流推理模型严格要求 temperature: 1
           max_tokens: 32768, // 整表结构化输出体积大，显式放宽输出上限防止 JSON 截断
-          response_format: { type: 'json_object' },
+          // 视觉转录任务需要纯文本输出，强制 json_object 会逼模型把转录包成 JSON 形态
+          ...(opts?.task === 'vision_transcribe' ? {} : { response_format: { type: 'json_object' } }),
         }),
         signal: controller.signal,
       });
@@ -434,6 +436,7 @@ async function extractProcessRules(
     '   {"rule_id":"NDT_TIGHTNESS_GROUP","category":"ndt","property_key":"pressure_tightness","display_name":"致密性/水压试验组","rule_type":"alternative_group","requirement_level":"MANDATORY","criteria":{"group_logic":"AT_LEAST_ONE_PASS","candidates":[{"candidate_key":"hydraulic_test","display_name":"逐根液压试验","test_standard":"GB/T 241","max_pressure_cap":20,"min_holding_time_s":10,"criteria_description":"试验压力按公式计算，最大试验压力不超过 20MPa，稳压时间不少于 10s 无渗漏"},{"candidate_key":"eddy_current_test","display_name":"高等级涡流探伤替代","test_standard":"GB/T 7735-2016","required_level":"E2H","criteria_description":"外径<=25mm对比样管人工缺陷通孔0.8mm；外径>25mm符合 E2H 级"}]},"applies_to_grades":"ALL"}',
     '6. 外部引用条款（原文形如"应符合 NB/T 47019.1—2021 中 7.11.4 的规定"，本文件未给出具体数值/阈值）：严禁编造阈值；输出 qualitative_pass（criteria={expected:"CLEAN_PASS"}）或 qualitative_enum，并在 description/criteria_description 中注明外部引用来源（如 "引用 NB/T 47019.1—2021 7.11.4，阈值以被引标准为准"）。',
     '7. surface_roughness 结构保真：本文件给出数值时必须输出 numeric_range（unit 固定 "μm"，rounding_decimals 取原文小数位）；仅外部引用未给出数值时按第 6 条输出定性规则并注明引用来源。',
+    '8. 无判定准则的兜底协商条款不输出规则：仅声明"经供需双方协商可采用其他方法/由供需双方协商确定"而无任何验收指标、等级或阈值的条款（如"可采用其他无损检测方法和验收等级"），不是检验规则，严禁输出。',
     ...catalogLines,
     '【输出 JSON 结构】{"rules": [{"rule_id": string, "category": string, "property_key": string, "display_name": string, "rule_type": string, "requirement_level": string, "criteria": object, "source_clause": string, "applies_to_grades": string[] | "ALL"}]}',
     '【条款块】',
@@ -472,14 +475,63 @@ async function extractDynamicFormulas(
   return rules.map((r) => parseDraftRule(r, blocks[0]?.clauseRef || ''));
 }
 
+// 公差阶梯规则中的数值字段（schema 要求 number；LLM 偶发输出字符串，确定性纠偏非臆造：
+// 仅当字符串是纯数值字面量时转换，其余原样保留交由 S3 schema 校验拦截）
+const TOLERANCE_NUMERIC_FIELDS = [
+  'range_min',
+  'range_max',
+  'outer_diameter_limit',
+  'plus_tolerance_value',
+  'minus_tolerance_value',
+] as const;
+
+/**
+ * source_clause 引用确定性归一：模型偶发把 prompt 的块标记原文抄入
+ * （如 "【条款号 7.8】"），剥离标记字符与空白，使其与切块 clauseRef 精确对齐。
+ * 对新鲜提取与缓存草稿幂等生效
+ */
+export function normalizeSourceClauseRefs(drafts: ExtractionDrafts): ExtractionDrafts {
+  const clean = (ref: string): string =>
+    ref.replace(/[【】]/g, '').replace(/^条款号\s*/, '').trim();
+  for (const slice of drafts.slices ?? []) {
+    for (const rule of slice.evaluation_rules ?? []) {
+      if (typeof rule.source_clause === 'string') rule.source_clause = clean(rule.source_clause);
+    }
+  }
+  for (const rule of drafts.unmounted_rules ?? []) {
+    if (typeof rule.source_clause === 'string') rule.source_clause = clean(rule.source_clause);
+  }
+  return drafts;
+}
+
+/**
+ * 公差表数值字段确定性纠偏：纯数值字符串（如 "0.15"、"-0.40"）转为 number。
+ * 对新鲜提取与缓存草稿幂等生效；非纯数值字符串原样保留（不猜测、不截断）
+ */
+export function sanitizeToleranceNumericFields(drafts: ExtractionDrafts): ExtractionDrafts {
+  for (const table of drafts.tolerance_tables ?? []) {
+    for (const rule of table.rules ?? []) {
+      const record = rule as Record<string, unknown>;
+      for (const field of TOLERANCE_NUMERIC_FIELDS) {
+        const v = record[field];
+        if (typeof v === 'string' && v.trim().length > 0 && /^[-+]?\d+(?:\.\d+)?$/.test(v.trim())) {
+          record[field] = Number(v.trim());
+        }
+      }
+    }
+  }
+  return drafts;
+}
+
 async function extractToleranceTables(chat: ChatClient, blocks: TextBlock[]): Promise<DraftToleranceTable[]> {
   const userPrompt = [
     '【任务】从尺寸公差表文本块中提取公差阶梯表结构。',
     '【硬性要求】',
     '1. 常规阶梯表：table_id（可附标准号前缀，如 "TABLE_1"）、table_name（表标题原文）、rules=[{dimension_property:"outer_diameter"|"wall_thickness", process:"cold_drawn"|"hot_rolled"|"hot_extrusion"|"all", delivery_mode:"nominal_wall"|"min_wall", range_min?, range_max?, outer_diameter_limit?, plus_tolerance_value, plus_tolerance_is_percent, minus_tolerance_value, minus_tolerance_is_percent, note?}]。',
-    '2. 偏差方向取值：原文 "±0.40" -> plus_tolerance_value=0.40, minus_tolerance_value=-0.40；"正偏差…负偏差…" 按原文方向取值。',
-    '3. 跨标准引用条款（如"应符合 NB/T 47019.1 中表 2 的规定"）：严禁臆造被引标准数据——输出 external_reference="NB/T 47019.1 表2" 且 rules 为空数组。',
-    '4. 所有数值必须与原文逐字一致；表内未给出的阶梯字段不得输出。',
+    '2. 所有数值字段必须输出 JSON number（如 0.15、-0.40），严禁输出字符串形态。',
+    '3. 偏差方向取值：原文 "±0.40" -> plus_tolerance_value=0.40, minus_tolerance_value=-0.40；"正偏差…负偏差…" 按原文方向取值。',
+    '4. 跨标准引用条款（如"应符合 NB/T 47019.1 中表 2 的规定"）：严禁臆造被引标准数据——输出 external_reference="NB/T 47019.1 表2" 且 rules 为空数组。',
+    '5. 所有数值必须与原文逐字一致；表内未给出的阶梯字段不得输出。',
     '【输出 JSON 结构】{"tables": [{"table_id": string, "table_name": string, "rules": [...], "external_reference"?: string}]}',
     '【公差表块】',
     blockSection(blocks),
@@ -489,7 +541,7 @@ async function extractToleranceTables(chat: ChatClient, blocks: TextBlock[]): Pr
   if (!Array.isArray(tables)) {
     throw new ModelApiExecutionError('尺寸公差表提取结果缺少 tables 数组');
   }
-  return tables.map((t) => {
+  const mapped = tables.map((t) => {
     const table = t as Record<string, unknown>;
     const rules = Array.isArray(table.rules) ? (table.rules as Record<string, unknown>[]) : [];
     return {
@@ -502,6 +554,8 @@ async function extractToleranceTables(chat: ChatClient, blocks: TextBlock[]): Pr
       source_block: blocks[0]?.clauseRef || '',
     };
   });
+  // 提取侧同步纠偏数值字符串（与缓存草稿路径幂等一致）
+  return sanitizeToleranceNumericFields({ meta: {}, slices: [], clauses: [], tolerance_tables: mapped }).tolerance_tables;
 }
 
 /** 切片的牌号别名集合：spec_key / primary_grade / unified_code 均视作合法匹配令牌 */

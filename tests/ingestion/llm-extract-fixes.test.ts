@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { dedupeSliceRulesByPropertyKey, extractAll, isInspectionScheduleBlock, propertyKeyCatalogLines } from '@/ingestion/llm-extract';
 import { scanPropertyKeyCatalog } from '@/ingestion/promote';
-import type { ChatClient, DraftRule, DraftSlice, TextBlock } from '@/ingestion/types';
+import type { ChatClient, ChatContentPart, DraftRule, DraftSlice, TextBlock } from '@/ingestion/types';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,7 +42,7 @@ const NB_CHEM_BLOCK: TextBlock = {
 
 interface CapturedCall {
   task: string;
-  userContent: string;
+  userContent: string | ChatContentPart[];
 }
 
 /** 记录每次 chat 调用的任务与 user prompt，返回 {chat, calls} */
@@ -249,5 +249,32 @@ describe('golden 对账修复：process_rules prompt 结构保真（替代组/�
     expect(prompt).toContain('surface_roughness 结构保真');
     expect(prompt).toContain('unit 固定 "μm"');
     expect(prompt).toContain('仅外部引用未给出数值时按第 6 条输出定性规则');
+  });
+});
+
+describe('公差表数值字段确定性纠偏（ingestConfigVersion 1.3.5）', () => {
+  it('纯数值字符串转 number，非纯数值字符串原样保留交 S3 拦截', async () => {
+    const { sanitizeToleranceNumericFields } = await import('@/ingestion/llm-extract');
+    const drafts = {
+      meta: {},
+      slices: [],
+      clauses: [],
+      tolerance_tables: [
+        {
+          table_id: 'TABLE_1',
+          table_name: '表1',
+          rules: [
+            { dimension_property: 'outer_diameter', range_max: '0.15', plus_tolerance_value: '-0.40', minus_tolerance_value: 0.4, note: '>6～10 阶梯' },
+          ],
+        },
+      ],
+    };
+    // @ts-expect-error 测试构造的宽松草稿形态
+    const out = sanitizeToleranceNumericFields(drafts);
+    const rule = out.tolerance_tables[0]!.rules[0] as Record<string, unknown>;
+    expect(rule['range_max']).toBe(0.15);
+    expect(rule['plus_tolerance_value']).toBe(-0.4);
+    expect(rule['minus_tolerance_value']).toBe(0.4); // 已是 number 原样
+    expect(rule['note']).toBe('>6～10 阶梯'); // 非数值字段不动
   });
 });

@@ -82,8 +82,24 @@ node --experimental-strip-types scripts/ingest-standard.ts <pdf> --out <临时�
 8. **子孙条款类型继承**：纯 CJK 正文行（<40 字）会被标题正则误判独立成块且不含路由关键词落 other（如 6.11.1 表面质量正文），由 `inheritAncestorBlockType` 按 clauseRef 层级继承最近非 other 祖先进程，否则整段条款静默漏提。
 9. **类别覆盖 lint 的两级制**：条件适用族（晶粒度仅 07 系四牌号）逐切片强约束必然误报；chemical/mechanical 逐切片强约束（表驱动普适），其余族标准级零规则才判整族漏提。
 10. **模型结构遵从度非确定性**：alternative_group 聚合与 dynamic_formula_pass 公式结构即便注入 golden 范式示例也不保证遵守（T4 E2E 残留）；no-net-loss 门禁在 promote 时拦截此类"内容在但结构降级"的产物，不得依赖 prompt  alone 保证结构保真。
+11. **视觉转录通道的四个实测坑**（GB 13296 E2E 收敛过程）：① chat 客户端全局强制 `response_format: json_object` 会把转录逼成 JSON 包裹形态，转录任务必须解除；② 版本门禁必须先于一切缓存读取执行，否则过期缓存（如旧版 vision-text）被读入内存后才清空目录，时序漏洞导致新旧文本混用；③ 乱码检测需剔除点线引导符（公式编号 "......(1)"）与 LaTeX 标记（`\frac{\pi}`），否则合法公式行被误判 garbled；④ 公差表数值字段模型偶发输出字符串，由 `sanitizeToleranceNumericFields` 确定性纠偏（仅纯数值字面量转换，其余交 S3 拦截，不猜测）。
 
 ## 明确边界
 
-- v1 仅提取 chemical / mechanical numeric_range 规则与文本条款；工艺/探伤规则、公差阶梯表、动态公式（如 Ti≥4×(C+N)）的自动结构化留待后续迭代；
-- 扫描件/乱码文本层不支持（显式报错）；不改动既有已入库数据。
+- ~~v1 仅提取 chemical / mechanical numeric_range~~（T4 已扩充至七族 + 动态公式 + 公差阶梯表；结构保真残留见踩坑 10）；
+- ~~扫描件/乱码文本层不支持~~（v1.3 起由多模态视觉转录通道接管，见下节）；
+- 不改动既有已入库数据（staging + promote 门禁保证）。
+
+## 多模态视觉转录通道（v1.3，`vision-transcribe.ts`）
+
+- **分流条件**：S0 无文本层（`NoTextLayerError`）或 S1 检出乱码块（字体子集化无 ToUnicode）→ 整篇转视觉通道；`--no-vision` 退回显式报错；文本层完好的文档不受影响。
+- **流程**：pdfjs-dist + `@napi-rs/canvas` 逐页渲染 PNG（scale 2.0）→ 逐页多模态转录（纯文本，表格按行展开，禁 LaTeX）→ `vision-text.txt` 缓存 → 续走 S1→S4 完全复用。
+- **透明性契约**：drafts/meta 带 `text_source: 'vision'`，review-report 顶部显著标注并提示提高人工抽检权重；此时 S3 溯源断言为"转录文本自洽性校验"（弱于文本层独立真相源），数值缺失会走 TRACE/MANUAL_REVIEW 而非静默通过。
+- **视觉调用解除 `response_format: json_object`**：转录任务必须纯文本输出（v1.3.0 曾因此全篇转录被包成 JSON 导致 S1 零表格块）。
+
+## 视觉通道 E2E 验证（GB 13296-2023，乱码 PDF，v1.3.5 真实多模态）
+
+- 19 页视觉转录 → 全链路提取 31 切片全族规则；
+- 与 GB 31 份 golden 切片对账：**规则族丢失 0 条；化学/力学数值抽查 337 条 0 差异**；
+- 已知偏差：golden 的 exemption（6 牌号晶间腐蚀免检）/enum_acceptance 等精细 rule_type 被泛化为 qualitative_enum（内容正确、语义粒度降级，promote 时 no-net-loss 拦截）；铁素体三牌号被过度挂晶间腐蚀规则（7.7.1 仅约束奥氏体型）；
+- 命名存量瑕疵暴露：注册表中 `flattening`（NB 切片）与 `flattening_test`（GB 切片）两个 canonical 并存，导致同义 key 跨 run 摆动不被注册表 lint 捕获——注册表去重归一化列入后续治理。

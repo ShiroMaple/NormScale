@@ -105,9 +105,15 @@ export interface ExtractionDrafts {
 }
 
 // S2 可注入聊天客户端签名：便于测试注入预制响应，默认实现走 OpenAI 兼容接口
+// 视觉转录通道：content 支持 OpenAI 兼容多模态数组（与质保书管线
+// src/extractor/openai-compatible-extractor.ts 的双模态输入契约一致）
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: string } };
+
 export interface ChatMessage {
   role: 'system' | 'user';
-  content: string;
+  content: string | ChatContentPart[];
 }
 
 export type ChatTask =
@@ -117,7 +123,8 @@ export type ChatTask =
   | 'clauses'
   | 'process_rules'      // v2：工艺/探伤/金相/腐蚀/表面规则（含牌号适用性展开）
   | 'dynamic_formulas'   // v2：化学表"其他"列动态公式规则（如 Ti ≥ 5×(C+N)）
-  | 'tolerance_tables';  // v2：尺寸公差表（含跨标准外部引用显式记录）
+  | 'tolerance_tables'   // v2：尺寸公差表（含跨标准外部引用显式记录）
+  | 'vision_transcribe'; // v3：乱码/扫描件多模态视觉转录（逐页 PNG -> 文本）
 
 export interface ChatCallOptions {
   task: ChatTask;

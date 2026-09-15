@@ -6,9 +6,10 @@ import { promoteStaging, PromoteError } from '../src/ingestion/promote.ts';
 /* ==========================================================================
    标准文档 PDF 离线入库 CLI
    用法:
-     node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--force]
+     node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--no-vision] [--force]
        —— 执行 S0-S4 管线，产物只写 staging（缺省 .cache/standard-ingest/staging/<STD_DIR>/），不触碰正式库
        —— --families 显式声明提取规则族（逗号分隔，如 chemical,mechanical），缺省 v2 全量七族
+       —— 无文本层（扫描件）/文本层乱码的 PDF 默认转多模态视觉转录通道；--no-vision 关闭并显式报错
      node --experimental-strip-types scripts/ingest-standard.ts --promote <STD_DIR 或 staging 路径> [--out <正式库根>] [--force]
        —— 将 staging 产物晋级正式库：已存在标准走按规则族合并 + no-net-loss 门禁，
           净减须 --force 显式确认；完成门禁（validateAllStandards + 数据敏感测试套件）不过自动回滚
@@ -23,16 +24,17 @@ interface CliArgs {
   outRoot?: string;
   stagingRoot?: string;
   families?: string[];
+  noVision: boolean;
   force: boolean;
 }
 
 const USAGE =
   '用法:\n' +
-  '  node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--force]\n' +
+  '  node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--no-vision] [--force]\n' +
   '  node --experimental-strip-types scripts/ingest-standard.ts --promote <STD_DIR 或 staging 路径> [--out <正式库根>] [--force]';
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { mode: 'ingest', pdfPath: '', force: false };
+  const args: CliArgs = { mode: 'ingest', pdfPath: '', noVision: false, force: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === '--promote') {
@@ -54,6 +56,9 @@ function parseArgs(argv: string[]): CliArgs {
       if (args.families.length === 0) {
         throw new Error('--families 参数解析后为空（逗号分隔的规则族，如 chemical,mechanical）');
       }
+    } else if (arg === '--no-vision') {
+      // 关闭多模态视觉转录通道：无文本层/乱码退回显式报错
+      args.noVision = true;
     } else if (arg === '--force') {
       args.force = true;
     } else if (!arg.startsWith('--') && args.pdfPath.length === 0) {
@@ -105,6 +110,7 @@ async function runIngest(args: CliArgs): Promise<void> {
     outRoot: args.outRoot,
     stagingRoot: args.stagingRoot,
     declaredFamilies: args.families,
+    noVision: args.noVision,
     force: args.force,
     onProgress: (msg) => console.log('  ▸ ' + msg),
   });

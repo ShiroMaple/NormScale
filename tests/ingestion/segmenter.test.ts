@@ -119,6 +119,11 @@ describe('S1 切块器：锚点切块与类型路由', () => {
     expect(isGarbledText('1 022Cr19Ni10 S30403 0.030 1.00 2.00 0.035 0.015 8.00~ 11.00')).toBe(false);
     expect(isGarbledText('目 次 前言 ············································································· 80')).toBe(false);
     expect(isGarbledText(', #-./,. ,/"),0($1 .2,3 ,2.. /2.. .2.-3 .2.,3 02..!,.2.. ,42..!,12..')).toBe(true);
+    // 点线引导符的公式编号行（视觉转录/PDF 文本层常见排版）不误判为乱码
+    expect(isGarbledText('W = π/1 000 ρ S (D - S) .......................(1)')).toBe(false);
+    expect(isGarbledText('H=(1+α)S/(α+S/D) ........................(3)')).toBe(false);
+    // LaTeX 形态的公式行（视觉模型偶发输出）同样不误判
+    expect(isGarbledText('W=\\frac{\\pi}{1 000}\\rho S(D-S) ...........................(1)')).toBe(false);
   });
 
   it('classifyBlock：无牌号行的化学成分关键词块不误路由', () => {

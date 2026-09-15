@@ -80,7 +80,7 @@ function createExtractMock(overrides: { processRules?: Record<string, unknown>[]
         return JSON.stringify({ clauses: [] });
       case 'process_rules':
         // 逐块调用契约：仅返回所给文本块（【条款号 X】）来源的规则，避免跨块重复挂载
-        return JSON.stringify({ rules: processRules.filter((r) => (messages[1]?.content ?? '').includes(`【条款号 ${(r as { source_clause: string }).source_clause}】`)) });
+        return JSON.stringify({ rules: processRules.filter((r) => String(messages[1]?.content ?? '').includes(`【条款号 ${(r as { source_clause: string }).source_clause}】`)) });
       case 'dynamic_formulas':
         return JSON.stringify({ rules: dynamicFormulas });
       case 'tolerance_tables':

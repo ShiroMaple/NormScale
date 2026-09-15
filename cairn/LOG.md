@@ -4,6 +4,15 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-15 · 残留 2+3 闭环：segmenter 路由补全与多模态视觉转录通道落地（GB 13296 乱码 PDF 入库打通）
+
+- 残留 2 修复（`segmenter.ts`）：路由关键词补 `弯曲|展平`；`inheritAncestorBlockType` 支持穿透纯标题型 other 祖先（6.5.4/6.5.5 焊接管工艺条款回归提取通道）；
+- 残留 3 落地（`vision-transcribe.ts` [NEW]，v1.3.x）：S0 无文本层/S1 乱码检出 → 整篇多模态视觉转录（pdfjs + @napi-rs/canvas 逐页渲染 PNG，逐页转录，禁 LaTeX，缓存 `vision-text.txt`），续走 S1→S4 完全复用；`text_source:'vision'` 标记 + 报告显著标注提高抽检权重；`--no-vision` 可退回显式报错；
+- 真实 E2E 收敛（GB 13296-2023，19 页视觉转录）：修复 response_format json_object 强制造场（转录被包成 JSON）、版本门禁时序漏洞（先读缓存后清空）、点线引导符/LaTeX 公式行误判 garbled、公差表数值字符串纠偏、source_clause 标记归一；最终与 31 份 golden 切片对账：**规则族丢失 0 条、化学/力学数值 337 条抽查 0 差异**；
+- 门禁有效性实证：force 复跑检出幻影牌号 S83667（视觉误读 S38367）与覆盖缺口，精确拦截 MANUAL_REVIEW——视觉通道的方差由门禁兜底，不静默入库；
+- 验证就绪：ingestion 套件 110 项、全量 67 套件 421 项 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过。
+- 详情沉淀: [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)（视觉通道节 + 踩坑 11）。
+
 ## 2026-09-15 · T4 v2 提取范围扩充落地：七族通道全开 + golden 五族对账零丢失
 
 - T4 实施（`llm-extract.ts` / `gates.ts` / `segmenter.ts` / `ingest-pipeline.ts`，`ingestConfigVersion` 1.2.2）：

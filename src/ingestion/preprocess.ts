@@ -60,18 +60,25 @@ async function extractPdfText(pdfPath: string): Promise<PageText[]> {
 }
 
 /**
- * S0 预处理主入口：命中缓存直接返回，否则提取文本并写入 text.txt / pages.json
+ * 计算 PDF 的 MD5 缓存目录（S0 分流用：文本层缺失/乱码转视觉通道时须预知 cacheDir 以复用缓存）。
+ * 与 preprocessPdf 的缓存口径一致（文件字节 MD5）。
  */
-export async function preprocessPdf(pdfPath: string, cacheRoot?: string): Promise<PreprocessOutput> {
+export function pdfCacheDir(pdfPath: string, cacheRoot?: string): { md5: string; cacheDir: string } {
   const resolvedPdf = path.resolve(pdfPath);
   if (!fs.existsSync(resolvedPdf)) {
     throw new Error(`PDF 文件不存在: ${resolvedPdf}`);
   }
-
-  const buffer = fs.readFileSync(resolvedPdf);
-  const md5 = crypto.createHash('md5').update(buffer).digest('hex');
+  const md5 = crypto.createHash('md5').update(fs.readFileSync(resolvedPdf)).digest('hex');
   const baseCache = cacheRoot || path.resolve(process.cwd(), '.cache/standard-ingest');
-  const cacheDir = path.join(baseCache, md5);
+  return { md5, cacheDir: path.join(baseCache, md5) };
+}
+
+/**
+ * S0 预处理主入口：命中缓存直接返回，否则提取文本并写入 text.txt / pages.json
+ */
+export async function preprocessPdf(pdfPath: string, cacheRoot?: string): Promise<PreprocessOutput> {
+  const resolvedPdf = path.resolve(pdfPath);
+  const { md5, cacheDir } = pdfCacheDir(resolvedPdf, cacheRoot);
   const textFile = path.join(cacheDir, 'text.txt');
   const pagesFile = path.join(cacheDir, 'pages.json');
 
