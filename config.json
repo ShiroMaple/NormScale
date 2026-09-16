@@ -9,6 +9,7 @@
   "llm": {
     "timeoutMs": 60000,
     "maxRetries": 2,
+    "ingestConfigId": "k3-coding",
     "configs": [
       {
         "id": "standard",
@@ -29,6 +30,16 @@
         "thinkingEffort": "high",
         "apiKey": "KIMI_API_KEY",
         "isDefault": true
+      },
+      {
+        "id": "k3-coding",
+        "name": "K3 标准入库专用 (Kimi Coding)",
+        "provider": "Kimi",
+        "baseUrl": "https://api.kimi.com/coding/v1",
+        "model": "k3-256k",
+        "thinkingEffort": "high",
+        "apiKey": "KIMI_K3_API_KEY",
+        "isDefault": false
       }
     ],
     "pricing": {
@@ -45,6 +56,10 @@
         "outputPer1M": 54
       },
       "kimi-k3": {
+        "inputPer1M": 20,
+        "outputPer1M": 100
+      },
+      "k3-256k": {
         "inputPer1M": 20,
         "outputPer1M": 100
       }

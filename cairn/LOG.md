@@ -4,6 +4,15 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-15 · 语义保真攻关与入库管线 LLM 配置可选化（K3 接入）
+
+- 事实澄清驱动：golden 切片实为开发早期 Gemini 3.8 Flash 无门禁辅助产出，证明精细语义结构可由 LLM 达成——管线差距源于 prompt 过度保守而非模型能力上限；
+- v1.4.0 八项语义升级（`llm-extract.ts` prompt + `gates.ts`）：硬度 or_choice_group + trigger_condition、condition_adjustments 表注扫描、flattening 触发条件、晶间腐蚀 exemption + 组织类型作用域 worked example、enum_acceptance、aliases 世界知识填充、压扁公式可求值化（α 代入 + gates 表达式 lint）、公式修约 3 位；
+- v1.4.1 三项定点修复：mech 任务框架泛化（硬度表不再被"非拉伸"跳过）、7.7.1 豁免判读 worked example、溯源断言两级化（声明条款未命中→全文档命中降 WARN 不阻塞，免疫切块边界漂移）；
+- 入库管线 LLM 配置可选化：`llm.ingestConfigId` / CLI `--llm <id>` / 环境变量 `INGEST_LLM_CONFIG_ID` 三级优先级，缺省回退 isDefault；接入 K3 专用配置（k3-coding: api.kimi.com/coding/v1, k3-256k，key 仅存 .env）；AdminConsole schema 同步兼容；
+- K3 真实 E2E（GB 13296）：压扁公式/enum_acceptance/aliases/Ti 修约四项全对齐 golden；硬度"其他"行映射、表注 condition_adjustments、exemption 建模三项仍存差距（模型遵从度方差，详见专题文档对账小节）；
+- 验证就绪：ingestion 132 项、全量 68 套件 444 项 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过。
+
 ## 2026-09-15 · 残留 2+3 闭环：segmenter 路由补全与多模态视觉转录通道落地（GB 13296 乱码 PDF 入库打通）
 
 - 残留 2 修复（`segmenter.ts`）：路由关键词补 `弯曲|展平`；`inheritAncestorBlockType` 支持穿透纯标题型 other 祖先（6.5.4/6.5.5 焊接管工艺条款回归提取通道）；
@@ -14,7 +23,6 @@
 - 详情沉淀: [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)（视觉通道节 + 踩坑 11）。
 
 ## 2026-09-15 · T4 v2 提取范围扩充落地：七族通道全开 + golden 五族对账零丢失
-
 - T4 实施（`llm-extract.ts` / `gates.ts` / `segmenter.ts` / `ingest-pipeline.ts`，`ingestConfigVersion` 1.2.2）：
   1. 三新通道：process_rules（工艺/探伤/金相/腐蚀/表面，含 applies_to_grades 确定性展开挂载）、dynamic_formulas（Ti≥5×(C+N) 等，公式白名单 lint + 常数溯源）、tolerance_tables（跨标准外部引用严禁臆造，空 rules + MANUAL_REVIEW issue）；
   2. 真实 E2E 三轮收敛：property_key 注册表闭集注入 prompt（330 条命名漂移 lint → 仅余 edge_curling 1 个真新增 key）、检验一览表块排除 + 同切片 property_key 去重、meta 中文约束、子孙条款类型继承（6.11.1 表面质量正文回归通道）、类别覆盖两级制（条件适用族不再误报）；

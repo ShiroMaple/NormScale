@@ -57,6 +57,8 @@ interface AppConfigShape {
     timeoutMs?: number;
     /** 离线入库管线专用超时（非流式大 JSON 提取）；缺省 300s，独立于在线流式 timeoutMs */
     ingestTimeoutMs?: number;
+    /** 入库管线专用 LLM 配置 id（configs 中的 id）；缺省回退 isDefault 项 */
+    ingestConfigId?: string;
     configs?: LlmConfigItem[];
   };
 }
@@ -77,17 +79,37 @@ const EXTRACTABLE_TYPES: Record<string, BlockType[]> = {
   tolerance_tables: ['tolerance_table'],
 };
 
-function loadDefaultLlmConfig(): { baseUrl: string; model: string; apiKey: string; timeoutMs: number } {
+/**
+ * 解析入库管线生效的 LLM 配置。选择优先级（高到低）：
+ * 1. 显式 overrideId（CLI --llm / IngestOptions.llmConfigId）
+ * 2. 环境变量 INGEST_LLM_CONFIG_ID
+ * 3. config.json 的 llm.ingestConfigId（入库专用配置）
+ * 4. configs 中 isDefault 项（与在线业务共用）
+ */
+export function resolveIngestLlmConfig(appConfig: AppConfigShape, overrideId?: string): LlmConfigItem {
+  const configs = appConfig.llm?.configs || [];
+  const wantedId = overrideId || process.env['INGEST_LLM_CONFIG_ID'] || appConfig.llm?.ingestConfigId;
+  if (wantedId) {
+    const hit = configs.find((c) => c.id === wantedId);
+    if (!hit) {
+      throw new MissingApiKeyError(`指定的入库 LLM 配置 id "${wantedId}" 在 config.json llm.configs 中不存在（可选: ${configs.map((c) => c.id).join(', ')}）。`);
+    }
+    return hit;
+  }
+  const active = configs.find((c) => c.isDefault) || configs[0];
+  if (!active) {
+    throw new MissingApiKeyError('config.json 未配置任何 LLM 配置项 (llm.configs 为空)。');
+  }
+  return active;
+}
+
+function loadDefaultLlmConfig(overrideId?: string): { baseUrl: string; model: string; apiKey: string; timeoutMs: number } {
   const configPath = path.join(process.cwd(), 'config.json');
   let appConfig: AppConfigShape = {};
   if (fs.existsSync(configPath)) {
     appConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) as AppConfigShape;
   }
-  const configs = appConfig.llm?.configs || [];
-  const active = configs.find((c) => c.isDefault) || configs[0];
-  if (!active) {
-    throw new MissingApiKeyError('config.json 未配置任何 LLM 配置项 (llm.configs 为空)。');
-  }
+  const active = resolveIngestLlmConfig(appConfig, overrideId);
   return {
     baseUrl: active.baseUrl,
     model: active.model,
@@ -113,8 +135,8 @@ function resolveApiKey(apiKeyField: string): string {
  * 默认聊天客户端：OpenAI 兼容 /chat/completions（非流式，temperature 固定 1）
  * 单次调用不重试——重试策略由上层 callWithRetry 携带错误上下文执行
  */
-export function createDefaultChatClient(): ChatClient {
-  const { baseUrl, model, apiKey: apiKeyField, timeoutMs } = loadDefaultLlmConfig();
+export function createDefaultChatClient(configId?: string): ChatClient {
+  const { baseUrl, model, apiKey: apiKeyField, timeoutMs } = loadDefaultLlmConfig(configId);
   const endpoint = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   return async (messages: ChatMessage[], opts?: ChatCallOptions) => {
@@ -246,7 +268,7 @@ async function extractChemicalSlices(chat: ChatClient, blocks: TextBlock[]): Pro
   const userPrompt = [
     '【任务】从化学成分表文本块中逐牌号提取化学成分规则，输出切片草稿数组。',
     '【硬性要求】',
-    '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"，structure_type 按组织类型映射（' + STRUCTURE_TYPE_MAP + '），aliases 留空数组。',
+    '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"，structure_type 按组织类型映射（' + STRUCTURE_TYPE_MAP + '）。aliases：可填入该牌号的国际/历史牌号别名（模型世界知识，如 06Cr19Ni10 -> ["SUS304","TP304","0Cr18Ni9"]），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。',
     '2. 每个规定了的元素一条 numeric_range 规则：category 固定 "chemical"，property_key=元素符号（C/Si/Mn/P/S/Ni/Cr/Mo/N/Ti/Nb 等）。',
     '3. 区间严格取自原文："0.04～0.10" -> min=0.04, max=0.10；单值上限 "0.08" -> min=null, max=0.08；"—" 表示标准未规定该元素，跳过。',
     '4. "其他"列的公式型条目（如 "Ti：5（C+N）～0.70"、"Nb：10C～1.10"）不在本任务范围（由专门任务提取），不得输出；仅提取主元素列（C/Si/Mn/P/S/Ni/Cr/Mo/N 等）的数值区间。',
@@ -278,15 +300,16 @@ async function extractChemicalSlices(chat: ChatClient, blocks: TextBlock[]): Pro
 
 async function extractMechanicalSlices(chat: ChatClient, blocks: TextBlock[]): Promise<DraftSlice[]> {
   const userPrompt = [
-    '【任务】从力学性能表文本块中逐牌号提取室温力学性能规则，输出切片草稿数组。',
+    '【任务】从力学性能相关文本块中提取力学性能规则（室温拉伸性能 + 硬度多选一等），输出切片草稿数组。文本块可能是拉伸性能表、硬度表或含力学条款的正文块——按块内容类型分别处理，不得因"非拉伸"跳过硬度表。',
     '【硬性要求】',
-    '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"，aliases 留空数组。',
-    '2. 每个力学指标一条 numeric_range 规则：category 固定 "mechanical"。property_key 映射：抗拉强度 Rm -> tensile_strength（unit "MPa"）；规定塑性延伸强度 Rp0.2 -> yield_strength_rp02（unit "MPa"）；断后伸长率 A -> elongation_A（unit "%"）。',
-    '3. 数值严格取自原文区间："520" -> min=520, max=null；"35" -> min=35, max=null；"35~50" -> min=35, max=50。忽略密度与推荐热处理制度列。',
-    '4. requirement_level 固定 "MANDATORY"，rule_id 格式 "MECH_{spec_key}_{指标}"，display_name 如 "抗拉强度 (Rm)"。',
-    '5. 每条规则 source_clause = 所在文本块的【条款号】。',
-    '【输出 JSON 结构】{"slices": [{"spec_key": string, "primary_grade": string, "display_name": string, "aliases": [], "mechanical_rules": [{"rule_id": string, "category": "mechanical", "property_key": string, "display_name": string, "rule_type": "numeric_range", "requirement_level": "MANDATORY", "criteria": {"min": number|null, "max": number|null, "unit": string}, "source_clause": string}]}]}',
-    '【力学性能表块】',
+    '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"；aliases：可填入该牌号的国际/历史牌号别名（模型世界知识，如 06Cr19Ni10 -> ["SUS304","TP304","0Cr18Ni9"]），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。',
+    '2. 拉伸性能（numeric_range）：category 固定 "mechanical"。property_key 映射：抗拉强度 Rm -> tensile_strength（unit "MPa"）；规定塑性延伸强度 Rp0.2 -> yield_strength_rp02（unit "MPa"）；断后伸长率 A -> elongation_A（unit "%"）。数值严格取自原文区间："520" -> min=520, max=null；"35" -> min=35, max=null；"35~50" -> min=35, max=50。忽略密度与推荐热处理制度列。',
+    '3. 表注扫描（强制，不得遗漏）：块内表注/条注中的工艺偏差修正（如"热挤压钢管抗拉强度允许降低20MPa"）必须扫描并输出——写入对应指标规则的 criteria.condition_adjustments=[{when, min_offset 或 max_offset, note}]；when 用 JS 表达式惯例 "ctx.header.manufacturing_process == \'<工艺>\'"（冷拔->cold_drawn、热轧->hot_rolled、热挤压->hot_extrusion），min_offset/max_offset 为带符号修正值（降低为负），note 为原文摘要。无此类注记时不输出该字段。',
+    '4. 硬度表（or_choice_group，强制）：当文本块为硬度表（含 HBW/HRB/HV 列）或条款提及硬度试验时，必须为适用牌号各输出一条 or_choice_group 规则：property_key="hardness"，category "mechanical"，requirement_level 按条款（协商/条件触发项用 CONDITIONAL 或 OPTIONAL_AGREED），trigger_condition 取对应条款中的壁厚/外径前置条件（JS 表达式惯例，如 "ctx.header.dimensions.wall_thickness_mm >= 1.7"），criteria={options:[{sub_key:"HRB"|"HBW"|"HV", rule_type:"numeric_range", criteria:{max,unit}}]}，option 数值严格取自硬度表原文。硬度表按组织类型（如"奥氏体型""其他""铁素体型"行）而非逐牌号给值时：将该行值映射到化学表对应组织类型的全部牌号切片（结合组织类型列判读），每切片输出一条。',
+    '5. requirement_level 固定 "MANDATORY"（硬度等协商/条件项除外，见第 4 条），rule_id 格式 "MECH_{spec_key}_{指标}"，display_name 如 "抗拉强度 (Rm)"。',
+    '6. 每条规则 source_clause = 所在文本块的【条款号】。',
+    '【输出 JSON 结构】{"slices": [{"spec_key": string, "primary_grade": string, "display_name": string, "aliases": string[], "mechanical_rules": [{"rule_id": string, "category": "mechanical", "property_key": string, "display_name": string, "rule_type": "numeric_range" | "or_choice_group", "requirement_level": string, "trigger_condition"?: string, "criteria": object, "source_clause": string}]}]}',
+    '【力学性能相关块】',
     blockSection(blocks),
   ].join('\n');
   const parsed = await callWithRetry(chat, 'slices_mechanical', SYSTEM_PROMPT, userPrompt);
@@ -421,24 +444,30 @@ async function extractProcessRules(
   const userPrompt = [
     '【任务】从工艺/无损检测条款文本块中提取工艺性能/金相/腐蚀/无损检测/表面质量规则，输出规则数组。',
     '【硬性要求】',
-    '1. 每条规则字段：rule_id（不含牌号，如 "PROC_FLATTENING"、"NDT_ULTRASONIC"）、category（process 工艺性能 / metallographic 金相组织 / corrosion 耐腐蚀 / ndt 无损检测 / surface 表面质量）、property_key（英文蛇形，语义匹配须取自下方闭集清单）、display_name（中文）、rule_type、requirement_level（MANDATORY/CONDITIONAL/OPTIONAL_AGREED）、criteria（按 rule_type 取值，见第 3 条）、source_clause（严格等于所在文本块的【条款号】）、applies_to_grades。',
-    '2. applies_to_grades：规则适用的牌号/统一代号数组（如 ["06Cr18Ni11Ti","S32168"]）；标准未限定牌号时为 "ALL"。严禁输出原文未出现的牌号。',
+    '1. 每条规则字段：rule_id（不含牌号，如 "PROC_FLATTENING"、"NDT_ULTRASONIC"）、category（process 工艺性能 / metallographic 金相组织 / corrosion 耐腐蚀 / ndt 无损检测 / surface 表面质量）、property_key（英文蛇形，语义匹配须取自下方闭集清单）、display_name（中文）、rule_type、requirement_level（MANDATORY/CONDITIONAL/OPTIONAL_AGREED/EXEMPT）、criteria（按 rule_type 取值，见第 3 条）、source_clause（严格等于所在文本块的【条款号】）、applies_to_grades、trigger_condition?（见第 10 条）、description?（原文公式/外部引用等补充说明）。',
+    '2. applies_to_grades：规则适用的牌号/统一代号数组（如 ["06Cr18Ni11Ti","S32168"]）；标准未限定牌号时为 "ALL"。严禁输出原文未出现的牌号；条款限定组织类型作用域时按第 9 条判读。',
     '3. rule_type 与 criteria 对照（数值/标准号必须与原文逐字一致，原文未给出的字段不得输出）：',
-    '   - qualitative_enum（晶间腐蚀方法、超声/涡流验收等级等）：criteria={method?, test_standard, required_level?, expected?}',
+    '   - qualitative_enum（晶间腐蚀方法等定性评级）：criteria={method?, test_standard, required_level?, expected?}',
+    '   - enum_acceptance（验收等级类 NDT，如超声/涡流验收等级 U2/E3H）：criteria={required_level, test_standard}',
+    '   - exemption（豁免条款，见第 9 条）：criteria={reason}',
     '   - alternative_group（水压/涡流等替代检验组，强制结构见第 5 条）：criteria={group_logic:"AT_LEAST_ONE_PASS", candidates:[{candidate_key, display_name, test_standard, required_level?, calc_pressure_formula?, max_pressure_cap?, min_holding_time_s?, criteria_description?}]}',
     '   - or_choice_group（硬度 HRB/HBW/HV 多选一）：criteria={options:[{sub_key, rule_type:"numeric_range", criteria:{min,max,unit}}]}',
     '   - qualitative_and_numeric（扩口等）：criteria={cone_angle_deg?, flaring_rate_min_percent?, expected_visual_result, test_standard}',
-    '   - dynamic_formula_pass（压扁等）：criteria={formula_distance_H, expected_visual_result, test_standard}',
+    '   - dynamic_formula_pass（压扁等，公式可求值化见第 7 条）：criteria={formula_distance_H, expected_visual_result, test_standard}',
     '   - qualitative_pass（表面质量等）：criteria={expected}',
-    '   - numeric_range（表面粗糙度等，强制结构见第 7 条）：criteria={min,max,unit,rounding_decimals?}',
-    '4. 公式细节引用外部标准时（如压扁间距公式），不得臆造公式，在 criteria_description 中说明引用出处即可。',
+    '   - numeric_range（表面粗糙度等，强制结构见第 8 条）：criteria={min,max,unit,rounding_decimals?}',
+    '4. 公式细节引用外部标准时（如压扁间距公式），不得臆造公式，在 criteria_description/description 中说明引用出处即可。',
     '5. 替代/组合检验结构保真（强制）：互为替代或组合的检验（典型如水压试验与涡流检测替代组）必须输出为一条 alternative_group 规则，candidates 逐项列出各替代方案——字段语义：calc_pressure_formula=试验压力计算公式（如 "P=2SR/D"），max_pressure_cap=最大试验压力上限（MPa），min_holding_time_s=最短稳压时间（s），required_level=探伤验收等级（如 E2H/U2），criteria_description=该方案判定要点原文摘要。严禁把替代组拆成独立的多条规则（如单独一条水压 qualitative_and_numeric + 单独一条涡流 qualitative_enum）。golden 范式示例（结构须对齐）：',
     '   {"rule_id":"NDT_TIGHTNESS_GROUP","category":"ndt","property_key":"pressure_tightness","display_name":"致密性/水压试验组","rule_type":"alternative_group","requirement_level":"MANDATORY","criteria":{"group_logic":"AT_LEAST_ONE_PASS","candidates":[{"candidate_key":"hydraulic_test","display_name":"逐根液压试验","test_standard":"GB/T 241","max_pressure_cap":20,"min_holding_time_s":10,"criteria_description":"试验压力按公式计算，最大试验压力不超过 20MPa，稳压时间不少于 10s 无渗漏"},{"candidate_key":"eddy_current_test","display_name":"高等级涡流探伤替代","test_standard":"GB/T 7735-2016","required_level":"E2H","criteria_description":"外径<=25mm对比样管人工缺陷通孔0.8mm；外径>25mm符合 E2H 级"}]},"applies_to_grades":"ALL"}',
     '6. 外部引用条款（原文形如"应符合 NB/T 47019.1—2021 中 7.11.4 的规定"，本文件未给出具体数值/阈值）：严禁编造阈值；输出 qualitative_pass（criteria={expected:"CLEAN_PASS"}）或 qualitative_enum，并在 description/criteria_description 中注明外部引用来源（如 "引用 NB/T 47019.1—2021 7.11.4，阈值以被引标准为准"）。',
-    '7. surface_roughness 结构保真：本文件给出数值时必须输出 numeric_range（unit 固定 "μm"，rounding_decimals 取原文小数位）；仅外部引用未给出数值时按第 6 条输出定性规则并注明引用来源。',
-    '8. 无判定准则的兜底协商条款不输出规则：仅声明"经供需双方协商可采用其他方法/由供需双方协商确定"而无任何验收指标、等级或阈值的条款（如"可采用其他无损检测方法和验收等级"），不是检验规则，严禁输出。',
+    '7. 压扁公式可求值化（强制）：原文 "H=(1+α)S/(α+S/D)" 一类含标准给定系数（如 α=0.09）的公式，formula_distance_H 必须代入系数并转换为 JS 可求值表达式（仅 S/D 变量、数字、四则运算符与括号，显式乘号），如 "(1 + 0.09) * S / (0.09 + S / D)"；原文公式形态在 description 中保留（如 "压扁间距 H=(1+α)S/(α+S/D)，α=0.09"）。',
+    '8. surface_roughness 结构保真：本文件给出数值时必须输出 numeric_range（unit 固定 "μm"，rounding_decimals 取原文小数位）；仅外部引用未给出数值时按第 6 条输出定性规则并注明引用来源。',
+    '9. 组织类型作用域与豁免（强制，附判读 worked example）：① 条款限定组织类型作用域（如"其他奥氏体型钢管""铁素体型钢管"）时，applies_to_grades 必须只含该组织类型的牌号（结合化学表"组织类型"列判读），严禁给铁素体型牌号输出奥氏体型专属规则；② 豁免条款（"X、Y 等牌号可不进行/无需进行某试验"）：为每个被豁免牌号各输出一条 rule_type="exemption"、requirement_level="EXEMPT"、property_key 与被豁免检验项一致的规则，criteria={reason:原文依据句}。',
+    '【判读 worked example】输入条款："牌号为 07Cr19Ni10、16Cr23Ni13、20Cr25Ni20、07Cr17Ni12Mo2、07Cr19Ni11Ti、07Cr18Ni11Nb 的钢管可不进行晶间腐蚀试验，其他奥氏体型钢管应进行晶间腐蚀试验"。判读逻辑：前半句列名的 6 个牌号是豁免对象；后半句"其他奥氏体型钢管"限定了正常检验规则的作用域——只覆盖奥氏体型牌号中除上述 6 个以外的牌号，铁素体型牌号（如 06Cr13、10Cr17、008Cr27Mo）既不在豁免名单也不在该作用域内，不输出任何规则。期望输出：① 6 条 exemption 规则（每个豁免牌号一条，applies_to_grades=[该牌号]，criteria={reason:"标准 7.7.1 明确规定该牌号可不进行晶间腐蚀试验"}）；② 1 条正常检验规则（如 {"rule_id":"CORR_INTERGRANULAR","category":"corrosion","property_key":"intergranular_corrosion","rule_type":"qualitative_enum"|"qualitative_pass","requirement_level":"MANDATORY","criteria":{"method":"Method_E","test_standard":"GB/T 4334-2020","expected":"NO_CORROSION_TREND"},"applies_to_grades":[其余全部奥氏体型牌号，不含铁素体型]})；③ 铁素体型牌号零规则。常见错误（严禁）：给豁免牌号输出 MANDATORY 检验规则；把正常规则的 applies_to_grades 写成 ALL（会误挂铁素体）。',
+    '10. 前置条件 trigger_condition（强制）：条款含"壁厚/外径 ≤/≥ X 时进行/不进行"类前置条件时，必须输出 trigger_condition（JS 表达式惯例：壁厚 ctx.header.dimensions.wall_thickness_mm、外径 ctx.header.dimensions.outer_diameter_mm），如"壁厚不大于 10mm" -> "ctx.header.dimensions.wall_thickness_mm <= 10"。',
+    '11. 协商/条件项区分（强制，防误伤）：无判定准则的纯兜底协商条款不输出规则（仅声明"经供需双方协商可采用其他方法"而无任何验收指标、等级或阈值者，如"可采用其他无损检测方法和验收等级"）；但带有具体指标表/验收等级的协商或条件触发项必须输出——requirement_level 用 OPTIONAL_AGREED（供需协商并在合同中注明）或 CONDITIONAL（尺寸等条件触发），并携带 trigger_condition 与具体 criteria（如硬度试验"壁厚≥1.7mm 可做布氏/洛氏/维氏硬度，值符合表N" -> or_choice_group + trigger_condition + CONDITIONAL）。',
     ...catalogLines,
-    '【输出 JSON 结构】{"rules": [{"rule_id": string, "category": string, "property_key": string, "display_name": string, "rule_type": string, "requirement_level": string, "criteria": object, "source_clause": string, "applies_to_grades": string[] | "ALL"}]}',
+    '【输出 JSON 结构】{"rules": [{"rule_id": string, "category": string, "property_key": string, "display_name": string, "rule_type": string, "requirement_level": string, "trigger_condition"?: string, "description"?: string, "criteria": object, "source_clause": string, "applies_to_grades": string[] | "ALL"}]}',
     '【条款块】',
     blockSection(blocks),
   ].join('\n');
@@ -461,7 +490,8 @@ async function extractDynamicFormulas(
     '1. 仅提取限值引用其他元素的公式型条目；"其他"列中的普通数值范围（如 "N：0.10～0.16"、"Cu：0.50～1.00"）不在本任务范围，不得输出。',
     '2. formula_min/formula_max 使用项目表达式惯例：元素变量写 ctx.chemical.<元素符号>（如 "5 * (ctx.chemical.C + ctx.chemical.N)"）；公式中的数值常量必须与原文逐字一致（如 5、0.70）。',
     '3. 每条规则：rule_id（不含牌号，如 "CHEM_TI_STABILIZED"）、category 固定 "chemical"、property_key=元素符号（语义匹配须取自下方闭集清单）、display_name（中文）、rule_type 固定 "dynamic_expression"、criteria={formula_min, formula_max, min, max, unit:"%", rounding_decimals, note?}、source_clause（严格等于所在文本块的【条款号】）、applies_to_grades（该公式行的牌号/统一代号数组，或 "ALL"）。',
-    '4. 原文未给出动态下限时 formula_min=null 且 min=null；未给出上限时 formula_max=null 且 max=null；"—"（标准未规定）跳过。',
+    '4. rounding_decimals 固定取 3（公式型规则按判定精度统一 3 位修约，与原文小数位无关，如原文上限 0.70 仍为 3）。',
+    '5. 原文未给出动态下限时 formula_min=null 且 min=null；未给出上限时 formula_max=null 且 max=null；"—"（标准未规定）跳过。',
     ...catalogLines,
     '【输出 JSON 结构】{"rules": [{"rule_id": string, "category": "chemical", "property_key": string, "display_name": string, "rule_type": "dynamic_expression", "criteria": {"formula_min": string|null, "formula_max": string|null, "min": number|null, "max": number|null, "unit": "%", "rounding_decimals": number}, "source_clause": string, "applies_to_grades": string[] | "ALL"}]}',
     '【化学成分表块】',

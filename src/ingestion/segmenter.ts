@@ -90,7 +90,7 @@ export function classifyBlock(clauseRef: string, text: string): BlockType {
   if (isTableRef) {
     if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间|无损|射线|渗透|致密|晶粒度|金相|粗糙度|表面质量|弯曲|展平/.test(text)) return 'process_ndt_clauses';
     if (/化学成分|熔炼分析/.test(text) && looksLikeGradeTable(text)) return 'chemistry_table';
-    if (/力学性能|抗拉强度|屈服强度|断后伸长率|拉伸/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
+    if (/力学性能|抗拉强度|屈服强度|断后伸长率|拉伸|硬度/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
     // 公差表仅从正文表（非附录）路由，且必须具备外径/壁厚语境
     if (!isAppendix && /允许偏差|公称外径|公称壁厚/.test(text) && /外径|壁厚/.test(text)) return 'tolerance_table';
     return 'other';
@@ -98,7 +98,7 @@ export function classifyBlock(clauseRef: string, text: string): BlockType {
 
   if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间腐蚀|无损|射线|渗透|致密|晶粒度|金相|粗糙度|表面质量|弯曲|展平/.test(text)) return 'process_ndt_clauses';
   if (/化学成分|熔炼分析/.test(text) && looksLikeGradeTable(text)) return 'chemistry_table';
-  if (/力学性能|抗拉强度|屈服强度|断后伸长率/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
+  if (/力学性能|抗拉强度|屈服强度|断后伸长率|拉伸|硬度/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
   return 'other';
 }
 

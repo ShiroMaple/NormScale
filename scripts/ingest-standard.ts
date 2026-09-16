@@ -25,12 +25,13 @@ interface CliArgs {
   stagingRoot?: string;
   families?: string[];
   noVision: boolean;
+  llmConfigId?: string;
   force: boolean;
 }
 
 const USAGE =
   '用法:\n' +
-  '  node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--no-vision] [--force]\n' +
+  '  node --experimental-strip-types scripts/ingest-standard.ts <pdf路径> [--out <正式库根>] [--staging-root <暂存根>] [--families <族,…>] [--llm <配置id>] [--no-vision] [--force]\n' +
   '  node --experimental-strip-types scripts/ingest-standard.ts --promote <STD_DIR 或 staging 路径> [--out <正式库根>] [--force]';
 
 function parseArgs(argv: string[]): CliArgs {
@@ -59,6 +60,12 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (arg === '--no-vision') {
       // 关闭多模态视觉转录通道：无文本层/乱码退回显式报错
       args.noVision = true;
+    } else if (arg === '--llm') {
+      // 指定入库专用 LLM 配置 id（config.json llm.configs 中的 id）
+      args.llmConfigId = argv[++i];
+      if (!args.llmConfigId) {
+        throw new Error('--llm 需要参数（config.json 中的配置 id）');
+      }
     } else if (arg === '--force') {
       args.force = true;
     } else if (!arg.startsWith('--') && args.pdfPath.length === 0) {
@@ -111,6 +118,7 @@ async function runIngest(args: CliArgs): Promise<void> {
     stagingRoot: args.stagingRoot,
     declaredFamilies: args.families,
     noVision: args.noVision,
+    llmConfigId: args.llmConfigId,
     force: args.force,
     onProgress: (msg) => console.log('  ▸ ' + msg),
   });

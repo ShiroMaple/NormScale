@@ -17,11 +17,12 @@ import type { DraftClause, DraftRule, DraftSlice, DraftToleranceTable, TextBlock
       dynamic_expression 公式白名单 lint（仅 ctx.chemical.<元素>/数字/四则/括号）；
       applies_to_grades 牌号适用性 ⊆ 切片牌号全集（防臆造牌号）；
       公差表结构 lint（外部引用严禁携带臆造 rules）
-   3. 溯源断言：每条 numeric 规则的 min/max 必须在其声明 source_clause 对应的
-      原文块文本中字面出现（去除空白后包含），否则判 hallucination；
-      dynamic_expression 公式中的数值常量同样必须在原文中字面出现（公式数值溯源）
+   3. 溯源断言（两级，防幻觉核心）：每条 numeric 规则的 min/max 必须先在其声明 source_clause 对应的
+      原文块文本中字面出现（去除空白后包含）；未命中再查全文档拼接文本——命中记 WARN（块边界漂移，
+      溯源弱化，供人工知悉），全文档也未命中才判 hallucination（ERROR）；dynamic_expression 公式中的
+      数值常量同样两级溯源（公式数值溯源）
    4. 对账：原文牌号表行数 vs 生成切片数
-   任何失败显式报出并标记 MANUAL_REVIEW，绝不静默通过
+   任何 ERROR 失败显式报出并标记 MANUAL_REVIEW；WARN 为提示项不阻塞入库，单独成节
    ========================================================================== */
 
 export type GateIssueCode =
@@ -40,11 +41,16 @@ export type GateIssueCode =
   | 'TRACE_SOURCE_CLAUSE'
   | 'TRACE_NUMBER_LITERAL'
   | 'TRACE_FORMULA_LITERAL'
+  | 'TRACE_BLOCK_BOUNDARY'
   | 'EXTERNAL_TOLERANCE_REFERENCE'
   | 'RECONCILE_GRADE_COUNT';
 
 export interface GateIssue {
-  severity: 'ERROR';
+  /**
+   * ERROR：阻塞项，转 MANUAL_REVIEW；
+   * WARN：提示项（如溯源块边界漂移），不阻塞入库、单独成节供人工知悉
+   */
+  severity: 'ERROR' | 'WARN';
   code: GateIssueCode;
   message: string;
 }
@@ -85,6 +91,12 @@ export interface GateInput {
   toleranceTables?: DraftToleranceTable[];
   /** v2 牌号适用性展开后未挂载到任何切片的规则（S2 移交，严禁静默丢弃，须拦截） */
   unmountedRules?: DraftRule[];
+  /**
+   * v1.4.1 两级溯源兜底：全部切块文本的拼接（由管线传入）。溯源断言先查声明条款块文本，
+   * 未命中再查全文档拼接文本——命中则记 WARN（块边界漂移，溯源弱化），全文档也未命中才判 ERROR。
+   * 缺省时保持单级断言（纯函数缺省行为不变）
+   */
+  fullDocumentText?: string;
 }
 
 export interface GateResult {
@@ -185,6 +197,10 @@ function collectUnits(rule: DraftRule): string[] {
 // 剥离全部合法 token 后仍有残留即判非法（防注入、防未知变量、防函数调用）
 const FORMULA_ALLOWED_TOKEN_RE = /ctx\.chemical\.[A-Z][a-z]?|\d+(?:\.\d+)?|[+\-*/()\s]/g;
 
+// 压扁间距公式白名单 token：S（壁厚）/ D（外径）快捷变量 | 数字 | 四则运算符 | 括号 | 空白
+// （与引擎 SafeMathEvaluator 的快捷变量映射一致，α 等希腊字母必须已代入为数值）
+const DISTANCE_FORMULA_ALLOWED_TOKEN_RE = /[SD]|\d+(?:\.\d+)?|[+\-*/()\s]/g;
+
 function lintFormula(ref: string, formula: unknown, issue: (code: GateIssueCode, message: string) => void): void {
   if (formula === undefined || formula === null) return;
   if (typeof formula !== 'string' || formula.trim().length === 0) {
@@ -196,6 +212,21 @@ function lintFormula(ref: string, formula: unknown, issue: (code: GateIssueCode,
     issue(
       'LINT_FORMULA',
       `${ref} 公式 "${formula}" 含白名单外内容 "${remainder}"（仅允许 ctx.chemical.<元素符号>、数字与四则运算符/括号）`,
+    );
+  }
+}
+
+/** 压扁间距公式 lint：formula_distance_H 必须非空且仅含 S/D 变量、数字与四则运算符/括号（可求值化检查） */
+function lintDistanceFormula(ref: string, formula: unknown, issue: (code: GateIssueCode, message: string) => void): void {
+  if (typeof formula !== 'string' || formula.trim().length === 0) {
+    issue('LINT_FORMULA', `${ref} dynamic_formula_pass 规则缺少非空 formula_distance_H`);
+    return;
+  }
+  const remainder = formula.replace(DISTANCE_FORMULA_ALLOWED_TOKEN_RE, '');
+  if (remainder.length > 0) {
+    issue(
+      'LINT_FORMULA',
+      `${ref} 压扁间距公式 "${formula}" 含白名单外内容 "${remainder}"（仅允许 S/D 变量、数字与四则运算符/括号；希腊字母系数须代入数值）`,
     );
   }
 }
@@ -213,6 +244,10 @@ export function runGates(input: GateInput): GateResult {
   const issues: GateIssue[] = [];
   const issue = (code: GateIssueCode, message: string): void => {
     issues.push({ severity: 'ERROR', code, message });
+  };
+  // WARN 通道：提示性发现（块边界漂移等），不阻塞入库、不入 requiresManualReview 判定
+  const warn = (code: GateIssueCode, message: string): void => {
+    issues.push({ severity: 'WARN', code, message });
   };
 
   // 1. Zod 契约校验
@@ -336,6 +371,12 @@ export function runGates(input: GateInput): GateResult {
         }
       }
 
+      // 压扁间距公式 lint：formula_distance_H 必须可求值（S/D 变量、数字、四则/括号；希腊字母系数已代入）
+      if (rule.rule_type === 'dynamic_formula_pass') {
+        const c = rule.criteria as { formula_distance_H?: unknown };
+        lintDistanceFormula(ref, c.formula_distance_H, issue);
+      }
+
       for (const unit of collectUnits(rule)) {
         if (!UNIT_WHITELIST.has(unit)) {
           issue('LINT_UNIT', `${ref} 单位 "${unit}" 不在白名单内`);
@@ -409,7 +450,11 @@ export function runGates(input: GateInput): GateResult {
     }
   }
 
-  // 3. 溯源断言（防幻觉核心）
+  // 3. 溯源断言（防幻觉核心，两级）
+  // ① 声明条款块文本命中 -> 通过；② 未命中则查全文档拼接文本（跨页续表/块边界漂移场景，
+  //   提取模型读完整块而 gates 索引被内嵌标题切分）：命中记 WARN（溯源弱化，供人工知悉）；
+  // ③ 全文档也未命中 -> ERROR（真幻觉）。缺省无全文档文本时保持单级行为
+  const fullDocumentText = typeof input.fullDocumentText === 'string' ? input.fullDocumentText : '';
   for (const slice of validSlices) {
     for (const rule of slice.evaluation_rules) {
       const needsTrace =
@@ -432,15 +477,23 @@ export function runGates(input: GateInput): GateResult {
         for (const formula of [c.formula_min, c.formula_max]) {
           if (typeof formula !== 'string') continue;
           for (const value of extractFormulaNumberLiterals(formula)) {
-            if (!literallyContains(sourceText, value)) {
-              issue('TRACE_FORMULA_LITERAL', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 公式 "${formula}" 中常量 ${value} 未在其声明来源条款 ${rule.source_clause} 的原文中字面出现，判为幻觉`);
+            if (literallyContains(sourceText, value)) continue;
+            const detail = `切片 ${slice.spec_key} 规则 ${rule.rule_id} 公式 "${formula}" 中常量 ${value} 未在其声明来源条款 ${rule.source_clause} 的原文中字面出现，判为幻觉`;
+            if (fullDocumentText.length > 0 && literallyContains(fullDocumentText, value)) {
+              warn('TRACE_BLOCK_BOUNDARY', `${detail}——但在全文档拼接文本中命中：疑似切块边界漂移，溯源弱化，转人工知悉`);
+            } else {
+              issue('TRACE_FORMULA_LITERAL', detail);
             }
           }
         }
       } else {
         for (const value of collectTraceableValues(rule)) {
-          if (!literallyContains(sourceText, value)) {
-            issue('TRACE_NUMBER_LITERAL', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 数值 ${value} 未在其声明来源条款 ${rule.source_clause} 的原文中字面出现，判为幻觉`);
+          if (literallyContains(sourceText, value)) continue;
+          const detail = `切片 ${slice.spec_key} 规则 ${rule.rule_id} 数值 ${value} 未在其声明来源条款 ${rule.source_clause} 的原文中字面出现，判为幻觉`;
+          if (fullDocumentText.length > 0 && literallyContains(fullDocumentText, value)) {
+            warn('TRACE_BLOCK_BOUNDARY', `${detail}——但在全文档拼接文本中命中：疑似切块边界漂移，溯源弱化，转人工知悉`);
+          } else {
+            issue('TRACE_NUMBER_LITERAL', detail);
           }
         }
       }
@@ -452,6 +505,7 @@ export function runGates(input: GateInput): GateResult {
     issue('RECONCILE_GRADE_COUNT', `原文牌号表行数(${input.expectedGradeRows})与生成切片数(${input.slices.length})不一致`);
   }
 
-  const passed = issues.length === 0;
+  // passed 只看 ERROR：WARN（块边界漂移等提示）不阻塞入库、不转 MANUAL_REVIEW
+  const passed = issues.every((i) => i.severity !== 'ERROR');
   return { passed, requiresManualReview: !passed, issues };
 }

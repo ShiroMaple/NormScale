@@ -363,6 +363,66 @@ describe('S3 质量门禁：溯源断言（防幻觉）', () => {
     const result = runGates(makeGateInput({ slices: [slice] }));
     expect(result.issues.some((i) => i.code === 'TRACE_SOURCE_CLAUSE')).toBe(true);
   });
+
+  it('两级溯源①：声明条款块未命中但全文档拼接文本命中 -> WARN（块边界漂移），passed 仍 true', () => {
+    // 模拟跨页续表：值 515 存在于全文档（表4 续块），但声明条款"表4"索引只剩残段
+    const index = { 表4: '表4 力学性能（续前页）\n组织类型 牌号 Rm Rp0.2 A' };
+    const fullDocumentText = '表4 力学性能\n16 S31653 022Cr17Ni12Mo2N 515 205 35\n表4 力学性能（续前页）\n组织类型 牌号 Rm Rp0.2 A';
+    const slice = makeSlice({
+      evaluation_rules: [
+        makeRule({ rule_id: 'MECH_S31653_RM', category: 'mechanical', property_key: 'tensile_strength', criteria: { min: 515, max: null, unit: 'MPa' }, source_clause: '表4' }),
+      ],
+    });
+    const result = runGates(makeGateInput({ slices: [slice], clauseTextIndex: index, declaredFamilies: ['mechanical'], fullDocumentText }));
+    const warnIssue = result.issues.find((i) => i.code === 'TRACE_BLOCK_BOUNDARY');
+    expect(warnIssue).toBeDefined();
+    expect(warnIssue!.severity).toBe('WARN');
+    expect(warnIssue!.message).toContain('块边界漂移');
+    expect(result.issues.some((i) => i.code === 'TRACE_NUMBER_LITERAL')).toBe(false);
+    expect(result.passed).toBe(true);
+    expect(result.requiresManualReview).toBe(false);
+  });
+
+  it('两级溯源②：声明条款与全文档拼接文本均未命中 -> 维持 ERROR（真幻觉）', () => {
+    const index = { 表4: '表4 力学性能\n1 06Cr19Ni10 S30408 520 205 35' };
+    const fullDocumentText = '表4 力学性能\n1 06Cr19Ni10 S30408 520 205 35\n7.4 力学性能';
+    const slice = makeSlice({
+      evaluation_rules: [
+        makeRule({ rule_id: 'MECH_X_RM', category: 'mechanical', property_key: 'tensile_strength', criteria: { min: 999, max: null, unit: 'MPa' }, source_clause: '表4' }),
+      ],
+    });
+    const result = runGates(makeGateInput({ slices: [slice], clauseTextIndex: index, declaredFamilies: ['mechanical'], fullDocumentText }));
+    expect(result.issues.some((i) => i.code === 'TRACE_NUMBER_LITERAL' && i.severity === 'ERROR')).toBe(true);
+    expect(result.issues.some((i) => i.code === 'TRACE_BLOCK_BOUNDARY')).toBe(false);
+    expect(result.passed).toBe(false);
+  });
+
+  it('两级溯源③：未提供全文档文本时保持单级行为（未命中即 ERROR）', () => {
+    const index = { 表4: '表4 力学性能（续前页）' };
+    const slice = makeSlice({
+      evaluation_rules: [
+        makeRule({ rule_id: 'MECH_X_RM', category: 'mechanical', property_key: 'tensile_strength', criteria: { min: 515, max: null, unit: 'MPa' }, source_clause: '表4' }),
+      ],
+    });
+    const result = runGates(makeGateInput({ slices: [slice], clauseTextIndex: index, declaredFamilies: ['mechanical'] }));
+    expect(result.issues.some((i) => i.code === 'TRACE_NUMBER_LITERAL')).toBe(true);
+    expect(result.issues.some((i) => i.code === 'TRACE_BLOCK_BOUNDARY')).toBe(false);
+  });
+
+  it('两级溯源④：公式常量同样两级（声明条款未命中、全文档命中 -> WARN 而非 TRACE_FORMULA_LITERAL）', () => {
+    const index = { 表1: '表1 化学成分（残段，无 Ti 行）' };
+    const fullDocumentText = '表1 化学成分\n15 06Cr18Ni11Ti S32168 — Ti：5（C+N）～0.70';
+    const tiRule = makeRule({
+      rule_id: 'CHEM_TI', category: 'chemical', property_key: 'Ti', rule_type: 'dynamic_expression',
+      criteria: { formula_min: '5 * (ctx.chemical.C + ctx.chemical.N)', formula_max: null, min: null, max: 0.7, unit: '%', rounding_decimals: 3 },
+      source_clause: '表1',
+    });
+    const slice = makeSlice({ evaluation_rules: [tiRule] });
+    const result = runGates(makeGateInput({ slices: [slice], clauseTextIndex: index, declaredFamilies: ['chemical'], fullDocumentText }));
+    expect(result.issues.some((i) => i.code === 'TRACE_BLOCK_BOUNDARY' && i.severity === 'WARN')).toBe(true);
+    expect(result.issues.some((i) => i.code === 'TRACE_FORMULA_LITERAL')).toBe(false);
+    expect(result.passed).toBe(true);
+  });
 });
 
 describe('S3 质量门禁：牌号行数对账', () => {

@@ -278,3 +278,24 @@ describe('公差表数值字段确定性纠偏（ingestConfigVersion 1.3.5）', 
     expect(rule['note']).toBe('>6～10 阶梯'); // 非数值字段不动
   });
 });
+
+describe('入库管线 LLM 配置选择（resolveIngestLlmConfig）', () => {
+  const configs = [
+    { id: 'standard', name: '标准配置', provider: 'Moonshot', baseUrl: 'https://a', model: 'm1', apiKey: 'KIMI_API_KEY', isDefault: false },
+    { id: 'highspeed', name: '高速配置', provider: 'Moonshot', baseUrl: 'https://b', model: 'm2', apiKey: 'KIMI_API_KEY', isDefault: true },
+    { id: 'k3-coding', name: 'K3 入库专用', provider: 'Kimi', baseUrl: 'https://c', model: 'k3-256k', apiKey: 'KIMI_K3_API_KEY', isDefault: false },
+  ];
+  const appConfig = { llm: { configs } };
+
+  it('优先级：显式 override > ingestConfigId > isDefault', async () => {
+    const { resolveIngestLlmConfig } = await import('@/ingestion/llm-extract');
+    expect(resolveIngestLlmConfig(appConfig as never, 'k3-coding').model).toBe('k3-256k');
+    expect(resolveIngestLlmConfig({ llm: { configs, ingestConfigId: 'k3-coding' } } as never).model).toBe('k3-256k');
+    expect(resolveIngestLlmConfig(appConfig as never).model).toBe('m2');
+  });
+
+  it('指定不存在的 id 显式报错并列出可选项', async () => {
+    const { resolveIngestLlmConfig } = await import('@/ingestion/llm-extract');
+    expect(() => resolveIngestLlmConfig(appConfig as never, 'nope')).toThrow(/nope.*standard/);
+  });
+});

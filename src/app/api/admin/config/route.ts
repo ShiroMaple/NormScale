@@ -25,6 +25,9 @@ const AdminConfigSchema = z.object({
   llm: z.object({
     timeoutMs: z.number().min(1000).max(600000),
     maxRetries: z.number().min(0).max(5),
+    /** 入库管线专用超时（离线非流式提取）与专用 LLM 配置 id（可选，缺省回退 isDefault） */
+    ingestTimeoutMs: z.number().min(1000).max(3600000).optional(),
+    ingestConfigId: z.string().min(1).optional(),
     configs: z.array(LlmConfigItemSchema).min(1),
     pricing: z.record(
       z.object({

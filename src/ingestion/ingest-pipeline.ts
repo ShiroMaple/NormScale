@@ -41,7 +41,12 @@ import type { RenderPagesFn } from './vision-transcribe.ts';
 // 1.3.5：公差表数值字段纯数值字符串确定性纠偏（sanitizeToleranceNumericFields，提取侧与缓存草稿幂等）；prompt 强化 number 输出
 //       附：source_clause 引用归一（normalizeSourceClauseRefs，剥离模型抄入的"【条款号】"prompt 标记）为管线级幂等后处理，缓存草稿每次运行均生效，无需递增版本
 // 1.3.6：process_rules prompt 增加兜底协商条款禁出规则（"协商可采用其他方法"类无判定准则条款不产生规则）
-export const ingestConfigVersion = '1.3.6';
+// 1.4.0：golden（Gemini 无门禁产出）8 项差距对齐——硬度 or_choice 恢复（表5 路由 mechanical_table + 协商/条件项区分）、
+//         condition_adjustments（热挤压修正）、flattening trigger_condition、晶间腐蚀 exemption + 组织类型作用域、
+//         enum_acceptance（NDT 验收等级）、aliases 世界知识填充、压扁公式可求值化（gates 公式 lint）、公式型 rounding=3
+// 1.4.1：真实 E2E 定点——mech 任务框架泛化覆盖硬度表（含按组织类型映射）、豁免条款 worked example（7.7.1 范式）、
+//         溯源断言两级化（块文本 -> 全文档拼接 WARN 兜底，TRACE_BLOCK_BOUNDARY 通道，passed 只看 ERROR）
+export const ingestConfigVersion = '1.4.1';
 
 export class GarbledTextLayerError extends Error {
   public garbledRefs: string[];
@@ -64,6 +69,8 @@ export interface IngestOptions {
   visionChatClient?: ChatClient;
   /** 关闭视觉转录通道：无文本层/乱码显式报错（退回 v1 语义），不转多模态 */
   noVision?: boolean;
+  /** 入库专用 LLM 配置 id（config.json llm.configs 中的 id）；缺省走 llm.ingestConfigId / isDefault */
+  llmConfigId?: string;
   /** 测试注入：替换 PDF 页面渲染实现（隔离 @napi-rs/canvas 真实渲染） */
   renderPages?: RenderPagesFn;
   /** 正式库根目录；缺省 data/standards。仅用于存量对账/注册表扫描与报告，绝不直接写入。测试必须指向临时目录 */
@@ -204,21 +211,36 @@ function buildReviewReport(
     diffSection.push('');
   }
 
+  const blockingIssues = issues.filter((i) => i.severity === 'ERROR');
+  const warnIssues = issues.filter((i) => i.severity === 'WARN');
   lines.push(
     `- 门禁结论: ${
-      issues.length > 0
+      blockingIssues.length > 0
         ? '存在阻塞项，需人工复核'
         : diffLostCount > 0
           ? 'S3 门禁通过，但与存量全量 diff 存在丢失项——按验收口径不得判定全部通过'
           : '全部通过'
     }`,
   );
+  if (warnIssues.length > 0) {
+    lines.push(`- 提示项（WARN，不阻塞入库）: ${warnIssues.length} 条，见下方"提示项"章节`);
+  }
   lines.push('');
 
-  if (issues.length > 0) {
-    lines.push('## 待人工复核项');
+  if (blockingIssues.length > 0) {
+    lines.push('## 待人工复核项（ERROR）');
     lines.push('');
-    for (const issue of issues) {
+    for (const issue of blockingIssues) {
+      lines.push(`- [${issue.code}] ${issue.message}`);
+    }
+    lines.push('');
+  }
+
+  // WARN 单独成节：块边界漂移等提示性发现，供人工提高抽检权重，不阻塞入库
+  if (warnIssues.length > 0) {
+    lines.push('## 提示项（WARN，不阻塞入库）');
+    lines.push('');
+    for (const issue of warnIssues) {
       lines.push(`- [${issue.code}] ${issue.message}`);
     }
     lines.push('');
@@ -233,6 +255,11 @@ function buildReviewReport(
   for (const slice of drafts.slices) {
     lines.push(`### ${slice.spec_key} ${slice.primary_grade || ''}（${slice.display_name}）`);
     lines.push('');
+    // 别名来自模型世界知识（非原文数值，不参与溯源断言），单独列出供人工抽检
+    if (Array.isArray(slice.aliases) && slice.aliases.length > 0) {
+      lines.push(`- 别名（世界知识，供人工抽检）: ${slice.aliases.map(String).join('、')}`);
+      lines.push('');
+    }
     lines.push('| rule_id | 类别 | 类型 | 指标 | 下限 | 上限 | 单位 | 来源条款 | 原文摘录 |');
     lines.push('|---|---|---|---|---|---|---|---|---|');
     for (const rule of slice.evaluation_rules) {
@@ -264,7 +291,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   let cacheDir: string;
   let fullText: string;
   let textSource: 'text' | 'vision' = 'text';
-  const visionChat = options.visionChatClient || options.chatClient || createDefaultChatClient();
+  const visionChat = options.visionChatClient || options.chatClient || createDefaultChatClient(options.llmConfigId);
   const runVisionTranscribe = async (targetCacheDir: string): Promise<string> => {
     progress('转多模态视觉转录通道（整篇逐页转录，--no-vision 可关闭）...');
     const vision = await transcribePdfByVision({
@@ -359,7 +386,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   const propertyKeyCatalog = scanPropertyKeyCatalog(outRoot);
   if (cached.drafts.slices.length === 0 && Object.keys(cached.drafts.meta).length === 0) {
     progress('S2 提取：LLM 按块类型提取 meta/切片/条款/工艺探伤规则/动态公式/公差表草稿...');
-    const chat = options.chatClient || createDefaultChatClient();
+    const chat = options.chatClient || createDefaultChatClient(options.llmConfigId);
     cached.drafts = await extractAll(cached.blocks, chat, (msg) => progress('  ' + msg), propertyKeyCatalog);
     fs.writeFileSync(path.join(cacheDir, 'drafts.json'), JSON.stringify(cached.drafts, null, 2));
   }
@@ -409,6 +436,8 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
     propertyKeyRegistry: new Set(propertyKeyCatalog.keys()),
     toleranceTables: cached.drafts.tolerance_tables,
     unmountedRules: cached.drafts.unmounted_rules,
+    // v1.4.1 两级溯源：全文档拼接文本供块边界漂移 WARN 兜底
+    fullDocumentText: cached.blocks.map((b) => b.text).join('\n\n'),
   });
 
   const metaId = String(cached.drafts.meta.standard_id || 'UNKNOWN_STANDARD');

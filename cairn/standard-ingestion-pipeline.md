@@ -103,3 +103,20 @@ node --experimental-strip-types scripts/ingest-standard.ts <pdf> --out <临时�
 - 与 GB 31 份 golden 切片对账：**规则族丢失 0 条；化学/力学数值抽查 337 条 0 差异**；
 - 已知偏差：golden 的 exemption（6 牌号晶间腐蚀免检）/enum_acceptance 等精细 rule_type 被泛化为 qualitative_enum（内容正确、语义粒度降级，promote 时 no-net-loss 拦截）；铁素体三牌号被过度挂晶间腐蚀规则（7.7.1 仅约束奥氏体型）；
 - 命名存量瑕疵暴露：注册表中 `flattening`（NB 切片）与 `flattening_test`（GB 切片）两个 canonical 并存，导致同义 key 跨 run 摆动不被注册表 lint 捕获——注册表去重归一化列入后续治理。
+
+## golden 语义保真对账（v1.4.1 + K3，2026-09-15）
+
+> 背景：golden 实为 Gemini 3.8 Flash 早期无门禁产出。v1.4.0/v1.4.1 语义升级后 K3 (k3-256k) 真实 E2E 逐项对账：
+
+| 差距项 | 结果 |
+|---|---|
+| 压扁公式可求值化 + 壁厚触发条件 | ✅ `(1 + 0.09) * S / (0.09 + S / D)` + `wall_thickness_mm <= 10` |
+| 超声 enum_acceptance U2 | ✅ 对齐 |
+| aliases 世界知识 | ✅ 4 个别名（SUS304/TP304/0Cr18Ni9/304） |
+| Ti 公式 + 修约 3 位 | ✅ 对齐（含 max 0.7 数值形态） |
+| 硬度 or_choice_group | ⚠️ 部分：表5 显式列名牌号（06Cr18Ni13Si4 等）已正确产出；"奥氏体型 其他"行→未列名牌号的映射未实现 |
+| 热挤压 -20MPa condition_adjustments | ❌ 表注文本因跨页切块未进入 表4 块上下文 |
+| 晶间腐蚀 exemption + 铁素体作用域 | ❌ worked example 仍未被遵从（6 豁免牌号给了 MANDATORY，铁素体误挂） |
+
+结论：确定性可量化项 K3+harness 已对齐或超出 golden（数值 337/337、公式可求值、别名、溯源全覆盖，且门禁能抓住自身错误——golden 当年无自检、S32168 晶粒度误配直到我们的门禁才暴露）；剩余 3 项为语义判读方差，后续以确定性挂载规则（"其他"行映射、表注归属合并）根治而非继续赌模型遵从。
+另：K3 转录/提取仍存在数字级方差（幻影牌号 S31254/S31277 等），每轮均被牌号对账+覆盖门禁精确拦截——门禁设计意图达成。
