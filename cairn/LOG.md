@@ -4,6 +4,16 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-16 · 六项集中治理落地与 en-asme 标准档适配（ASME SA-213 部分验证）
+
+- 阶段 A 确定性治理：NB 切片 property_key 注册表归一（flattening/flaring→*_test，迁移 10 条规则 + 碰撞 WARN lint）、expected_visual_result 闭集白名单 + 定性规则 CJK 原文双层记录 lint、硬度表"组织类型+其他"行 ORG 标记确定性挂载、表注穿透页锚点归属合并；
+- 阶段 B：`clause-patterns.ts` [NEW] 确定性法条模式预扫描器（豁免/作用域/条件触发/协商四句式中英双语），命中条款零 LLM 参与、确定性版本恒胜出，GB 7.7.1 豁免判读由此根治；
+- 阶段 C：`standard-profile.ts` [NEW] 两档抽象（zh-cn / en-asme：锚点/标题/乱码检测/路由关键词/牌号形态/CJK lint 开关全 profile 化），`--profile` + 自动嗅探（SA-213 判定 0.60 采纳）；超大表确定性行级拆批（`splitGradeTableBlock`，≤12 牌号行/批，批次边界恒为完整行）；
+- 工程修复：入库默认客户端改流式 SSE 聚合（kimi-k3 长思考非流式长挂连接被服务端掐断 fetch failed，流式保活根治）；K3 双配置接入（k3-coding 订阅 / k3-volume 按量计费 moonshot.cn，model 名 kimi-k3≠k3-256k）；
+- ASME SA-213 实测进度（按量计费成本控制主动中止）：profile 嗅探、S1 切块（136 块 0 garbled）、化学两表 5 批提取、力学 5 块提取已验证通过；工艺/条款提取与 S3 门禁 E2E 中止，**留待订阅额度恢复后补完**；
+- 验证就绪：ingestion 171 项、全量 72 套件 483 项 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过。
+- 待办沉淀：① SA-213 剩余 E2E（订阅恢复后）；② drafts 分块增量缓存（中断重跑不再整段重提）；③ 幻影牌号在 en 语料的方差观察。
+
 ## 2026-09-15 · 语义保真攻关与入库管线 LLM 配置可选化（K3 接入）
 
 - 事实澄清驱动：golden 切片实为开发早期 Gemini 3.8 Flash 无门禁辅助产出，证明精细语义结构可由 LLM 达成——管线差距源于 prompt 过度保守而非模型能力上限；

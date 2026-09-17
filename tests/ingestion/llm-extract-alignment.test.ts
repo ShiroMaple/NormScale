@@ -242,6 +242,7 @@ function goldenS30409Rules(): DraftRule[] {
     baseRule({
       rule_id: 'CORR_S30409_INTERGRANULAR_EXEMPT', category: 'corrosion', property_key: 'intergranular_corrosion', display_name: '晶间腐蚀试验 (免做项)',
       rule_type: 'exemption', requirement_level: 'EXEMPT',
+      description: '依据 GB/T 13296-2023 第 7.7.1 条明确规定，07Cr19Ni10 可不进行晶间腐蚀试验',
       criteria: { reason: '标准 7.7.1 明确规定 07Cr19Ni10 可不进行晶间腐蚀试验' },
       source_clause: '7.7.1',
     }),

@@ -3,6 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { NoTextLayerError, pdfCacheDir, preprocessPdf } from './preprocess.ts';
 import { countGradeRows, segmentText } from './segmenter.ts';
+import { PROFILES, sniffProfile } from './standard-profile.ts';
+import type { ProfileId, StandardProfile } from './standard-profile.ts';
 import { createDefaultChatClient, dedupeDraftRules, extractAll, fillSliceHarnessFields, isAppendixLikeRef, normalizeSourceClauseRefs, sanitizeToleranceNumericFields } from './llm-extract.ts';
 import { buildClauseTextIndex, FULL_RULE_FAMILIES, runGates } from './gates.ts';
 import type { GateIssue } from './gates.ts';
@@ -46,7 +48,16 @@ import type { RenderPagesFn } from './vision-transcribe.ts';
 //         enum_acceptance（NDT 验收等级）、aliases 世界知识填充、压扁公式可求值化（gates 公式 lint）、公式型 rounding=3
 // 1.4.1：真实 E2E 定点——mech 任务框架泛化覆盖硬度表（含按组织类型映射）、豁免条款 worked example（7.7.1 范式）、
 //         溯源断言两级化（块文本 -> 全文档拼接 WARN 兜底，TRACE_BLOCK_BOUNDARY 通道，passed 只看 ERROR）
-export const ingestConfigVersion = '1.4.1';
+// 1.5.0：阶段 A 治理项 2-5——注册表归一化（flattening/flaring 双 canonical 合并 + 碰撞 WARN lint）、
+//         expected_visual_result 闭集 + 定性规则原文双层记录 lint、ORG:type:OTHERS 组织类型兜底挂载、
+//         表注归属合并（穿透 vision 页锚；S1 后处理）
+// 1.6.0：阶段 B 确定性法条模式预扫描器（中英双语）——豁免/作用域/牌号清单限定/条件触发/协商句式
+//         模式命中块剔除出 LLM process_rules 输入，产出 deterministic 标记、去重恒胜 LLM 产物
+// 1.7.0：阶段 C StandardProfile 抽象（zh-cn 缺省行为不变）+ en-asme 首档适配——锚点/标题/乱码/路由/
+//         牌号行全走 profile 注入；CLI --profile 显式 > 嗅探自动判定（结果写入报告）；en 档关闭 CJK lint
+// 1.7.1：大表行级拆批——化学/力学表块牌号行 >12 时按完整牌号行确定性拆批（每批携带表头/表注上下文），
+//         根治 ASME TABLE2 类大表单块提取超时
+export const ingestConfigVersion = '1.7.1';
 
 export class GarbledTextLayerError extends Error {
   public garbledRefs: string[];
@@ -63,6 +74,8 @@ export interface IngestOptions {
   pdfPath?: string;
   /** 测试注入：直接提供全文文本，跳过 S0（S1->S4 集成测试用） */
   rawText?: string;
+  /** 阶段 C 标准档显式指定（'zh-cn' | 'en-asme'）；缺省按全文嗅探自动判定（置信度 >0.5 采纳） */
+  profile?: ProfileId;
   /** S2 聊天客户端；缺省走 config.json 默认 LLM 配置 */
   chatClient?: ChatClient;
   /** 视觉转录聊天客户端（多模态）；缺省回落到 chatClient，再走 config.json 默认 LLM 配置 */
@@ -153,6 +166,9 @@ function buildReviewReport(
   if (drafts.meta.text_source === 'vision') {
     lines.push('- 文本来源: 多模态视觉转录（非 PDF 文本层）——溯源断言对象为转录文本，属自洽性校验（弱于文本层），人工抽检权重应提高');
   }
+  if (typeof drafts.meta.standard_profile === 'string') {
+    lines.push(`- 标准档（profile）: ${drafts.meta.standard_profile}`);
+  }
   lines.push('');
 
   // 跨标准外部公差引用显著标注：被引标准数据严禁臆造，须人工补录后方可参与几何判定
@@ -177,7 +193,7 @@ function buildReviewReport(
       const { evaluation_rules, ...rest } = s;
       return {
         ...rest,
-        evaluation_rules: evaluation_rules.map(({ source_clause: _sourceClause, applies_to_grades: _applies, ...rule }) => rule),
+        evaluation_rules: evaluation_rules.map(({ source_clause: _sourceClause, applies_to_grades: _applies, deterministic: _det, ...rule }) => rule),
       } as unknown as SliceOnDisk;
     });
     const diff = diffStandards(base, { dir: existingStdDir, meta: drafts.meta as Record<string, unknown>, slices: candidateSlices });
@@ -291,6 +307,9 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   let cacheDir: string;
   let fullText: string;
   let textSource: 'text' | 'vision' = 'text';
+  // 阶段 C 标准档：显式 > 嗅探自动判定（S0 全文就绪后执行；rawText 注入模式同样在 S0 后判定）
+  let resolvedProfile: StandardProfile | null = null;
+  let profileSource = '缺省 zh-cn';
   const visionChat = options.visionChatClient || options.chatClient || createDefaultChatClient(options.llmConfigId);
   const runVisionTranscribe = async (targetCacheDir: string): Promise<string> => {
     progress('转多模态视觉转录通道（整篇逐页转录，--no-vision 可关闭）...');
@@ -299,6 +318,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
       cacheDir: targetCacheDir,
       chat: visionChat,
       renderPages: options.renderPages,
+      locale: resolvedProfile && resolvedProfile.id === 'en-asme' ? 'en' : 'zh',
       onProgress: (msg) => progress('  ' + msg),
     });
     return vision.fullText;
@@ -340,6 +360,19 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
       textSource = 'vision';
     }
   }
+  // 标准档解析：显式指定 > 嗅探（置信度 >0.5 采纳，否则 zh-cn 缺省）；rawText 与 PDF 两路汇合后执行
+  if (options.profile && PROFILES[options.profile]) {
+    resolvedProfile = PROFILES[options.profile];
+    profileSource = `显式指定 ${options.profile}`;
+  } else {
+    const sniffed = sniffProfile(fullText);
+    resolvedProfile = sniffed.profile;
+    profileSource = sniffed.profile.id === 'zh-cn' && sniffed.confidence <= 0.5
+      ? '嗅探未命中（置信度≤0.5），缺省 zh-cn'
+      : `嗅探自动判定 ${sniffed.profile.id}（置信度 ${sniffed.confidence.toFixed(2)}）`;
+  }
+  progress(`标准档（profile）: ${resolvedProfile.id}（${profileSource}）`);
+
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(path.join(cacheDir, 'version.json'), JSON.stringify({ ingestConfigVersion, md5, textSource }, null, 2));
 
@@ -357,7 +390,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   // S1 确定性切块（缓存命中则跳过）
   if (cached.blocks.length === 0) {
     progress('S1 切块：按章节号/表/附录锚点确定性切块...');
-    cached.blocks = segmentText(fullText);
+    cached.blocks = segmentText(fullText, resolvedProfile!);
     fs.writeFileSync(path.join(cacheDir, 'blocks.json'), JSON.stringify(cached.blocks, null, 2));
   }
 
@@ -372,7 +405,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
     textSource = 'vision';
     cached.fullText = fullText;
     progress('S1 重新切块：基于视觉转录文本...');
-    cached.blocks = segmentText(fullText);
+    cached.blocks = segmentText(fullText, resolvedProfile!);
     fs.writeFileSync(path.join(cacheDir, 'blocks.json'), JSON.stringify(cached.blocks, null, 2));
     garbled = cached.blocks.filter((b) => b.blockType === 'garbled').map((b) => b.clauseRef);
     if (garbled.length > 0) {
@@ -387,7 +420,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   if (cached.drafts.slices.length === 0 && Object.keys(cached.drafts.meta).length === 0) {
     progress('S2 提取：LLM 按块类型提取 meta/切片/条款/工艺探伤规则/动态公式/公差表草稿...');
     const chat = options.chatClient || createDefaultChatClient(options.llmConfigId);
-    cached.drafts = await extractAll(cached.blocks, chat, (msg) => progress('  ' + msg), propertyKeyCatalog);
+    cached.drafts = await extractAll(cached.blocks, chat, (msg) => progress('  ' + msg), propertyKeyCatalog, resolvedProfile!);
     fs.writeFileSync(path.join(cacheDir, 'drafts.json'), JSON.stringify(cached.drafts, null, 2));
   }
   dedupeDraftRules(cached.drafts);
@@ -399,6 +432,8 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   if (textSource === 'vision') {
     cached.drafts.meta.text_source = 'vision';
   }
+  // 阶段 C 标准档标记：写入 meta 供报告与下游追溯
+  cached.drafts.meta.standard_profile = resolvedProfile!.id;
 
   // v2 公差表落 meta.tolerance_tables：剥离 S2 内部锚点 source_block；
   // 跨标准外部引用记录保留在 meta 中（review-report 显著标注，被引标准数据须人工补录）。
@@ -425,7 +460,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   const clauseTextIndex = buildClauseTextIndex(cached.blocks);
   const expectedGradeRows = cached.blocks
     .filter((b) => b.blockType === 'chemistry_table' && !isAppendixLikeRef(b.clauseRef))
-    .reduce((sum, b) => sum + countGradeRows(b.text), 0);
+    .reduce((sum, b) => sum + countGradeRows(b.text, resolvedProfile!), 0);
   const gate = runGates({
     meta: cached.drafts.meta,
     slices: cached.drafts.slices,
@@ -469,7 +504,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   for (const slice of cached.drafts.slices) {
     const stripSource = {
       ...slice,
-      evaluation_rules: slice.evaluation_rules.map(({ source_clause: _sourceClause, applies_to_grades: _applies, ...rule }) => rule),
+      evaluation_rules: slice.evaluation_rules.map(({ source_clause: _sourceClause, applies_to_grades: _applies, deterministic: _det, ...rule }) => rule),
     };
     // 部分覆盖产物标记（与存量切片标记形态一致）：promote 按族合并后由 updateCoverageMarkers 清除/更新
     if (!options.fullCoverage) {

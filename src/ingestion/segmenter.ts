@@ -1,43 +1,28 @@
 import type { BlockType, TextBlock } from './types.ts';
+import type { StandardProfile } from './standard-profile.ts';
+import { ZH_CN_PROFILE } from './standard-profile.ts';
 
 /* ==========================================================================
    S1 标准文本确定性切块器 (Segmenter)
-   - 纯函数、无 IO：全文文本 -> 锚点切块 -> 块类型路由 -> 子孙条款类型继承后处理
-   - 锚点：章节号（4 / 5.2 / 5.2.1）、表 N、附录 X、前言
+   - 纯函数、无 IO：全文文本 -> 锚点切块 -> 块类型路由 -> 子孙条款类型继承/表注归属后处理
+   - 语言/体系行为全部由 StandardProfile 注入（阶段 C）：锚点正则、标题判定、乱码检测、
+     路由关键词、牌号行识别——缺省 zh-cn 档与历史实现逐常量一致
+   - 锚点：章节号（4 / 5.2 / 5.2.1）、表 N（en: TABLE N，容忍页码粘连前缀）、附录/ANNEX、前言
    - 表格块内部不再按章节号切分（表格行以序号开头，形似小节号）
-   - 另含行级乱码检测：字体子集化无 ToUnicode 的 PDF 表格页输出乱码，
-     必须显式识别为 garbled 块上抛，防止乱码静默进入 LLM 提取环节
+   - 行级乱码检测：字体子集化无 ToUnicode 的 PDF 表格页输出乱码，必须显式识别为 garbled
+     块上抛，防止乱码静默进入 LLM 提取环节
    ========================================================================== */
 
-// 章节号行：如 "7 技术要求"、"7.4 力学性能"、"6.10.1.1 无缝管应逐根……"
-const CLAUSE_HEADING_RE = /^(\d{1,2}(?:\.\d{1,2}){0,3})[ \t　]+(\S.*)$/;
-// 表锚点行：如 "表3 钢的牌号和化学成分"、"表 A.1 xxx"、"表 A.1（续）"
-// 要求表号后必须跟空白，排除前言中 "表3);" 之类的行内引用
-const TABLE_ANCHOR_RE = /^表\s*(\d+[A-Za-z]?|[A-Z]\.\d+)[ \t　]+(.*)$/;
-// 附录锚点行：如 "附录 A（资料性）……"
-const APPENDIX_ANCHOR_RE = /^附录\s*([A-ZＡ-Ｚ])(?:[^0-9A-Za-z]|$)/;
-// 页脚行：标准编号 / 页码
-const PAGE_FOOTER_RE = /^\s*(?:[A-Z]{1,3}\/[A-Z]{1,3}[ \t]*\d[\d.\s]*[—-][\d\s]+|\d{1,3})\s*$/;
-// CJK 表意文字（标题判定用：数字行/纯符号行不含表意文字）
+// CJK 表意文字（乱码行判定的"无 CJK"前提，仅 zh 档 garbledTest 使用）
 const CJK_IDEOGRAPH_RE = /[一-鿿]/;
-// 纯 CJK 标题：章节标题由纯汉字与 CJK 标点构成；含字母/数字的行是表格行或条款正文
-const PURE_CJK_TITLE_RE = /^[一-鿿　-〿、。，；：！？（）《》“”·—…~-]+$/;
-// 牌号令牌：块内出现牌号特征即视为牌号表（容忍单行表文本）
-const GRADE_TOKEN_RE = /(?:\d{2,3}Cr[0-9A-Za-z]{2,}|S\d{5})/;
-// 标点符号集：乱码文本的标志性特征（字母与数字都不算）
-const PUNCT_SYMBOL_RE = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~。、·《》]/g;
-// 牌号表行特征：序号 + 牌号（如 06Cr19Ni10 / 022Cr19Ni10 / S30408 开头）
-const GRADE_ROW_RE = /^\s*\d{1,2}\s+(?:\d{2,3}Cr[0-9A-Za-z]+|S\d{5}|[A-Z]{1,2}\d{2,}[A-Za-z]?)\b/;
-// 牌号行计数：用于 S3 原文牌号行数对账
-// 行首允许出现组织类型列前缀（如 "体型 22 06Cr13"，PDF 提取时组织类型列文本与序号行粘连）
-const GRADE_ROW_COUNT_RE = /^\s*(?:[一-鿿]{1,4}\s+)?\d{1,2}\s+(?:\d{2,3}Cr[0-9A-Za-z]+|S\d{5})\b/gm;
 
 /**
- * 文本层乱码检测：无 CJK 表意文字且标点占比畸高即为乱码
- * （典型场景：PDF 表格字体子集化且缺失 ToUnicode CMap，矢量文本输出为乱码；
- *   纯英文标题/纯数字行不会被误判，因为它们几乎不含标点）
+ * 文本层乱码检测（zh 档缺省，保持历史行为）：
+ * 无 CJK 表意文字且标点占比畸高即为乱码（字体子集化无 ToUnicode 的矢量乱码特征；
+ * 纯英文标题/纯数字行不会误判——它们几乎不含标点）。en 档用 profile.garbledTest
+ * （字母占比过低 + 符号多样性，不能用"无 CJK"判定）。
  */
-export function isGarbledText(text: string): boolean {
+export function isGarbledText(text: string, profile: StandardProfile = ZH_CN_PROFILE): boolean {
   // 先剔除点线引导符（公式编号/目次的 "......(3)" 形态）与 LaTeX 命令标记
   // （视觉转录可能输出 \frac{\pi} 形态）：两者均为排版/标记噪声，符号多样性会误触
   // 乱码判定；真实乱码（字体子集化垃圾符号）无此形态，不受影响
@@ -47,58 +32,57 @@ export function isGarbledText(text: string): boolean {
     .replace(/\\[a-zA-Z]+/g, '')
     .replace(/[{}]/g, '');
   if (squashed.length < 20) return false;
-  if (CJK_IDEOGRAPH_RE.test(squashed)) return false;
-  const punctChars = squashed.match(PUNCT_SYMBOL_RE) || [];
-  if (punctChars.length / squashed.length <= 0.3) return false;
-  // 标点字符种类丰富是乱码的强特征；目次点线（仅 · （ ） 等少数符号）不算
-  return new Set(punctChars).size >= 6;
+  if (profile.id === 'zh-cn' && CJK_IDEOGRAPH_RE.test(squashed)) return false;
+  return profile.garbledTest(squashed);
 }
 
 /**
- * 判断行是否为章节标题行：
- * 标题必须为纯 CJK（汉字 + CJK 标点），含字母/数字的行视为表格行或条款正文；
- * 条款正文行（如 7.5.1 钢管应逐根……P=2SR/D）不切块，由 gates 的内嵌标题索引覆盖溯源
+ * 判断行是否为章节标题行：编号 scheme 中英一致（en 档容忍页码粘连前缀并规范化前导零），
+ * 标题部由 profile.headingTitleTest 判定（zh：纯 CJK；en：纯拉丁、无数字、不以逗/分号结尾）；
+ * 含牌号表行特征的行视为表格行不切块
  */
-function isClauseHeading(line: string): { clauseRef: string; title: string } | null {
-  const m = CLAUSE_HEADING_RE.exec(line);
-  if (!m) return null;
-  const clauseRef = m[1] || '';
-  const title = (m[2] || '').trim();
-  if (Number.parseInt(clauseRef, 10) === 0) return null;
-  if (title.length < 2 || title.length > 40) return null;
-  if (!PURE_CJK_TITLE_RE.test(title)) return null;
-  if (GRADE_ROW_RE.test(line)) return null;
-  return { clauseRef, title };
+function isClauseHeading(line: string, profile: StandardProfile): { clauseRef: string; title: string } | null {
+  const heading = profile.matchHeading(line);
+  if (!heading) return null;
+  if (Number.parseInt(heading.clauseRef, 10) === 0) return null;
+  const { min, max } = profile.headingTitleLength;
+  if (heading.title.length < min || heading.title.length > max) return null;
+  if (!profile.headingTitleTest(heading.title)) return null;
+  // 牌号表行（单行形态，去掉 /g /m 避免 lastIndex 状态污染）
+  const gradeRowLineRe = new RegExp(profile.gradeRowRe.source);
+  if (gradeRowLineRe.test(line)) return null;
+  return heading;
 }
 
-/** 块文本是否具备牌号表特征（牌号行计数或牌号令牌） */
-function looksLikeGradeTable(text: string): boolean {
-  return countGradeRows(text) > 0 || GRADE_TOKEN_RE.test(text);
+/** 块文本是否具备牌号表特征（profile 牌号行计数或牌号令牌） */
+function looksLikeGradeTable(text: string, profile: StandardProfile): boolean {
+  return countGradeRows(text, profile) > 0 || profile.gradeTokenRe.test(text);
 }
 
 /**
- * 块类型路由：按标准文档惯例关键词归类
+ * 块类型路由：按 profile 路由关键词归类
  * 化学成分/力学性能表要求块内确实存在牌号行，防止前言/引用文件被误路由
  */
-export function classifyBlock(clauseRef: string, text: string): BlockType {
-  if (isGarbledText(text)) return 'garbled';
-  if (clauseRef === '前言' || clauseRef === '1') return 'scope_text';
-  if (/本文件规定|本文件适用/.test(text) && !/应符合|不应|应能/.test(text)) return 'scope_text';
+export function classifyBlock(clauseRef: string, text: string, profile: StandardProfile = ZH_CN_PROFILE): BlockType {
+  if (isGarbledText(text, profile)) return 'garbled';
+  if (profile.anchors.foreword.test(clauseRef) || clauseRef === '1') return 'scope_text';
+  if (profile.scopeTextRe.test(text) && !/应符合|不应|应能|shall conform|shall be tested/i.test(text)) return 'scope_text';
 
-  const isAppendix = clauseRef.startsWith('附录');
-  const isTableRef = clauseRef.startsWith('表') || isAppendix;
+  const isAppendix = profile.isAppendixRef(clauseRef);
+  const isTableRef = profile.isTableRef(clauseRef) || isAppendix;
+  const kw = profile.routerKeywords;
   if (isTableRef) {
-    if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间|无损|射线|渗透|致密|晶粒度|金相|粗糙度|表面质量|弯曲|展平/.test(text)) return 'process_ndt_clauses';
-    if (/化学成分|熔炼分析/.test(text) && looksLikeGradeTable(text)) return 'chemistry_table';
-    if (/力学性能|抗拉强度|屈服强度|断后伸长率|拉伸|硬度/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
-    // 公差表仅从正文表（非附录）路由，且必须具备外径/壁厚语境
-    if (!isAppendix && /允许偏差|公称外径|公称壁厚/.test(text) && /外径|壁厚/.test(text)) return 'tolerance_table';
+    if (kw.process_ndt_clauses?.test(text)) return 'process_ndt_clauses';
+    if (kw.chemistry_table?.test(text) && looksLikeGradeTable(text, profile)) return 'chemistry_table';
+    if (kw.mechanical_table?.test(text) && looksLikeGradeTable(text, profile)) return 'mechanical_table';
+    // 公差表仅从正文表（非附录）路由，且必须具备尺寸语境
+    if (!isAppendix && kw.tolerance_table?.test(text) && profile.dimensionContext.test(text)) return 'tolerance_table';
     return 'other';
   }
 
-  if (/压扁|扩口|卷边|液压|水压|涡流|超声|晶间腐蚀|无损|射线|渗透|致密|晶粒度|金相|粗糙度|表面质量|弯曲|展平/.test(text)) return 'process_ndt_clauses';
-  if (/化学成分|熔炼分析/.test(text) && looksLikeGradeTable(text)) return 'chemistry_table';
-  if (/力学性能|抗拉强度|屈服强度|断后伸长率|拉伸|硬度/.test(text) && looksLikeGradeTable(text)) return 'mechanical_table';
+  if (kw.process_ndt_clauses?.test(text)) return 'process_ndt_clauses';
+  if (kw.chemistry_table?.test(text) && looksLikeGradeTable(text, profile)) return 'chemistry_table';
+  if (kw.mechanical_table?.test(text) && looksLikeGradeTable(text, profile)) return 'mechanical_table';
   return 'other';
 }
 
@@ -111,10 +95,10 @@ interface RawSegment {
 /**
  * S1 主入口：全文文本 -> 锚点切块（纯函数）
  */
-export function segmentText(fullText: string): TextBlock[] {
+export function segmentText(fullText: string, profile: StandardProfile = ZH_CN_PROFILE): TextBlock[] {
   const lines = fullText.split('\n');
   const segments: RawSegment[] = [];
-  let currentRef = '前言';
+  let currentRef = profile.id === 'zh-cn' ? '前言' : 'FOREWORD';
   let currentLines: string[] = [];
   let currentGarbled = false;
   let garbleCount = 0;
@@ -128,10 +112,10 @@ export function segmentText(fullText: string): TextBlock[] {
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    if (line.length === 0 || PAGE_FOOTER_RE.test(line)) continue;
+    if (line.length === 0 || profile.anchors.pageFooter.test(line)) continue;
 
     // 行级乱码检测：乱码行独立累积成块，绝不混入正常块
-    if (isGarbledText(line)) {
+    if (isGarbledText(line, profile)) {
       if (!currentGarbled) {
         flush();
         garbleCount += 1;
@@ -147,17 +131,17 @@ export function segmentText(fullText: string): TextBlock[] {
       currentRef = '未锚定';
     }
 
-    const heading = isClauseHeading(line);
-    const tableAnchor = TABLE_ANCHOR_RE.exec(line);
-    const appendixAnchor = APPENDIX_ANCHOR_RE.exec(line);
+    const heading = isClauseHeading(line, profile);
+    const tableAnchor = profile.anchors.table.exec(line);
+    const appendixAnchor = profile.anchors.appendix.exec(line);
 
     if (tableAnchor) {
       flush();
-      currentRef = '表' + (tableAnchor[1] || '').replace(/\s+/g, '');
+      currentRef = (profile.id === 'zh-cn' ? '表' : 'TABLE') + (tableAnchor[1] || '').replace(/\s+/g, '');
       currentLines = [line];
     } else if (appendixAnchor) {
       flush();
-      currentRef = '附录' + (appendixAnchor[1] || '');
+      currentRef = (profile.id === 'zh-cn' ? '附录' : 'ANNEX') + (appendixAnchor[1] || '');
       currentLines = [line];
     } else if (heading) {
       flush();
@@ -173,15 +157,15 @@ export function segmentText(fullText: string): TextBlock[] {
     .map((s) => {
       const text = s.lines.join('\n').trim();
       return {
-        blockType: s.garbled ? ('garbled' as BlockType) : classifyBlock(s.clauseRef, text),
+        blockType: s.garbled ? ('garbled' as BlockType) : classifyBlock(s.clauseRef, text, profile),
         clauseRef: s.clauseRef,
         text,
       };
     })
     .filter((b) => b.text.length > 0);
-  // 子孙条款类型继承后处理（S1 产物契约）：误判为标题的正文行（如 "6.11.1 无缝管的内外表面不应有裂缝……"）
-  // 独立成块后因不含路由关键词被归为 other，进不了工艺/探伤提取通道；按最近祖先块继承类型修正
-  return inheritAncestorBlockType(blocks);
+  // 子孙条款类型继承后处理（S1 产物契约）：误判为标题的正文行独立成块后按最近祖先类型修正
+  // 表注归属合并后处理：表注块合并回前方最近的表块（穿透 vision【第 N 页】锚点块）
+  return mergeTableNotes(inheritAncestorBlockType(blocks), profile);
 }
 
 /**
@@ -195,13 +179,47 @@ function isPureHeadingBlock(block: TextBlock): boolean {
 }
 
 /**
+ * 表注归属合并（S1 产物契约，纯函数）：表注行形态由 profile.noteLineTest 判定
+ * （zh "注N："；en 上标脚注 "A Maximum…" 单字母标记行）。注块若前方最近的实质块是
+ * 表块（profile.isTableRef，中间可隔 vision【第 N 页】锚点块），则合并回该表块——
+ * 保证表注留在表块内（condition_adjustments/成分注记依赖）；找不到归属表块则保留原块，
+ * 换行折页的注续行（不通过 noteLineTest）不在合并范围。
+ */
+export function mergeTableNotes(blocks: TextBlock[], profile: StandardProfile = ZH_CN_PROFILE): TextBlock[] {
+  const nonEmptyLines = (b: TextBlock): string[] => b.text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const isNoteBlock = (b: TextBlock): boolean => {
+    if (profile.isTableRef(b.clauseRef) || profile.isAppendixRef(b.clauseRef)) return false;
+    const lines = nonEmptyLines(b);
+    return lines.length > 0 && lines.every((l) => profile.noteLineTest(l));
+  };
+  const isPageAnchorBlock = (b: TextBlock): boolean => {
+    const lines = nonEmptyLines(b);
+    return lines.length > 0 && lines.every((l) => /^【第\s*\d+\s*页】$/.test(l));
+  };
+  const result: TextBlock[] = [];
+  for (const block of blocks) {
+    if (!isNoteBlock(block)) {
+      result.push(block);
+      continue;
+    }
+    // 向前穿透【第 N 页】锚点块，找最近的实质块
+    let j = result.length - 1;
+    while (j >= 0 && isPageAnchorBlock(result[j]!)) j--;
+    const target = j >= 0 ? result[j]! : null;
+    if (target && profile.isTableRef(target.clauseRef)) {
+      target.text = `${target.text}\n${block.text}`;
+      continue;
+    }
+    result.push(block);
+  }
+  return result;
+}
+
+/**
  * 子孙条款类型继承（纯函数）：clauseRef 为 X.Y.Z（三级及以上）且自身归类为 other 的块，
  * 自 X.Y 向 X 逐级查找最近祖先块——祖先缺失继续向上；最近祖先为 other 时，
  * 纯标题祖先可被穿透继续向上，有实质内容的 other 祖先不继承；garbled 祖先不继承；
- * 最近可继承祖先为其他类型（如 process_ndt_clauses）则继承其类型。
- * 背景：CLAUSE_HEADING_RE 会将纯 CJK 正文行误判为标题独立成块（真实 E2E 曾致
- * surface_quality 条款块以 other 落块而丢失规则）；祖先块（如 6.11 表面质量）已带族类型，
- * 子孙块按最近祖先继承即可回到正确通道。同输入同输出。
+ * 最近可继承祖先为其他类型（如 process_ndt_clauses）则继承其类型。同输入同输出。
  */
 export function inheritAncestorBlockType(blocks: TextBlock[]): TextBlock[] {
   const byRef = new Map(blocks.map((b) => [b.clauseRef, b]));
@@ -226,9 +244,9 @@ export function inheritAncestorBlockType(blocks: TextBlock[]): TextBlock[] {
 }
 
 /**
- * 统计化学成分表块内的牌号行数（S3 对账基准）
+ * 统计化学成分表块内的牌号行数（S3 对账基准；牌号行形态由 profile 注入）
  */
-export function countGradeRows(blockText: string): number {
-  const matches = blockText.match(GRADE_ROW_COUNT_RE);
+export function countGradeRows(blockText: string, profile: StandardProfile = ZH_CN_PROFILE): number {
+  const matches = blockText.match(profile.gradeRowRe);
   return matches ? matches.length : 0;
 }

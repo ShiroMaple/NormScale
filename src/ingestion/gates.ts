@@ -4,6 +4,7 @@ import {
   StandardClauseSchema,
   StandardMetaSchema,
 } from '../schemas/standard.schema.ts';
+import { PropertyKeyNormalizer } from '../normalizer/property-key-normalizer.ts';
 import type { DraftClause, DraftRule, DraftSlice, DraftToleranceTable, TextBlock } from './types.ts';
 
 /* ==========================================================================
@@ -35,9 +36,12 @@ export type GateIssueCode =
   | 'LINT_LANGUAGE_CONSISTENCY'
   | 'LINT_REQUIRED_FIELDS'
   | 'LINT_PROPERTY_KEY_REGISTRY'
+  | 'LINT_PROPERTY_KEY_COLLISION'
   | 'LINT_FORMULA'
   | 'LINT_APPLIES_TO_GRADES'
   | 'LINT_TOLERANCE_TABLE'
+  | 'LINT_VISUAL_RESULT'
+  | 'LINT_QUALITATIVE_DESCRIPTION'
   | 'TRACE_SOURCE_CLAUSE'
   | 'TRACE_NUMBER_LITERAL'
   | 'TRACE_FORMULA_LITERAL'
@@ -97,6 +101,8 @@ export interface GateInput {
    * 缺省时保持单级断言（纯函数缺省行为不变）
    */
   fullDocumentText?: string;
+  /** 阶段 C profile：语言一致性 lint 开关（en-asme 档关闭 CJK 要求，缺省 true 与历史行为一致） */
+  requireCjk?: boolean;
 }
 
 export interface GateResult {
@@ -112,6 +118,18 @@ const UNIT_WHITELIST = new Set([
   'J', 'kJ', 'J/cm2', 'mm', 'μm', 'um',
   '级', '°', '℃',
 ]);
+
+// expected_visual_result 闭集白名单（视觉判定结论机器码；语义真相由 description 原文层承载）：
+// 无裂纹 / 无裂纹或裂口 / 无渗漏 / 清洁通过——与 golden 及引擎宽松解析（logic-evaluator 合格/无裂/NO_CRACK 族）对齐
+const EXPECTED_VISUAL_RESULT_WHITELIST = new Set([
+  'NO_CRACKS',
+  'NO_CRACKS_OR_SPLITS',
+  'NO_LEAKS',
+  'CLEAN_PASS',
+]);
+
+// 定性规则类别：机器码 criteria 仅做路由，语义真相须由含 CJK 的描述性字段承载（原文层）
+const QUALITATIVE_RULE_TYPES = new Set(['qualitative_pass', 'qualitative_enum', 'exemption']);
 
 const CJK_IDEOGRAPH_RE = /[一-鿿]/;
 const EMBEDDED_HEADING_RE = /^(\d{1,2}(?:\.\d{1,2}){0,3})[ \t　]+\S/;
@@ -283,11 +301,33 @@ export function runGates(input: GateInput): GateResult {
     ? new Set<string>(input.propertyKeyRegistry)
     : null;
 
-  // 2.1 中文标准文本字段语言一致性：standard_id 以 GB/NB 开头时，自然语言字段必须含 CJK，
-  //     防止 LLM 将标准名称/说明/切片名称译成英文（命名漂移事故防线之一）
+  // 2.0a 注册表归一化碰撞检测：两个不同注册 key 经 PropertyKeyNormalizer 归一到同一
+  // canonical 时告警（WARN）——以质保书侧归一化输出为 canonical 基准（如 flattening 与
+  // flattening_test 并存会导致证书侧归一后无法区分两标准），提示合并注册 key
+  if (propertyKeyRegistry && propertyKeyRegistry.size > 1) {
+    const canonicalToKeys = new Map<string, string[]>();
+    for (const key of propertyKeyRegistry) {
+      const canonical = PropertyKeyNormalizer.normalize(key).property_key;
+      const list = canonicalToKeys.get(canonical) ?? [];
+      list.push(key);
+      canonicalToKeys.set(canonical, list);
+    }
+    for (const [canonical, keys] of canonicalToKeys) {
+      if (keys.length > 1) {
+        warn(
+          'LINT_PROPERTY_KEY_COLLISION',
+          `注册表 property_key 归一化碰撞：${keys.map((k) => `"${k}"`).join(' 与 ')} 经 PropertyKeyNormalizer 均得到 canonical "${canonical}"——以归一化输出为基准合并注册 key（数据修正），否则证书侧归一后两标准规则不可区分`,
+        );
+      }
+    }
+  }
+
+  // 2.1 中文标准文本字段语言一致性：standard_id 以 GB/NB 开头且 requireCjk 开启时（en 档关闭），
+  //     自然语言字段必须含 CJK，防止 LLM 将标准名称/说明/切片名称译成英文（命名漂移事故防线之一）
   const stdIdRaw = input.meta?.standard_id;
   const standardId = typeof stdIdRaw === 'string' ? stdIdRaw.trim() : '';
-  if (/^(GB|NB)/i.test(standardId)) {
+  const requireCjk = input.requireCjk !== false;
+  if (requireCjk && /^(GB|NB)/i.test(standardId)) {
     const lintCjk = (label: string, value: unknown): void => {
       if (typeof value !== 'string' || value.trim().length === 0) return;
       if (!CJK_IDEOGRAPH_RE.test(value)) {
@@ -377,6 +417,33 @@ export function runGates(input: GateInput): GateResult {
         lintDistanceFormula(ref, c.formula_distance_H, issue);
       }
 
+      // 项3.1 expected_visual_result 闭集 lint：dynamic_formula_pass/qualitative_and_numeric 的
+      // 视觉判定结论机器码必须从白名单选取（缺省时 schema 默认 NO_CRACKS，放行），集外显式拦截
+      if (rule.rule_type === 'dynamic_formula_pass' || rule.rule_type === 'qualitative_and_numeric') {
+        const visual = (rule.criteria as { expected_visual_result?: unknown }).expected_visual_result;
+        if (visual !== undefined && visual !== null && typeof visual === 'string' && visual.trim().length > 0) {
+          if (!EXPECTED_VISUAL_RESULT_WHITELIST.has(visual.trim())) {
+            issue('LINT_VISUAL_RESULT', `${ref} expected_visual_result "${visual}" 不在闭集白名单内（允许: ${[...EXPECTED_VISUAL_RESULT_WHITELIST].join('/')}）`);
+          }
+        }
+      }
+
+      // 项3.2 定性规则原文双层记录 lint：qualitative_pass/qualitative_enum/exemption 的机器码 criteria
+      // 仅做路由，必须携带含 CJK 的描述性字段（description 或 criteria.criteria_description）作为语义真相原文层
+      if (QUALITATIVE_RULE_TYPES.has(rule.rule_type)) {
+        const criteriaDescription = (rule.criteria as { criteria_description?: unknown }).criteria_description;
+        const descriptionText = typeof rule.description === 'string' && rule.description.trim().length > 0
+          ? rule.description
+          : typeof criteriaDescription === 'string' && criteriaDescription.trim().length > 0
+            ? criteriaDescription
+            : null;
+        if (descriptionText === null) {
+          issue('LINT_QUALITATIVE_DESCRIPTION', `${ref} 定性规则（${rule.rule_type}）缺少语义真相原文层：必须携带含 CJK 的 description 或 criteria.criteria_description`);
+        } else if (!CJK_IDEOGRAPH_RE.test(descriptionText)) {
+          issue('LINT_QUALITATIVE_DESCRIPTION', `${ref} 定性规则（${rule.rule_type}）描述性字段不含 CJK 字符（中文标准原文层禁止被译为英文）: "${descriptionText.slice(0, 40)}"`);
+        }
+      }
+
       for (const unit of collectUnits(rule)) {
         if (!UNIT_WHITELIST.has(unit)) {
           issue('LINT_UNIT', `${ref} 单位 "${unit}" 不在白名单内`);
@@ -403,17 +470,25 @@ export function runGates(input: GateInput): GateResult {
   }
 
   // 2.4 v2 牌号适用性白名单校验：挂载后规则的 applies_to_grades 必须 ⊆ 切片牌号全集（防臆造牌号）；
-  //     S2 展开未挂载到任何切片的规则一律拦截（严禁静默丢弃，防 LLM 整族漏提/牌号漂移）
+  //     组织类型兜底标记 "ORG:<type>:OTHERS" 为管线内部展开语义（挂载前有效，挂载后产物不应再携带），
+  //     若残留则校验标记形态合法性；S2 展开未挂载到任何切片的规则一律拦截（严禁静默丢弃）
   const gradeUniverse = new Set<string>();
   for (const slice of input.slices) {
     for (const token of [slice.spec_key, slice.primary_grade, slice.unified_code]) {
       if (typeof token === 'string' && token.trim().length > 0) gradeUniverse.add(token.trim());
     }
   }
+  const ORG_MARKER_VALID_RE = /^ORG:[a-z_]+:OTHERS$/;
   for (const slice of validSlices) {
     for (const rule of slice.evaluation_rules) {
       if (!rule.applies_to_grades || rule.applies_to_grades.length === 0) continue;
-      const unknown = rule.applies_to_grades.filter((g) => g !== 'ALL' && !gradeUniverse.has(g));
+      const orgMarkers = rule.applies_to_grades.filter((g) => g.startsWith('ORG:'));
+      for (const marker of orgMarkers) {
+        if (!ORG_MARKER_VALID_RE.test(marker)) {
+          issue('LINT_APPLIES_TO_GRADES', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 残留非法组织类型标记 "${marker}"（合法形态: ORG:<structure_type>:OTHERS，应为挂载前内部语义，挂载后不应出现）`);
+        }
+      }
+      const unknown = rule.applies_to_grades.filter((g) => g !== 'ALL' && !g.startsWith('ORG:') && !gradeUniverse.has(g));
       if (unknown.length > 0) {
         issue('LINT_APPLIES_TO_GRADES', `切片 ${slice.spec_key} 规则 ${rule.rule_id} 的 applies_to_grades 含切片牌号全集外的牌号: ${unknown.join('、')}（防臆造牌号）`);
       }

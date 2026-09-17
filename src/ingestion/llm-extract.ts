@@ -12,6 +12,9 @@ import type {
   ExtractionDrafts,
   TextBlock,
 } from './types.ts';
+import { applyClausePatterns } from './clause-patterns.ts';
+import type { StandardProfile } from './standard-profile.ts';
+import { ZH_CN_PROFILE } from './standard-profile.ts';
 
 /* ==========================================================================
    S2 有界 LLM 提取 (LLM Extract)
@@ -132,7 +135,9 @@ function resolveApiKey(apiKeyField: string): string {
 }
 
 /**
- * 默认聊天客户端：OpenAI 兼容 /chat/completions（非流式，temperature 固定 1）
+ * 默认聊天客户端：OpenAI 兼容 /chat/completions（流式 SSE 聚合，temperature 固定 1）
+ * 采用流式的原因：kimi-k3 等推理模型长思考时，非流式长挂连接会被服务端/代理掐断
+ * （表现为 fetch failed/连接重置）；流式持续吐 chunk 保持连接活性，与质保书管线一致。
  * 单次调用不重试——重试策略由上层 callWithRetry 携带错误上下文执行
  */
 export function createDefaultChatClient(configId?: string): ChatClient {
@@ -159,6 +164,8 @@ export function createDefaultChatClient(configId?: string): ChatClient {
           messages,
           temperature: 1, // Kimi 及主流推理模型严格要求 temperature: 1
           max_tokens: 32768, // 整表结构化输出体积大，显式放宽输出上限防止 JSON 截断
+          stream: true, // 流式保活：长思考推理模型的非流式长挂连接会被掐断
+          stream_options: { include_usage: false },
           // 视觉转录任务需要纯文本输出，强制 json_object 会逼模型把转录包成 JSON 形态
           ...(opts?.task === 'vision_transcribe' ? {} : { response_format: { type: 'json_object' } }),
         }),
@@ -167,9 +174,37 @@ export function createDefaultChatClient(configId?: string): ChatClient {
       if (!response.ok) {
         throw new ModelApiExecutionError(`大模型接口响应异常 [HTTP ${response.status}]`, response.status);
       }
-      const data = await response.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || content.trim().length === 0) {
+      if (!response.body) {
+        throw new ModelApiExecutionError('大模型流式响应缺少 body');
+      }
+
+      // SSE 聚合：拼接所有 chunk 的 delta.content，忽略 reasoning_content 与心跳
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let content = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
+        for (const evt of events) {
+          const dataLines = evt.split('\n').filter((l) => l.startsWith('data:'));
+          for (const line of dataLines) {
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') continue;
+            try {
+              const chunk = JSON.parse(payload);
+              const delta = chunk?.choices?.[0]?.delta?.content;
+              if (typeof delta === 'string') content += delta;
+            } catch {
+              // 半截 JSON 片段留待下一帧拼接（SSE 边界不保证整包）
+            }
+          }
+        }
+      }
+      if (content.trim().length === 0) {
         throw new ModelApiExecutionError('大模型返回内容为空或结构异常');
       }
       return content;
@@ -264,11 +299,73 @@ async function extractMeta(chat: ChatClient, blocks: TextBlock[]): Promise<Recor
   return parsed as Record<string, unknown>;
 }
 
-async function extractChemicalSlices(chat: ChatClient, blocks: TextBlock[]): Promise<DraftSlice[]> {
+/* ==========================================================================
+   表块行级拆批（v1.7.1，确定性纯函数）——根治大表（ASME TABLE2 数十牌号）单块提取超时：
+   牌号行计数超过阈值时按完整牌号行分组拆批，每批携带表头/表题与表注上下文行，
+   逐批调用提取后经 mergeSliceDrafts 按 spec_key 合并（绝不截断牌号行）
+   ========================================================================== */
+
+// 每批最大牌号行数（可配置常量；SA-213 TABLE2 真实超时案例校准：12 行/批单批输出可控）
+export const GRADE_TABLE_BATCH_SIZE = 12;
+
+/**
+ * 表块按牌号行确定性拆批（同输入同输出）：
+ * - 首个牌号行前的行 = 表头/表题上下文，每个子批都携带；
+ * - 牌号行（profile.gradeRowRe 单行匹配）开启新行组，组间非牌号行视为该行续行（如 NB 表
+ *   断行 "8.00～\n12.00"、SA-213 上标折行）并入当前组——批次边界恒为完整牌号行，绝不截断；
+ * - 最后一个牌号行后的行 = 表注尾部上下文，每个子批都携带（注记语义全批共享）；
+ * - 牌号行数 ≤ 阈值或无法识别牌号行时原样返回单批（不拆）。
+ */
+export function splitGradeTableBlock(
+  block: TextBlock,
+  profile: StandardProfile = ZH_CN_PROFILE,
+  batchSize: number = GRADE_TABLE_BATCH_SIZE,
+): TextBlock[] {
+  const gradeRowLineRe = new RegExp(profile.gradeRowRe.source, 'gm');
+  const lines = block.text.split('\n');
+  const isGradeRow = lines.map((line) => {
+    gradeRowLineRe.lastIndex = 0;
+    return gradeRowLineRe.test(line);
+  });
+  const rowCount = isGradeRow.filter(Boolean).length;
+  if (rowCount === 0 || rowCount <= batchSize) return [block];
+
+  const firstRow = isGradeRow.indexOf(true);
+  const lastRow = isGradeRow.lastIndexOf(true);
+  const headerLines = lines.slice(0, firstRow);
+  const trailerLines = lines.slice(lastRow + 1);
+  // 牌号行区间分组：牌号行开新组，续行归当前组
+  const groups: string[][] = [];
+  let current: string[] | null = null;
+  for (let i = firstRow; i <= lastRow; i++) {
+    if (isGradeRow[i]) {
+      current = [lines[i]!];
+      groups.push(current);
+    } else {
+      current!.push(lines[i]!);
+    }
+  }
+  const header = headerLines.join('\n');
+  const trailer = trailerLines.join('\n');
+  const batches: TextBlock[] = [];
+  for (let i = 0; i < groups.length; i += batchSize) {
+    const body = groups
+      .slice(i, i + batchSize)
+      .map((g) => g.join('\n'))
+      .join('\n');
+    const text = [header, body, trailer].filter((s) => s.length > 0).join('\n');
+    batches.push({ blockType: block.blockType, clauseRef: block.clauseRef, text });
+  }
+  return batches;
+}
+
+async function extractChemicalSlices(chat: ChatClient, blocks: TextBlock[], profile: StandardProfile): Promise<DraftSlice[]> {
   const userPrompt = [
     '【任务】从化学成分表文本块中逐牌号提取化学成分规则，输出切片草稿数组。',
     '【硬性要求】',
-    '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"，structure_type 按组织类型映射（' + STRUCTURE_TYPE_MAP + '）。aliases：可填入该牌号的国际/历史牌号别名（模型世界知识，如 06Cr19Ni10 -> ["SUS304","TP304","0Cr18Ni9"]），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。',
+    profile.id === 'en-asme'
+      ? '1. 每个牌号一个切片草稿：' + profile.promptLocale.gradeConcepts + '，structure_type 判读（' + profile.promptLocale.structureTypeMap + '）。aliases：可填入该牌号的国际别名（模型世界知识），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。'
+      : '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"，structure_type 按组织类型映射（' + STRUCTURE_TYPE_MAP + '）。aliases：可填入该牌号的国际/历史牌号别名（模型世界知识，如 06Cr19Ni10 -> ["SUS304","TP304","0Cr18Ni9"]），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。',
     '2. 每个规定了的元素一条 numeric_range 规则：category 固定 "chemical"，property_key=元素符号（C/Si/Mn/P/S/Ni/Cr/Mo/N/Ti/Nb 等）。',
     '3. 区间严格取自原文："0.04～0.10" -> min=0.04, max=0.10；单值上限 "0.08" -> min=null, max=0.08；"—" 表示标准未规定该元素，跳过。',
     '4. "其他"列的公式型条目（如 "Ti：5（C+N）～0.70"、"Nb：10C～1.10"）不在本任务范围（由专门任务提取），不得输出；仅提取主元素列（C/Si/Mn/P/S/Ni/Cr/Mo/N 等）的数值区间。',
@@ -298,14 +395,16 @@ async function extractChemicalSlices(chat: ChatClient, blocks: TextBlock[]): Pro
   });
 }
 
-async function extractMechanicalSlices(chat: ChatClient, blocks: TextBlock[]): Promise<DraftSlice[]> {
+async function extractMechanicalSlices(chat: ChatClient, blocks: TextBlock[], profile: StandardProfile): Promise<DraftSlice[]> {
   const userPrompt = [
     '【任务】从力学性能相关文本块中提取力学性能规则（室温拉伸性能 + 硬度多选一等），输出切片草稿数组。文本块可能是拉伸性能表、硬度表或含力学条款的正文块——按块内容类型分别处理，不得因"非拉伸"跳过硬度表。',
     '【硬性要求】',
-    '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"；aliases：可填入该牌号的国际/历史牌号别名（模型世界知识，如 06Cr19Ni10 -> ["SUS304","TP304","0Cr18Ni9"]），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。',
+    profile.id === 'en-asme'
+      ? '1. 每个牌号一个切片草稿：' + profile.promptLocale.gradeConcepts + '。aliases：可填入该牌号的国际别名（模型世界知识），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。'
+      : '1. 每个牌号一个切片草稿：spec_key=统一数字代号（如 S30408），primary_grade=牌号（如 06Cr19Ni10），display_name="06Cr19Ni10 (S30408)"；aliases：可填入该牌号的国际/历史牌号别名（模型世界知识，如 06Cr19Ni10 -> ["SUS304","TP304","0Cr18Ni9"]），不确定时留空数组；别名不参与原文数值溯源，供人工抽检。',
     '2. 拉伸性能（numeric_range）：category 固定 "mechanical"。property_key 映射：抗拉强度 Rm -> tensile_strength（unit "MPa"）；规定塑性延伸强度 Rp0.2 -> yield_strength_rp02（unit "MPa"）；断后伸长率 A -> elongation_A（unit "%"）。数值严格取自原文区间："520" -> min=520, max=null；"35" -> min=35, max=null；"35~50" -> min=35, max=50。忽略密度与推荐热处理制度列。',
     '3. 表注扫描（强制，不得遗漏）：块内表注/条注中的工艺偏差修正（如"热挤压钢管抗拉强度允许降低20MPa"）必须扫描并输出——写入对应指标规则的 criteria.condition_adjustments=[{when, min_offset 或 max_offset, note}]；when 用 JS 表达式惯例 "ctx.header.manufacturing_process == \'<工艺>\'"（冷拔->cold_drawn、热轧->hot_rolled、热挤压->hot_extrusion），min_offset/max_offset 为带符号修正值（降低为负），note 为原文摘要。无此类注记时不输出该字段。',
-    '4. 硬度表（or_choice_group，强制）：当文本块为硬度表（含 HBW/HRB/HV 列）或条款提及硬度试验时，必须为适用牌号各输出一条 or_choice_group 规则：property_key="hardness"，category "mechanical"，requirement_level 按条款（协商/条件触发项用 CONDITIONAL 或 OPTIONAL_AGREED），trigger_condition 取对应条款中的壁厚/外径前置条件（JS 表达式惯例，如 "ctx.header.dimensions.wall_thickness_mm >= 1.7"），criteria={options:[{sub_key:"HRB"|"HBW"|"HV", rule_type:"numeric_range", criteria:{max,unit}}]}，option 数值严格取自硬度表原文。硬度表按组织类型（如"奥氏体型""其他""铁素体型"行）而非逐牌号给值时：将该行值映射到化学表对应组织类型的全部牌号切片（结合组织类型列判读），每切片输出一条。',
+    '4. 硬度表（or_choice_group，强制）：当文本块为硬度表（含 HBW/HRB/HV 列）或条款提及硬度试验时，必须为适用牌号各输出一条 or_choice_group 规则：property_key="hardness"，category "mechanical"，requirement_level 按条款（协商/条件触发项用 CONDITIONAL 或 OPTIONAL_AGREED），trigger_condition 取对应条款中的壁厚/外径前置条件（JS 表达式惯例，如 "ctx.header.dimensions.wall_thickness_mm >= 1.7"），criteria={options:[{sub_key:"HRB"|"HBW"|"HV", rule_type:"numeric_range", criteria:{max,unit}}]}，option 数值严格取自硬度表原文。硬度表按组织类型（如"奥氏体型""其他""铁素体型"行）而非逐牌号给值时分两种情形：① 行内显式列名牌号 -> applies_to_grades 取这些牌号；② 行值为该组织类型的兜底值（如"奥氏体型 其他 ≤192 ≤90 ≤200"）-> 输出一条 applies_to_grades=["ORG:<组织类型>:OTHERS"] 的规则（组织类型取值：austenitic/ferritic/martensitic/duplex/precipitation_hardening，OTHERS 表示该组织类型中未被本表显式列名的全部牌号），由管线确定性展开挂载到对应切片。',
     '5. requirement_level 固定 "MANDATORY"（硬度等协商/条件项除外，见第 4 条），rule_id 格式 "MECH_{spec_key}_{指标}"，display_name 如 "抗拉强度 (Rm)"。',
     '6. 每条规则 source_clause = 所在文本块的【条款号】。',
     '【输出 JSON 结构】{"slices": [{"spec_key": string, "primary_grade": string, "display_name": string, "aliases": string[], "mechanical_rules": [{"rule_id": string, "category": "mechanical", "property_key": string, "display_name": string, "rule_type": "numeric_range" | "or_choice_group", "requirement_level": string, "trigger_condition"?: string, "criteria": object, "source_clause": string}]}]}',
@@ -466,6 +565,8 @@ async function extractProcessRules(
     '【判读 worked example】输入条款："牌号为 07Cr19Ni10、16Cr23Ni13、20Cr25Ni20、07Cr17Ni12Mo2、07Cr19Ni11Ti、07Cr18Ni11Nb 的钢管可不进行晶间腐蚀试验，其他奥氏体型钢管应进行晶间腐蚀试验"。判读逻辑：前半句列名的 6 个牌号是豁免对象；后半句"其他奥氏体型钢管"限定了正常检验规则的作用域——只覆盖奥氏体型牌号中除上述 6 个以外的牌号，铁素体型牌号（如 06Cr13、10Cr17、008Cr27Mo）既不在豁免名单也不在该作用域内，不输出任何规则。期望输出：① 6 条 exemption 规则（每个豁免牌号一条，applies_to_grades=[该牌号]，criteria={reason:"标准 7.7.1 明确规定该牌号可不进行晶间腐蚀试验"}）；② 1 条正常检验规则（如 {"rule_id":"CORR_INTERGRANULAR","category":"corrosion","property_key":"intergranular_corrosion","rule_type":"qualitative_enum"|"qualitative_pass","requirement_level":"MANDATORY","criteria":{"method":"Method_E","test_standard":"GB/T 4334-2020","expected":"NO_CORROSION_TREND"},"applies_to_grades":[其余全部奥氏体型牌号，不含铁素体型]})；③ 铁素体型牌号零规则。常见错误（严禁）：给豁免牌号输出 MANDATORY 检验规则；把正常规则的 applies_to_grades 写成 ALL（会误挂铁素体）。',
     '10. 前置条件 trigger_condition（强制）：条款含"壁厚/外径 ≤/≥ X 时进行/不进行"类前置条件时，必须输出 trigger_condition（JS 表达式惯例：壁厚 ctx.header.dimensions.wall_thickness_mm、外径 ctx.header.dimensions.outer_diameter_mm），如"壁厚不大于 10mm" -> "ctx.header.dimensions.wall_thickness_mm <= 10"。',
     '11. 协商/条件项区分（强制，防误伤）：无判定准则的纯兜底协商条款不输出规则（仅声明"经供需双方协商可采用其他方法"而无任何验收指标、等级或阈值者，如"可采用其他无损检测方法和验收等级"）；但带有具体指标表/验收等级的协商或条件触发项必须输出——requirement_level 用 OPTIONAL_AGREED（供需协商并在合同中注明）或 CONDITIONAL（尺寸等条件触发），并携带 trigger_condition 与具体 criteria（如硬度试验"壁厚≥1.7mm 可做布氏/洛氏/维氏硬度，值符合表N" -> or_choice_group + trigger_condition + CONDITIONAL）。',
+    '12. expected_visual_result 闭集（强制）：dynamic_formula_pass / qualitative_and_numeric 的 expected_visual_result 仅允许从闭集 ["NO_CRACKS","NO_CRACKS_OR_SPLITS","NO_LEAKS","CLEAN_PASS"] 选取（无裂纹/无裂纹或裂口/无渗漏/清洁通过），严禁自造机器码；语义真相由 description 原文层承载。',
+    '13. 定性规则原文双层记录（强制）：qualitative_pass / qualitative_enum / exemption 必须携带 description（或 criteria.criteria_description），保留标准原文表述（含 CJK）；机器码 criteria（expected/method/required_level/reason）仅做路由，不得替代原文层。',
     ...catalogLines,
     '【输出 JSON 结构】{"rules": [{"rule_id": string, "category": string, "property_key": string, "display_name": string, "rule_type": string, "requirement_level": string, "trigger_condition"?: string, "description"?: string, "criteria": object, "source_clause": string, "applies_to_grades": string[] | "ALL"}]}',
     '【条款块】',
@@ -595,8 +696,21 @@ function sliceGradeTokens(slice: DraftSlice): string[] {
 }
 
 /**
+ * 组织类型兜底标记（项4，硬度表"其他"行语义）："ORG:<structure_type>:OTHERS" 表示
+ * "该组织类型中未被本表显式列名的全部牌号"；由 S2 挂载时确定性展开，结构类型取值与
+ * SpecificationSliceSchema.structure_type 惯例一致（austenitic/ferritic/martensitic/duplex/precipitation_hardening）
+ */
+const ORG_SCOPE_MARKER_RE = /^ORG:([a-z_]+):OTHERS$/;
+
+function isOrgScopeMarker(token: string): boolean {
+  return ORG_SCOPE_MARKER_RE.test(token);
+}
+
+/**
  * 牌号适用性确定性展开挂载（S2 产物契约，同输入同输出）：
- * - applies_to_grades 含 "ALL" -> 挂载到全部切片；否则按牌号/统一代号匹配
+ * - applies_to_grades 含 "ALL" -> 挂载到全部切片；显式牌号/统一代号按别名匹配
+ * - 含 "ORG:<type>:OTHERS" -> 挂载到 structure_type === type 且未被同表显式列名的切片
+ *   （"本表显式列名"= 同一批规则中同 property_key+source_clause 的显式牌号规则所覆盖的切片）
  * - 挂载后 rule_id 追加 _{spec_key}，保证跨切片全局唯一（同一 ALL 规则展开到多个切片）
  * - 未匹配到任何切片的规则进入 unmounted 移交 S3（LINT_APPLIES_TO_GRADES 拦截），绝不静默丢弃
  */
@@ -606,6 +720,23 @@ export function mountRulesByGrades(
 ): { perSlice: DraftRule[][]; unmounted: DraftRule[] } {
   const perSlice: DraftRule[][] = slices.map(() => []);
   const unmounted: DraftRule[] = [];
+
+  // 预扫：同批规则中"本表显式列名"的切片声明（同 property_key+source_clause 的显式牌号规则覆盖集），
+  // ORG:OTHERS 展开时排除这些切片，保证"其他"行不覆盖显式列名牌号
+  const explicitClaims = new Set<string>();
+  for (const rule of rules) {
+    const applies = rule.applies_to_grades ?? [];
+    if (applies.length === 0 || applies.includes('ALL')) continue;
+    for (const g of applies) {
+      if (isOrgScopeMarker(g)) continue; // ORG 标记不是显式牌号
+      slices.forEach((slice) => {
+        if (new Set(sliceGradeTokens(slice)).has(g)) {
+          explicitClaims.add(`${slice.spec_key}|${rule.property_key}|${rule.source_clause}`);
+        }
+      });
+    }
+  }
+
   for (const rule of rules) {
     const applies = rule.applies_to_grades ?? [];
     const targetIdx = new Set<number>();
@@ -616,6 +747,16 @@ export function mountRulesByGrades(
         const tokens = new Set(sliceGradeTokens(slice));
         if (applies.some((g) => tokens.has(g))) targetIdx.add(i);
       });
+      for (const g of applies) {
+        const orgMatch = ORG_SCOPE_MARKER_RE.exec(g);
+        if (!orgMatch) continue;
+        const structureType = orgMatch[1]!;
+        slices.forEach((slice, i) => {
+          if (slice.structure_type !== structureType) return;
+          if (explicitClaims.has(`${slice.spec_key}|${rule.property_key}|${rule.source_clause}`)) return;
+          targetIdx.add(i);
+        });
+      }
     }
     if (targetIdx.size === 0) {
       unmounted.push(rule);
@@ -651,9 +792,10 @@ function isRicherCriteria(candidate: Record<string, unknown>, current: Record<st
 /**
  * 同切片按 property_key 确定性去重（S2 产物契约，同输入同输出）：
  * 正文条款与检验一览表重复提取时，同一切片会出现同 property_key 的多条规则（真实 E2E
- * 曾出现单切片 4 条涡流规则）；保留 criteria 更丰富者，被去重项的信息已由保留版本承载，
- * 经 progress 计数上报——不进入 unmounted（unmounted 语义是无法挂载、须人工处理）。
- * 保留规则维持其原始出现位置（优胜者在后的情况下先出现的重复项被移除）。
+ * 曾出现单切片 4 条涡流规则）；保留优先级：确定性法条模式产出（rule.deterministic）
+ * 恒胜出于 LLM 产物（阶段 B，防双重产出），同级再比 criteria 更丰富者。
+ * 被去重项的信息已由保留版本承载，经 progress 计数上报——不进入 unmounted
+ * （unmounted 语义是无法挂载、须人工处理）。保留规则维持其原始出现位置。
  */
 export function dedupeSliceRulesByPropertyKey(slices: DraftSlice[], onTask?: (message: string) => void): { kept: number; dropped: number } {
   let kept = 0;
@@ -662,7 +804,16 @@ export function dedupeSliceRulesByPropertyKey(slices: DraftSlice[], onTask?: (me
     const winners = new Map<string, DraftRule>();
     for (const rule of slice.evaluation_rules) {
       const existing = winners.get(rule.property_key);
-      if (!existing || isRicherCriteria(rule.criteria, existing.criteria)) {
+      if (!existing) {
+        winners.set(rule.property_key, rule);
+        continue;
+      }
+      const candidateDeterministic = rule.deterministic === true;
+      const existingDeterministic = existing.deterministic === true;
+      const candidateWins = candidateDeterministic !== existingDeterministic
+        ? candidateDeterministic
+        : isRicherCriteria(rule.criteria, existing.criteria);
+      if (candidateWins) {
         winners.set(rule.property_key, rule);
       }
     }
@@ -713,11 +864,12 @@ export function mergeSliceDrafts(...groups: DraftSlice[][]): DraftSlice[] {
 }
 
 /**
- * 附录类锚点判定：附录章节（附录A）与附录表格（表A.1）均为资料性重复内容，
- * 不参与切片提取与牌号行数对账，避免与正文表产生重复规则
+ * 附录类锚点判定：附录章节与附录表格均为资料性重复内容，不参与切片提取与牌号行数
+ * 对账，避免与正文表产生重复规则。具体形态由 profile.isAppendixRef 判定
+ * （zh：附录A/表A.1；en：ANNEX X/APPENDIX X），缺省 zh-cn 与历史行为一致
  */
-export function isAppendixLikeRef(clauseRef: string): boolean {
-  return clauseRef.startsWith('附录') || /^表[A-ZＡ-Ｚ]\./.test(clauseRef);
+export function isAppendixLikeRef(clauseRef: string, profile: StandardProfile = ZH_CN_PROFILE): boolean {
+  return profile.isAppendixRef(clauseRef);
 }
 
 /**
@@ -770,9 +922,10 @@ export async function extractAll(
   chat: ChatClient,
   onTask?: (message: string) => void,
   propertyKeyCatalog?: ReadonlyMap<string, { category: string; display_name: string }>,
+  profile: StandardProfile = ZH_CN_PROFILE,
 ): Promise<ExtractionDrafts> {
   const pick = (task: keyof typeof EXTRACTABLE_TYPES): TextBlock[] =>
-    blocks.filter((b) => !isAppendixLikeRef(b.clauseRef) && (EXTRACTABLE_TYPES[task] || []).includes(b.blockType));
+    blocks.filter((b) => !isAppendixLikeRef(b.clauseRef, profile) && (EXTRACTABLE_TYPES[task] || []).includes(b.blockType));
 
   const metaBlocks = pick('meta');
   const chemBlocks = pick('slices_chemical');
@@ -788,17 +941,30 @@ export async function extractAll(
   onTask?.(`提取元信息（${metaBlocks.length} 个范围/前言块）...`);
   const meta = await extractMeta(chat, metaBlocks);
 
-  // 按块逐块调用：整表合并单次调用的输出体积会超出模型输出上限导致 JSON 截断
+  // 按块逐块调用：整表合并单次调用的输出体积会超出模型输出上限导致 JSON 截断；
+  // 大表（牌号行 > GRADE_TABLE_BATCH_SIZE）先行级拆批（每批携带表头/表注上下文），逐批提取后由 mergeSliceDrafts 按 spec_key 合并
   const chemSlices: DraftSlice[] = [];
   for (const [i, block] of chemBlocks.entries()) {
-    onTask?.(`提取化学成分切片（第 ${i + 1}/${chemBlocks.length} 个表块 ${block.clauseRef}）...`);
-    chemSlices.push(...(await extractChemicalSlices(chat, [block])));
+    const batches = splitGradeTableBlock(block, profile);
+    if (batches.length > 1) {
+      onTask?.(`表块 ${block.clauseRef} 拆为 ${batches.length} 批提取（每批 ≤${GRADE_TABLE_BATCH_SIZE} 牌号行）...`);
+    }
+    onTask?.(`提取化学成分切片（第 ${i + 1}/${chemBlocks.length} 个表块 ${block.clauseRef}${batches.length > 1 ? `，${batches.length} 批` : ''}）...`);
+    for (const batch of batches) {
+      chemSlices.push(...(await extractChemicalSlices(chat, [batch], profile)));
+    }
   }
 
   const mechSlices: DraftSlice[] = [];
   for (const [i, block] of mechBlocks.entries()) {
-    onTask?.(`提取力学性能切片（第 ${i + 1}/${mechBlocks.length} 个表块 ${block.clauseRef}）...`);
-    mechSlices.push(...(await extractMechanicalSlices(chat, [block])));
+    const batches = splitGradeTableBlock(block, profile);
+    if (batches.length > 1) {
+      onTask?.(`表块 ${block.clauseRef} 拆为 ${batches.length} 批提取（每批 ≤${GRADE_TABLE_BATCH_SIZE} 牌号行）...`);
+    }
+    onTask?.(`提取力学性能切片（第 ${i + 1}/${mechBlocks.length} 个表块 ${block.clauseRef}${batches.length > 1 ? `，${batches.length} 批` : ''}）...`);
+    for (const batch of batches) {
+      mechSlices.push(...(await extractMechanicalSlices(chat, [batch], profile)));
+    }
   }
 
   const clauses: DraftClause[] = [];
@@ -812,8 +978,18 @@ export async function extractAll(
   if (scheduleExcluded.length > 0) {
     onTask?.(`检验项目一览表块排除出 process_rules 通道（${scheduleExcluded.length} 个块：${scheduleExcluded.map((b) => b.clauseRef).join('、')}）...`);
   }
-  for (const [i, block] of processBlocks.entries()) {
-    onTask?.(`提取工艺/探伤/表面规则（第 ${i + 1}/${processBlocks.length} 个条款块 ${block.clauseRef}）...`);
+  // 阶段 B：确定性法条模式预扫描（中英双语）——豁免/作用域/牌号清单限定等法条模式命中块
+  // 直接从 LLM process_rules 输入剔除（避免双重产出），模式产出（deterministic 标记）与
+  // LLM 产物同键冲突时由去重优先级保证确定性版本胜出
+  const mergedSlices = mergeSliceDrafts(chemSlices, mechSlices);
+  const clausePatterns = applyClausePatterns(processBlocks, mergedSlices);
+  const llmProcessBlocks = processBlocks.filter((b) => !clausePatterns.hitClauseRefs.has(b.clauseRef));
+  if (clausePatterns.rules.length > 0) {
+    appliesRules.push(...clausePatterns.rules);
+    onTask?.(`确定性法条模式提取 ${clausePatterns.rules.length} 条规则（${clausePatterns.hitClauseRefs.size} 个条款块未走 LLM process_rules）...`);
+  }
+  for (const [i, block] of llmProcessBlocks.entries()) {
+    onTask?.(`提取工艺/探伤/表面规则（第 ${i + 1}/${llmProcessBlocks.length} 个条款块 ${block.clauseRef}）...`);
     appliesRules.push(...(await extractProcessRules(chat, [block], catalogLines)));
   }
   for (const [i, block] of formulaBlocks.entries()) {
@@ -821,7 +997,6 @@ export async function extractAll(
     appliesRules.push(...(await extractDynamicFormulas(chat, [block], catalogLines)));
   }
 
-  const mergedSlices = mergeSliceDrafts(chemSlices, mechSlices);
   const { perSlice, unmounted } = mountRulesByGrades(appliesRules, mergedSlices);
   mergedSlices.forEach((slice, i) => {
     slice.evaluation_rules.push(...perSlice[i]!);

@@ -207,7 +207,7 @@
     {
       "rule_id": "PROC_NB_S30408_FLATTENING",
       "category": "process",
-      "property_key": "flattening",
+      "property_key": "flattening_test",
       "display_name": "压扁试验 (Flattening)",
       "description": "依据 NB/T 47019.5-2021 第6.5.1条，壁厚 <= 10mm 钢管按 NB/T 47019.1 压扁公式计算间距 H 并要求无裂纹",
       "rule_type": "dynamic_formula_pass",
@@ -221,7 +221,7 @@
     {
       "rule_id": "PROC_NB_S30408_FLARING",
       "category": "process",
-      "property_key": "flaring",
+      "property_key": "flaring_test",
       "display_name": "扩口试验 (Flaring)",
       "description": "依据 NB/T 47019.5-2021 第6.5.2条，壁厚 <= 10mm 无缝管顶心锥度 60°，扩口率 >= 18% 无裂口",
       "rule_type": "qualitative_and_numeric",

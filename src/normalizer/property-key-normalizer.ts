@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { RuleCategory } from '../schemas/standard.schema';
+import type { RuleCategory } from '../schemas/standard.schema.ts';
 
 export interface NormalizedPropertyResult {
   /** 原始提取到的检验项名称 (如 '抗拉强度 Rm', 'C', 'ReH (Rp0.2)') */

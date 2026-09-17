@@ -9,7 +9,8 @@
   "llm": {
     "timeoutMs": 60000,
     "maxRetries": 2,
-    "ingestConfigId": "k3-coding",
+    "ingestTimeoutMs": 600000,
+    "ingestConfigId": "k3-volume",
     "configs": [
       {
         "id": "standard",
@@ -33,12 +34,22 @@
       },
       {
         "id": "k3-coding",
-        "name": "K3 标准入库专用 (Kimi Coding)",
+        "name": "K3 标准入库专用 (Kimi Coding 订阅)",
         "provider": "Kimi",
         "baseUrl": "https://api.kimi.com/coding/v1",
         "model": "k3-256k",
         "thinkingEffort": "high",
         "apiKey": "KIMI_K3_API_KEY",
+        "isDefault": false
+      },
+      {
+        "id": "k3-volume",
+        "name": "K3 标准入库专用 (按量计费)",
+        "provider": "Moonshot",
+        "baseUrl": "https://api.moonshot.cn/v1",
+        "model": "kimi-k3",
+        "thinkingEffort": "high",
+        "apiKey": "KIMI_K3_API_KEY_BY_VOLUME",
         "isDefault": false
       }
     ],

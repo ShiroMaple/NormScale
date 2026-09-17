@@ -97,6 +97,20 @@ node --experimental-strip-types scripts/ingest-standard.ts <pdf> --out <临时�
 - **透明性契约**：drafts/meta 带 `text_source: 'vision'`，review-report 顶部显著标注并提示提高人工抽检权重；此时 S3 溯源断言为"转录文本自洽性校验"（弱于文本层独立真相源），数值缺失会走 TRACE/MANUAL_REVIEW 而非静默通过。
 - **视觉调用解除 `response_format: json_object`**：转录任务必须纯文本输出（v1.3.0 曾因此全篇转录被包成 JSON 导致 S1 零表格块）。
 
+## StandardProfile 与确定性法条模式（v1.5-v1.7）
+
+- **StandardProfile**（`standard-profile.ts`）：语言/体系配置档两档（zh-cn 缺省 / en-asme），锚点、标题判定、乱码检测、路由关键词、牌号形态、CJK lint 开关全部 profile 注入；`--profile` 显式指定或自动嗅探（CJK 占比度量）。schema 零改动（泛化设计的红利）。
+- **确定性法条模式预扫描器**（`clause-patterns.ts`）：豁免/作用域/条件触发/协商四类规整法条句式（中英双语）零 LLM 提取，牌号闭集匹配 + structure_type 查表过滤，命中条款从 LLM 输入剔除、确定性版本恒胜出——exemption 类复合判读不再赌模型遵从度。
+- **超大表确定性行级拆批**（`splitGradeTableBlock`）：>12 牌号行的表块按行拆批（表头表注随批携带、批次边界恒为完整行），根治 SA-213 TABLE2（30 牌号）单批 300s 超时。
+- **入库默认客户端流式化**：推理模型长思考时非流式长挂连接被服务端掐断（fetch failed），改流式 SSE 聚合保活。
+- **LLM 配置三级选择**：CLI `--llm <id>` > 环境变量 `INGEST_LLM_CONFIG_ID` > `llm.ingestConfigId` > isDefault；K3 双配置（订阅 k3-coding / 按量 k3-volume，注意 moonshot.cn 的 model 名为 `kimi-k3` 而非 `k3-256k`）。
+
+## 待办（额度恢复后）
+
+1. SA-213 剩余 E2E（工艺/条款/公差提取 + S3 门禁 + 报告验收），化学/力学两阶段已实测通过；
+2. drafts 分块增量缓存：当前 drafts.json 在 extractAll 完成后才落盘，长链路中断整段重提；按块/任务粒度增量落盘可大幅降本；
+3. en 语料的幻影牌号方差观察与 TABLE5/TABLE7 过路由细化。
+
 ## 视觉通道 E2E 验证（GB 13296-2023，乱码 PDF，v1.3.5 真实多模态）
 
 - 19 页视觉转录 → 全链路提取 31 切片全族规则；

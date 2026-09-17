@@ -52,11 +52,11 @@ const META = {
 /** 预制工艺/探伤规则（对齐 golden S32168 范式），逐任务可覆盖 */
 function createExtractMock(overrides: { processRules?: Record<string, unknown>[]; dynamicFormulas?: Record<string, unknown>[]; toleranceTables?: Record<string, unknown>[] } = {}): ChatClient {
   const processRules = overrides.processRules ?? [
-    { rule_id: 'PROC_FLATTENING', category: 'process', property_key: 'flattening', display_name: '压扁试验', rule_type: 'dynamic_formula_pass', requirement_level: 'MANDATORY', criteria: { formula_distance_H: '(1 + 0.09) * S / (0.09 + S / D)', expected_visual_result: 'NO_CRACKS', test_standard: 'GB/T 246' }, source_clause: '6.5.1', applies_to_grades: 'ALL' },
-    { rule_id: 'PROC_FLARING', category: 'process', property_key: 'flaring', display_name: '扩口试验', rule_type: 'qualitative_and_numeric', requirement_level: 'MANDATORY', criteria: { cone_angle_deg: 60, flaring_rate_min_percent: 18, expected_visual_result: 'NO_CRACKS', test_standard: 'GB/T 242' }, source_clause: '6.5.2', applies_to_grades: ['06Cr18Ni11Ti', 'S32168'] },
+    { rule_id: 'PROC_FLATTENING', category: 'process', property_key: 'flattening_test', display_name: '压扁试验', rule_type: 'dynamic_formula_pass', requirement_level: 'MANDATORY', criteria: { formula_distance_H: '(1 + 0.09) * S / (0.09 + S / D)', expected_visual_result: 'NO_CRACKS', test_standard: 'GB/T 246' }, source_clause: '6.5.1', applies_to_grades: 'ALL' },
+    { rule_id: 'PROC_FLARING', category: 'process', property_key: 'flaring_test', display_name: '扩口试验', rule_type: 'qualitative_and_numeric', requirement_level: 'MANDATORY', criteria: { cone_angle_deg: 60, flaring_rate_min_percent: 18, expected_visual_result: 'NO_CRACKS', test_standard: 'GB/T 242' }, source_clause: '6.5.2', applies_to_grades: ['06Cr18Ni11Ti', 'S32168'] },
     { rule_id: 'NDT_TIGHTNESS', category: 'ndt', property_key: 'pressure_tightness', display_name: '致密性/水压试验组', rule_type: 'alternative_group', requirement_level: 'MANDATORY', criteria: { group_logic: 'AT_LEAST_ONE_PASS', candidates: [{ candidate_key: 'hydraulic_test', display_name: '逐根水压试验', test_standard: 'GB/T 241', calc_pressure_formula: 'P = 2SR/D', max_pressure_cap: 20, min_holding_time_s: 10, criteria_description: '试验压力按式计算，最大试验压力不超过 20MPa，稳压时间不小于 10s' }, { candidate_key: 'eddy_current_test', display_name: '涡流探伤替代', test_standard: 'GB/T 7735-2016', required_level: 'E2H', criteria_description: '外径≤25mm 通孔 0.8mm；外径＞25mm 达 E2H 级' }] }, source_clause: '6.6', applies_to_grades: 'ALL' },
-    { rule_id: 'CORR_INTERGRANULAR', category: 'corrosion', property_key: 'intergranular_corrosion', display_name: '晶间腐蚀试验', rule_type: 'qualitative_enum', requirement_level: 'MANDATORY', criteria: { method: 'Method_E', test_standard: 'GB/T 4334-2020', expected: 'NO_CORROSION_TREND' }, source_clause: '6.8', applies_to_grades: 'ALL' },
-    { rule_id: 'NDT_ULTRASONIC', category: 'ndt', property_key: 'ultrasonic_test', display_name: '超声检测', rule_type: 'qualitative_enum', requirement_level: 'MANDATORY', criteria: { required_level: 'U2', test_standard: 'GB/T 5777-2019' }, source_clause: '6.10.1.1', applies_to_grades: 'ALL' },
+    { rule_id: 'CORR_INTERGRANULAR', category: 'corrosion', property_key: 'intergranular_corrosion', display_name: '晶间腐蚀试验', rule_type: 'qualitative_enum', requirement_level: 'MANDATORY', description: '依据 NB/T 47019.5-2021 第6.8条，按 GB/T 4334-2020 方法 E 晶间腐蚀试验无晶间腐蚀倾向', criteria: { method: 'Method_E', test_standard: 'GB/T 4334-2020', expected: 'NO_CORROSION_TREND' }, source_clause: '6.8', applies_to_grades: 'ALL' },
+    { rule_id: 'NDT_ULTRASONIC', category: 'ndt', property_key: 'ultrasonic_test', display_name: '超声检测', rule_type: 'qualitative_enum', requirement_level: 'MANDATORY', description: '依据 NB/T 47019.5-2021 第6.10.1.1条，逐根超声检测验收等级 U2', criteria: { required_level: 'U2', test_standard: 'GB/T 5777-2019' }, source_clause: '6.10.1.1', applies_to_grades: 'ALL' },
     { rule_id: 'META_GRAIN_SIZE', category: 'metallographic', property_key: 'grain_size', display_name: '晶粒度', rule_type: 'numeric_range', requirement_level: 'MANDATORY', criteria: { min: 4, max: 7, unit: '级' }, source_clause: '6.9', applies_to_grades: ['07Cr19Ni11Ti', '07Cr17Ni12Mo2', '07Cr19Ni11Ti', '07Cr18Ni11Nb'] },
   ];
   const dynamicFormulas = overrides.dynamicFormulas ?? [
@@ -116,8 +116,9 @@ describe('S2 v2：process_rules 提取与 applies_to_grades 确定性展开（�
     // 限定牌号（牌号或统一代号均可匹配）：扩口只挂 06Cr18Ni11Ti/S32168 切片
     expect(ids(s32168)).toContain('PROC_FLARING_S32168');
     expect(ids(s30408)).not.toContain('PROC_FLARING_S30408');
-    // 晶粒度限定四个 07 系牌号 -> 当前切片全集无匹配 -> 移交 unmounted（不静默丢弃）
-    expect(drafts.unmounted_rules?.some((r) => r.rule_id === 'META_GRAIN_SIZE')).toBe(true);
+    // 晶粒度限定四个 07 系牌号 -> 当前切片全集无匹配：确定性法条模式（NB 6.9 句式）产出
+    // DET_GRAIN_SIZE 经挂载未命中移交 unmounted（不静默丢弃；原 LLM META_GRAIN_SIZE 规则随块剔除不再产出）
+    expect(drafts.unmounted_rules?.some((r) => r.rule_id === 'DET_GRAIN_SIZE')).toBe(true);
 
     // 结构断言：替代组携带 calc_pressure_formula/max_pressure_cap，定性枚举携带 method/required_level
     const tightness = s32168.evaluation_rules.find((r) => r.rule_id === 'NDT_TIGHTNESS_S32168')!;

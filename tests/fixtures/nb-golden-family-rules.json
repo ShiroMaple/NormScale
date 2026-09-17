@@ -68,7 +68,7 @@
         {
           "rule_id": "PROC_NB_S30408_FLARING",
           "category": "process",
-          "property_key": "flaring",
+          "property_key": "flaring_test",
           "rule_type": "qualitative_and_numeric",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -81,7 +81,7 @@
         {
           "rule_id": "PROC_NB_S30408_FLATTENING",
           "category": "process",
-          "property_key": "flattening",
+          "property_key": "flattening_test",
           "rule_type": "dynamic_formula_pass",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -159,7 +159,7 @@
         {
           "rule_id": "PROC_NB_S31008_FLARING",
           "category": "process",
-          "property_key": "flaring",
+          "property_key": "flaring_test",
           "rule_type": "qualitative_and_numeric",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -172,7 +172,7 @@
         {
           "rule_id": "PROC_NB_S31008_FLATTENING",
           "category": "process",
-          "property_key": "flattening",
+          "property_key": "flattening_test",
           "rule_type": "dynamic_formula_pass",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -250,7 +250,7 @@
         {
           "rule_id": "PROC_NB_S31603_FLARING",
           "category": "process",
-          "property_key": "flaring",
+          "property_key": "flaring_test",
           "rule_type": "qualitative_and_numeric",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -263,7 +263,7 @@
         {
           "rule_id": "PROC_NB_S31603_FLATTENING",
           "category": "process",
-          "property_key": "flattening",
+          "property_key": "flattening_test",
           "rule_type": "dynamic_formula_pass",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -341,7 +341,7 @@
         {
           "rule_id": "PROC_NB_S32168_FLARING",
           "category": "process",
-          "property_key": "flaring",
+          "property_key": "flaring_test",
           "rule_type": "qualitative_and_numeric",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -354,7 +354,7 @@
         {
           "rule_id": "PROC_NB_S32168_FLATTENING",
           "category": "process",
-          "property_key": "flattening",
+          "property_key": "flattening_test",
           "rule_type": "dynamic_formula_pass",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -445,7 +445,7 @@
         {
           "rule_id": "PROC_NB_S34778_FLARING",
           "category": "process",
-          "property_key": "flaring",
+          "property_key": "flaring_test",
           "rule_type": "qualitative_and_numeric",
           "requirement_level": "MANDATORY",
           "criteria": {
@@ -458,7 +458,7 @@
         {
           "rule_id": "PROC_NB_S34778_FLATTENING",
           "category": "process",
-          "property_key": "flattening",
+          "property_key": "flattening_test",
           "rule_type": "dynamic_formula_pass",
           "requirement_level": "MANDATORY",
           "criteria": {

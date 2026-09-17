@@ -52,6 +52,11 @@ export interface DraftRule {
    * 落盘时随 source_clause 一并剥离
    */
   applies_to_grades?: string[];
+  /**
+   * S2 内部字段（阶段 B）：确定性法条模式产出标记——同切片同 property_key 去重时
+   * 确定性版本优先于 LLM 产物；落盘时随 source_clause 一并剥离
+   */
+  deterministic?: boolean;
 }
 
 // S2 规格切片草稿：gates 通过并剥离 source_clause 后落盘为 SpecificationSlice

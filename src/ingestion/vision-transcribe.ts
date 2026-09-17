@@ -81,16 +81,22 @@ const TRANSCRIBE_SYSTEM_PROMPT = [
   '所有内容必须与图中逐字一致：禁止换算、修约、补零、补全或推测；看不清的内容标注 [无法辨认]。',
 ].join('\n');
 
-function transcribeUserPrompt(pageNumber: number, totalPages: number): string {
+function transcribeUserPrompt(pageNumber: number, totalPages: number, locale: 'zh' | 'en'): string {
+  const tableConvention = locale === 'en'
+    ? '2. Expand tables row by row: one text line per row preserving column order (e.g., "Grade UNS Designation Carbon Manganese Phosphorus Sulfur ..."); grade rows keep the "TP304 S30400 0.08 2.00 ..." form, with wrapped continuation lines carried by newlines.'
+    : '2. 表格按行展开：每行一条文本行并保持列值顺序（如"序号 牌号 统一数字代号 C Si Mn P S Ni Cr"），牌号行保持"1 06Cr19Ni10 S30408 0.08 1.00 …"形态，续行用换行承接。';
+  const anchorConvention = locale === 'en'
+    ? '3. Keep clause and table anchors (e.g., "9.3 Flattening Test", "TABLE 4 Tensile and Hardness Requirements"); do not add content not present in the image.'
+    : '3. 保留章节号与表号锚点（如"6.5.1 压扁"、"表2 室温力学性能"），不得添加图中没有的内容。';
   return [
-    `【任务】将第 ${pageNumber}/${totalPages} 页标准文档图像忠实转录为纯文本。`,
+    locale === 'en' ? `【Task】Faithfully transcribe page ${pageNumber}/${totalPages} of the standard document image into plain text.` : `【任务】将第 ${pageNumber}/${totalPages} 页标准文档图像忠实转录为纯文本。`,
     '【硬性要求】',
-    '1. 逐字忠实转录：数值、符号、单位、牌号代号必须与图中一致，严禁换算或推测。',
-    '2. 表格按行展开：每行一条文本行并保持列值顺序（如"序号 牌号 统一数字代号 C Si Mn P S Ni Cr"），牌号行保持"1 06Cr19Ni10 S30408 0.08 1.00 …"形态，续行用换行承接。',
-    '3. 保留章节号与表号锚点（如"6.5.1 压扁"、"表2 室温力学性能"），不得添加图中没有的内容。',
-    '4. 看不清/无法辨认的内容标注 [无法辨认]，严禁猜测编造。',
-    '5. 忽略页脚（标准编号/页码），仅输出本页正文与表格转录。',
-    '6. 公式用纯文本/Unicode 符号书写（如 "W=π/1000ρS(D-S)"），严禁使用 LaTeX 标记（\\frac、\\pi 等）。',
+    locale === 'en' ? '1. Transcribe verbatim: values, symbols, units, and grade designations must match the image exactly; no conversion or speculation.' : '1. 逐字忠实转录：数值、符号、单位、牌号代号必须与图中一致，严禁换算或推测。',
+    tableConvention,
+    anchorConvention,
+    locale === 'en' ? '4. Mark illegible content as [无法辨认]; never guess or fabricate.' : '4. 看不清/无法辨认的内容标注 [无法辨认]，严禁猜测编造。',
+    locale === 'en' ? '5. Ignore running headers/footers (book code/spec code/page number); transcribe only body text and tables.' : '5. 忽略页脚（标准编号/页码），仅输出本页正文与表格转录。',
+    locale === 'en' ? '6. Write formulas in plain text/Unicode symbols (e.g., "W=pi/1000*rho*S*(D-S)"); LaTeX markup (\\frac, \\pi, etc.) is forbidden.' : '6. 公式用纯文本/Unicode 符号书写（如 "W=π/1000ρS(D-S)"），严禁使用 LaTeX 标记（\\frac、\\pi 等）。',
   ].join('\n');
 }
 
@@ -126,6 +132,8 @@ export interface VisionTranscribeOptions {
   chat: ChatClient;
   /** 渲染实现可注入替换（测试隔离 @napi-rs/canvas 真实渲染） */
   renderPages?: RenderPagesFn;
+  /** 阶段 C：转录 prompt 术语段语言（en 档切换英文表格行约定；缺省 zh） */
+  locale?: 'zh' | 'en';
   onProgress?: (message: string) => void;
 }
 
@@ -176,7 +184,7 @@ export async function transcribePdfByVision(options: VisionTranscribeOptions): P
     options.onProgress?.(`视觉转录第 ${page.pageNumber}/${pages.length} 页...`);
     const pngBase64 = fs.readFileSync(page.pngPath).toString('base64');
     const parts: ChatContentPart[] = [
-      { type: 'text', text: transcribeUserPrompt(page.pageNumber, pages.length) },
+      { type: 'text', text: transcribeUserPrompt(page.pageNumber, pages.length, options.locale ?? 'zh') },
       { type: 'image_url', image_url: { url: `data:image/png;base64,${pngBase64}`, detail: 'high' } },
     ];
     pageTexts.push(await callVisionWithRetry(options.chat, parts, `第 ${page.pageNumber} 页`));
