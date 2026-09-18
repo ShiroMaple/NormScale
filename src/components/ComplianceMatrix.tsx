@@ -132,7 +132,7 @@ export const ComplianceMatrix: React.FC<ComplianceMatrixProps> = ({
               <span className="block text-xs text-slate-400">全链路耗时</span>
               <div className="flex items-center space-x-1 font-mono text-lg font-bold text-cyan-400 tabular-nums">
                 <Clock className="h-4 w-4 text-cyan-500" />
-                <span>{report.performance_metrics?.total_duration_ms || 1.6}ms</span>
+                <span>{report.performance_metrics?.total_duration_ms != null ? `${report.performance_metrics.total_duration_ms}ms` : '--'}</span>
               </div>
             </div>
           </div>
@@ -247,29 +247,25 @@ export const ComplianceMatrix: React.FC<ComplianceMatrixProps> = ({
         </div>
 
         <div className="mt-3 space-y-2.5 text-sm">
-          <div className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-3 flex items-start space-x-3">
-            <Check className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-medium text-slate-200">
-                GB/T 13296 Section 6.2 - 交货状态与热处理工艺要求
-              </span>
-              <p className="mt-0.5 text-xs text-slate-400 leading-relaxed">
-                质保书声明交货状态「固溶热处理 (水淬)」符合标准规定的奥氏体不锈钢固溶退火酸洗交货要求。
-              </p>
+          {((report as any).semantic_review_results && (report as any).semantic_review_results.length > 0) ? (
+            ((report as any).semantic_review_results as Array<any>).map((rev, idx) => (
+              <div key={idx} className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-3 flex items-start space-x-3">
+                <Check className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-medium text-slate-200">
+                    {rev.clause_id ? `${rev.clause_id} - ` : ''}{rev.title || '标准技术条款'}
+                  </span>
+                  <p className="mt-0.5 text-xs text-slate-400 leading-relaxed">
+                    {rev.explanation || rev.standard_text || '-'}
+                  </p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-800/80 bg-slate-950/20 p-4 text-center text-xs text-slate-500">
+              当前核验标准未配置专用文本条款复核项或未开启语义审查
             </div>
-          </div>
-
-          <div className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-3 flex items-start space-x-3">
-            <Check className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-medium text-slate-200">
-                GB/T 13296 Section 7.6 - 无损检测方法与探伤验收级别
-              </span>
-              <p className="mt-0.5 text-xs text-slate-400 leading-relaxed">
-                钢管已按标准要求逐根进行超声探伤 (U2 级) 与涡流探伤 (E3H 级)，检验结论均合格。
-              </p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -303,7 +299,7 @@ const RuleItemRow: React.FC<{ item: RuleEvaluationItemResult }> = ({ item }) => 
 
       <td className="px-3.5 py-2.5 text-xs text-slate-400">
         <div className="flex items-center space-x-1">
-          <span>{item.formula_expression ? `公式: ${item.formula_expression}` : 'GB/T 8170 进舍修约'}</span>
+          <span>{item.formula_expression ? `公式: ${item.formula_expression}` : '-'}</span>
           <span title={item.message} className="cursor-help text-slate-500 hover:text-slate-300">
             <HelpCircle className="h-3.5 w-3.5" />
           </span>

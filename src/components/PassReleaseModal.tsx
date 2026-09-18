@@ -164,7 +164,9 @@ export const PassReleaseModal: React.FC<PassReleaseModalProps> = ({
               <div>
                 <span className="text-xs text-slate-500 block">存证安全哈希</span>
                 <span className="font-mono text-[11px] text-slate-400 truncate block">
-                  SHA256: {certificateId.replace(/[^a-zA-Z0-9]/g, '') || 'a882f091c7'}...
+                  {((report as any)?.sha256Hash || (report as any)?.sha256)
+                    ? `SHA256: ${(report as any).sha256Hash || (report as any).sha256}`
+                    : 'SHA256: --'}
                 </span>
               </div>
             </div>
@@ -177,7 +179,7 @@ export const PassReleaseModal: React.FC<PassReleaseModalProps> = ({
                 全项理化合规检验明细矩阵 ({results.length} 项)
               </h3>
               <span className="text-xs text-emerald-400 font-medium">
-                全部符合 GB/T 8170 进舍修约判定准则
+                依据执行标准与数值修约准则比对
               </span>
             </div>
 
@@ -202,7 +204,7 @@ export const PassReleaseModal: React.FC<PassReleaseModalProps> = ({
                         <td className="px-4 py-2 text-cyan-300 font-semibold">{r.actual_value_text || r.measured_value_raw || '-'}</td>
                         <td className="px-4 py-2 text-slate-300">{r.standard_requirement_text}</td>
                         <td className="px-4 py-2 text-slate-400 font-sans truncate max-w-xs" title={r.message}>
-                          {r.message || '按 GB/T 8170 规则修约比对'}
+                          {r.message || '-'}
                         </td>
                         <td className="px-4 py-2 text-center">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${

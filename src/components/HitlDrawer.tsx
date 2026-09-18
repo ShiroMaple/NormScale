@@ -90,11 +90,51 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
   // 场景 2: 替代条款确认状态
   const [acceptAlternative, setAcceptAlternative] = useState<boolean>(true);
 
-  // 场景 3: 多标准冲突主标尺选择状态
-  const [selectedArbitratedStandard, setSelectedArbitratedStandard] = useState<string>('GB/T 13296-2023');
+  // 场景 3: 多标准冲突主标尺选择状态 (动态推导可选标准)
+  const arbitratedOptions = useMemo(() => {
+    if (hitlContext?.conflict_details) {
+      return [
+        { id: hitlContext.conflict_details.standard_a.id, title: hitlContext.conflict_details.standard_a.id, desc: hitlContext.conflict_details.standard_a.req },
+        { id: hitlContext.conflict_details.standard_b.id, title: hitlContext.conflict_details.standard_b.id, desc: hitlContext.conflict_details.standard_b.req },
+      ];
+    }
+    if (selectedStandardIds && selectedStandardIds.length > 0) {
+      return selectedStandardIds.map(sid => {
+        const found = availableStandards?.find(s => s.standard_id === sid);
+        return {
+          id: sid,
+          title: found?.standard_name ? `${sid} (${found.standard_name})` : sid,
+          desc: found?.slice_count ? `共收录 ${found.slice_count} 个规格切片` : '已选适用标准',
+        };
+      });
+    }
+    return [];
+  }, [hitlContext?.conflict_details, selectedStandardIds, availableStandards]);
+
+  const [selectedArbitratedStandard, setSelectedArbitratedStandard] = useState<string>(() => {
+    if (hitlContext?.conflict_details?.standard_a?.id) return hitlContext.conflict_details.standard_a.id;
+    if (selectedStandardIds && selectedStandardIds.length > 0) return selectedStandardIds[0]!;
+    return '';
+  });
+
+  useEffect(() => {
+    if (hitlContext?.conflict_details?.standard_a?.id) {
+      setSelectedArbitratedStandard(hitlContext.conflict_details.standard_a.id);
+    } else if (selectedStandardIds && selectedStandardIds.length > 0) {
+      setSelectedArbitratedStandard(selectedStandardIds[0]!);
+    }
+  }, [hitlContext?.conflict_details, selectedStandardIds]);
 
   // 场景 4: 定性语义裁定状态
   const [qualitativeVerdict, setQualitativeVerdict] = useState<'PASS' | 'FAIL'>('PASS');
+
+  // 场景 0: 缺失标准确权状态 (UNKNOWN_STANDARD)
+  const [selectedStandardChoice, setSelectedStandardChoice] = useState<string>(() => {
+    if (selectedStandardIds && selectedStandardIds.length > 0) return selectedStandardIds[0]!;
+    if (availableStandards && availableStandards.length > 0) return availableStandards[0]!.standard_id;
+    return 'CUSTOM';
+  });
+  const [customStandardInput, setCustomStandardInput] = useState<string>('');
 
   // 场景 5: 特种属性语义歧义裁定状态
   const [propertyResolutionMode, setPropertyResolutionMode] = useState<'PROTOCOL_PASS' | 'MAP_STANDARD' | 'REJECT'>('PROTOCOL_PASS');
@@ -107,23 +147,8 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
     if (hitlContext?.candidate_rules && hitlContext.candidate_rules.length > 0) {
       return hitlContext.candidate_rules;
     }
-    // 降级通用标准指标
-    return [
-      { key: 'tensile_rm', name: '抗拉强度 Rm', category: 'mechanical', unit: 'MPa', requirement_text: '≥ 520 MPa' },
-      { key: 'yield_strength_rp02', name: '规定塑性延伸强度 Rp0.2', category: 'mechanical', unit: 'MPa', requirement_text: '≥ 205 MPa' },
-      { key: 'elongation_A', name: '断后伸长率 A', category: 'mechanical', unit: '%', requirement_text: '≥ 40 %' },
-      { key: 'hardness', name: '硬度试验 (HRB/HBW)', category: 'mechanical', requirement_text: '硬度指标合格' },
-      { key: 'impact_akv', name: '夏比 V 型缺口冲击功 (KV2)', category: 'mechanical', unit: 'J', requirement_text: '≥ 47 J' },
-      { key: 'flattening_test', name: '压扁试验', category: 'process', requirement_text: '压至两平板间距H合格，无裂纹' },
-      { key: 'flaring_test', name: '扩口试验', category: 'process', requirement_text: '扩口率 ≥ 18% 无裂口' },
-      { key: 'grain_size', name: '晶粒度评级', category: 'metallographic', unit: '级', requirement_text: '评级 ≥ 7 级' },
-      { key: 'intergranular_corrosion', name: '晶间腐蚀试验', category: 'corrosion', requirement_text: '按标准检验无晶间腐蚀倾向' },
-      { key: 'ultrasonic_test', name: '超声检测 (UT)', category: 'ndt', requirement_text: '验收等级 U2 级' },
-      { key: 'eddy_current_test', name: '涡流检测 (ET)', category: 'ndt', requirement_text: '验收等级 E2H 级' },
-      { key: 'pressure_tightness', name: '致密性/水压试验', category: 'ndt', requirement_text: '逐根水压或替代涡流合格' },
-      { key: 'surface_quality', name: '表面外观质量', category: 'surface', requirement_text: '内外表面光洁平整，无裂纹与重皮' },
-      { key: 'surface_roughness', name: '表面粗糙度 (Ra)', category: 'surface', unit: 'μm', requirement_text: '≤ 0.8 μm' },
-    ];
+    // 无可用规则时直接返回空数组，杜绝硬编码伪造 304 不锈钢指标
+    return [];
   }, [candidateRules, hitlContext?.candidate_rules]);
 
   // 按标准专业分类对候选规则进行结构化分组
@@ -151,23 +176,23 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
     if (activeCandidateRules.length > 0) {
       return activeCandidateRules[0]!.key;
     }
-    return 'tensile_rm';
+    return '';
   });
 
   const ambiguousPropName =
     hitlContext?.property_ambiguity_details?.raw_name ||
     (hitlContext?.pending_fields && hitlContext.pending_fields[0]) ||
-    '特种非标抗剪切断裂韧度 K1C';
+    '';
   const ambiguousPropVal =
     hitlContext?.property_ambiguity_details?.raw_value !== undefined
       ? String(hitlContext.property_ambiguity_details.raw_value)
-      : '42.5 MPa·m½';
+      : '-';
   const ambiguousPropCategory =
     hitlContext?.property_ambiguity_details?.raw_category || 'mechanical';
   const ambiguousReasoning =
     hitlContext?.property_ambiguity_details?.reasoning ||
     hitlContext?.prompt_message ||
-    '大模型意图消歧置信度不足（< 0.60），当前执行标准中无同名指标规则';
+    '';
 
   // 当 candidateRules 更新或 hitlContext 建议变更时，智能对齐初始选中项
   useEffect(() => {
@@ -221,6 +246,10 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
           '该特种非标指标缺乏规范准入依据且未经订货技术协议书面认可，不予采纳，作缺项否决退货处置。'
         );
       }
+    } else if (currentReason === 'UNKNOWN_STANDARD') {
+      setJustification(
+        '质保书未提取到有效执行标准，经质检员核对订货协议指定执行标准规范。'
+      );
     } else {
       setJustification(
         '根据质保书化学成分及供货合同技术协议，人工确认该材料牌号。'
@@ -301,7 +330,11 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
       waiver_notes: justification,
     };
 
-    if (currentReason === 'UNKNOWN_GRADE' || currentReason === 'LOW_CONFIDENCE') {
+    if (currentReason === 'UNKNOWN_STANDARD') {
+      payload.corrected_standard = selectedStandardChoice === 'CUSTOM'
+        ? customStandardInput.trim()
+        : selectedStandardChoice;
+    } else if (currentReason === 'UNKNOWN_GRADE' || currentReason === 'LOW_CONFIDENCE') {
       const targetGrade = selectedGrade === 'CUSTOM'
         ? (selectedCustomGradeTarget || customGrade)
         : selectedGrade;
@@ -334,10 +367,13 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
     }
 
     await onSubmitResume(payload);
+    onClose();
   };
 
   const getHeaderScenarioBadge = () => {
     switch (currentReason) {
+      case 'UNKNOWN_STANDARD':
+        return { label: '执行标准人工确权与补录', icon: 'rule' };
       case 'ALTERNATIVE_CLAUSE':
         return { label: '替代条款合规确权', icon: 'swap_horiz' };
       case 'MULTI_STANDARD_CONFLICT':
@@ -376,7 +412,7 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
                   质检任务已挂起 · 需人机协同裁定
                 </span>
                 <h2 className="text-sm font-bold mt-1 text-on-surface dark:text-surface-bright">
-                  任务编号: #{taskId || 'TK-20260828-01'}
+                  任务编号: #{taskId || '--'}
                 </h2>
               </div>
             </div>
@@ -412,6 +448,74 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
             </p>
           </div>
 
+          {/* 场景 0：执行标准人工确权与补录 */}
+          {currentReason === 'UNKNOWN_STANDARD' && (
+            <div className="space-y-3">
+              <label className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                选择或补录执行标准规范 (Select or Specify Standard)
+              </label>
+
+              <div className="space-y-2">
+                {availableStandards && availableStandards.length > 0 && availableStandards.map(std => (
+                  <label
+                    key={std.standard_id}
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${selectedStandardChoice === std.standard_id
+                      ? 'border-primary bg-primary/5 shadow-xs'
+                      : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                      }`}
+                  >
+                    <input
+                      type="radio"
+                      name="stdChoice"
+                      value={std.standard_id}
+                      checked={selectedStandardChoice === std.standard_id}
+                      onChange={() => setSelectedStandardChoice(std.standard_id)}
+                      className="text-primary focus:ring-primary h-4 w-4 mt-0.5"
+                    />
+                    <div>
+                      <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                        {std.standard_id}
+                      </span>
+                      <span className="text-[12px] text-on-surface-variant dark:text-outline-variant block mt-0.5">
+                        {std.standard_name} ({std.slice_count} 个牌号规格)
+                      </span>
+                    </div>
+                  </label>
+                ))}
+
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${selectedStandardChoice === 'CUSTOM'
+                    ? 'border-primary bg-primary/5 shadow-xs'
+                    : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                    }`}
+                >
+                  <input
+                    type="radio"
+                    name="stdChoice"
+                    value="CUSTOM"
+                    checked={selectedStandardChoice === 'CUSTOM'}
+                    onChange={() => setSelectedStandardChoice('CUSTOM')}
+                    className="text-primary focus:ring-primary h-4 w-4 mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                      手动输入执行标准规范代号
+                    </span>
+                    {selectedStandardChoice === 'CUSTOM' && (
+                      <input
+                        type="text"
+                        value={customStandardInput}
+                        onChange={e => setCustomStandardInput(e.target.value)}
+                        placeholder="请输入执行标准代号 (例如 GB/T 13296-2023、ASTM A213)..."
+                        className="mt-2 w-full text-xs border border-outline-variant dark:border-border-dark rounded-lg bg-surface-container-lowest dark:bg-surface-dark px-3 py-2 text-on-surface dark:text-surface-bright focus:border-primary focus:outline-none"
+                      />
+                    )}
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* 场景 1：材料牌号语义消歧 */}
           {(currentReason === 'UNKNOWN_GRADE' || currentReason === 'LOW_CONFIDENCE') && (
             <div className="space-y-3">
@@ -421,23 +525,25 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
 
               <div className="space-y-2">
                 {candidateList.length > 0 ? (
-                  candidateList.map(cand => (
-                    <label
-                      key={cand.id}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${selectedGrade === cand.id
-                        ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs'
-                        : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
-                        }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="candidateGrade"
-                          value={cand.id}
-                          checked={selectedGrade === cand.id}
-                          onChange={() => setSelectedGrade(cand.id)}
-                          className="text-primary focus:ring-primary h-4 w-4"
-                        />
+                  candidateList.map((cand, cIdx) => {
+                    const gradeVal = cand.code || cand.id || `grade_${cIdx}`;
+                    return (
+                      <label
+                        key={gradeVal}
+                        className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${selectedGrade === gradeVal
+                          ? 'border-primary dark:border-primary-fixed-dim bg-primary/5 dark:bg-primary-fixed-dim/10 shadow-xs'
+                          : 'border-outline-variant/60 dark:border-border-dark hover:border-outline bg-surface-container-lowest dark:bg-surface-dark'
+                          }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="candidateGrade"
+                            value={gradeVal}
+                            checked={selectedGrade === gradeVal}
+                            onChange={() => setSelectedGrade(gradeVal)}
+                            className="text-primary focus:ring-primary h-4 w-4"
+                          />
                         <div>
                           <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
                             {cand.code}
@@ -454,7 +560,8 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
                         {cand.match}
                       </span>
                     </label>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="p-3.5 rounded-xl border border-dashed border-outline-variant/80 dark:border-border-dark text-center">
                     <p className="text-xs text-on-surface-variant dark:text-outline-variant">
@@ -663,35 +770,38 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
               </label>
 
               <div className="space-y-2">
-                {[
-                  { id: 'GB/T 13296-2023', title: 'GB/T 13296-2023 (锅炉热交换器用不锈钢无缝钢管)', desc: '通用国家标准，执行常规工艺与公差准入' },
-                  { id: 'NB/T 47019.5-2021', title: 'NB/T 47019.5-2021 (承压设备用管订货技术条件)', desc: '能源行业标准，针对承压特种设备强化要求' },
-                ].map(std => (
-                  <label
-                    key={std.id}
-                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${selectedArbitratedStandard === std.id
-                      ? 'border-primary bg-primary/5 shadow-xs'
-                      : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
-                      }`}
-                  >
-                    <input
-                      type="radio"
-                      name="arbitratedStandard"
-                      value={std.id}
-                      checked={selectedArbitratedStandard === std.id}
-                      onChange={() => setSelectedArbitratedStandard(std.id)}
-                      className="text-primary focus:ring-primary h-4 w-4 mt-0.5"
-                    />
-                    <div>
-                      <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
-                        {std.title}
-                      </span>
-                      <span className="text-[12px] text-on-surface-variant dark:text-outline-variant block mt-0.5">
-                        {std.desc}
-                      </span>
-                    </div>
-                  </label>
-                ))}
+                {arbitratedOptions.length === 0 ? (
+                  <div className="p-3 text-xs text-on-surface-variant dark:text-outline-variant bg-surface-container-lowest dark:bg-surface-dark rounded-xl border border-dashed border-outline-variant/60">
+                    当前上下文未检测到具体冲突标准列表，请在上方手动指定
+                  </div>
+                ) : (
+                  arbitratedOptions.map(std => (
+                    <label
+                      key={std.id}
+                      className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${selectedArbitratedStandard === std.id
+                        ? 'border-primary bg-primary/5 shadow-xs'
+                        : 'border-outline-variant/60 dark:border-border-dark bg-surface-container-lowest dark:bg-surface-dark'
+                        }`}
+                    >
+                      <input
+                        type="radio"
+                        name="arbitratedStandard"
+                        value={std.id}
+                        checked={selectedArbitratedStandard === std.id}
+                        onChange={() => setSelectedArbitratedStandard(std.id)}
+                        className="text-primary focus:ring-primary h-4 w-4 mt-0.5"
+                      />
+                      <div>
+                        <span className="font-bold text-on-surface dark:text-surface-bright block text-xs">
+                          {std.title}
+                        </span>
+                        <span className="text-[12px] text-on-surface-variant dark:text-outline-variant block mt-0.5">
+                          {std.desc}
+                        </span>
+                      </div>
+                    </label>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -707,13 +817,13 @@ export const HitlDrawer: React.FC<HitlDrawerProps> = ({
                 <div>
                   <span className="text-[12px] font-bold text-on-surface-variant block mb-1">质保书原始描述</span>
                   <div className="text-xs text-on-surface bg-surface-container-lowest dark:bg-surface-dark p-2.5 rounded-lg border border-outline-variant/40 leading-relaxed">
-                    晶间腐蚀试验合格，经敏化处理后硫酸-硫酸铜法弯曲检验，显微镜下见轻微滑移线无深层开裂。
+                    {hitlContext?.qualitative_details?.raw_text || hitlContext?.prompt_message || '质保书未提取到详细定性描述'}
                   </div>
                 </div>
                 <div>
                   <span className="text-[12px] font-bold text-on-surface-variant block mb-1">执行标准规范要求</span>
                   <div className="text-xs text-on-surface bg-surface-container-lowest dark:bg-surface-dark p-2.5 rounded-lg border border-outline-variant/40 leading-relaxed">
-                    GB/T 4334-2020 检验方法 E：试样经弯曲后，弯曲表面不得有晶间腐蚀裂纹。
+                    {hitlContext?.qualitative_details?.standard_req || '依据执行标准对应定性条款规范要求'}
                   </div>
                 </div>
               </div>

@@ -11,7 +11,7 @@
  * ============================================================================
  */
 
-export type SystemVerdict = 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
+export type SystemVerdict = 'PASS' | 'FAIL' | 'MANUAL_REVIEW' | 'UNAUDITED';
 
 export type HumanVerdict = 'PASS' | 'REJECT' | 'WAIVED' | null | undefined;
 
@@ -22,12 +22,13 @@ export type FinalDisposition =
   | 'REJECTED_BY_SYSTEM'   // FAIL + null: 系统一票否决，自动拦截
   | 'REJECT_CONFIRMED'     // FAIL + REJECT: 人机双重确认不合格
   | 'CONCESSION_RELEASE'   // FAIL + PASS/WAIVED: 附带特批批注的让步放行
-  | 'PENDING_REVIEW';      // MANUAL_REVIEW: 待人工协同仲裁
+  | 'PENDING_REVIEW'       // MANUAL_REVIEW: 待人工协同仲裁
+  | 'PENDING_AUDIT';       // UNAUDITED: 待系统合规比对
 
 export interface ArbitrationDecision {
   /** 最终流转处置代号 */
   disposition: FinalDisposition;
-  /** 状态展示文案 (如 "准予放行", "特批让步放行", "系统自动拦截") */
+  /** 状态展示文案 (如 "准予放行", "特批让步放行", "系统自动拦截", "待发起比对") */
   statusLabel: string;
   /** 详细审计与流转说明 */
   auditExplanation: string;
@@ -35,8 +36,8 @@ export interface ArbitrationDecision {
   isReleasePermitted: boolean;
   /** 是否属于让步特批放行 (Concession) */
   isConcession: boolean;
-  /** 兼容老版本统一 verdict 映射 ('PASS' | 'FAIL' | 'MANUAL_REVIEW') */
-  effectiveVerdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW';
+  /** 兼容老版本统一 verdict 映射 ('PASS' | 'FAIL' | 'MANUAL_REVIEW' | 'UNAUDITED') */
+  effectiveVerdict: 'PASS' | 'FAIL' | 'MANUAL_REVIEW' | 'UNAUDITED';
 }
 
 /**
@@ -49,6 +50,18 @@ export function resolveFinalDisposition(
   humanVerdict?: HumanVerdict,
   humanVerdictSummary?: string
 ): ArbitrationDecision {
+  // 0. 系统判定为 UNAUDITED (尚未执行标准规则比对)
+  if (systemVerdict === 'UNAUDITED') {
+    return {
+      disposition: 'PENDING_AUDIT',
+      statusLabel: '待比对',
+      auditExplanation: '批次提取数据已就绪，尚未执行标准条款比对，处于待比对状态',
+      isReleasePermitted: false,
+      isConcession: false,
+      effectiveVerdict: 'UNAUDITED',
+    };
+  }
+
   // 1. 系统判定为 MANUAL_REVIEW (HITL 待定)，无论人工是否签认，均处于 PENDING_REVIEW 待仲裁态
   if (systemVerdict === 'MANUAL_REVIEW') {
     return {
@@ -204,6 +217,12 @@ export function getDispositionBadgeMeta(disposition: FinalDisposition): {
         label: '不合格拒收 (FAIL)',
         badgeClass: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800 font-bold',
         icon: 'cancel',
+      };
+    case 'PENDING_AUDIT':
+      return {
+        label: '待比对',
+        badgeClass: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700',
+        icon: 'pending',
       };
     case 'PENDING_REVIEW':
     default:

@@ -4,6 +4,152 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-18 · 修复步骤 3 自动比对中间态（tier1_evaluating）导致的一瞬间误报 FAIL 闪烁
+
+- 根因定位：从步骤 2 切换到步骤 3 时触发自动比对，批次状态立即进入 `tier1_evaluating`，导致原先依赖 `stage === 'idle'` 的 `isUnaudited` 条件被破坏；在后端返回有效比对结果前，推导逻辑因无报告且未及格而误落入二元 `FAIL`；
+- 状态机接管：解构定义 `isBatchEvaluating = isEvaluatingBatch || stage === 'tier1_evaluating'`，并将 `isUnaudited` 修正为以 `!auditReport` 为事实基准；
+- 判定推导防御：将 `(isBatchEvaluating || isUnaudited)` 统一前置收敛为 `'UNAUDITED'`，完全复用现有中性待比对基准，不引入额外样式开销；
+- 验证闭环：`pnpm exec tsc --noEmit` 0 错误，`pnpm audit:hygiene` 架构门禁通过，全量 85 个测试文件 530 项用例 100% 绿灯。
+
+
+## 2026-09-18 · 彻底根除步骤 3 sysVerdict 二元判断与双轨制仲裁引擎四元对齐
+
+- 架构对齐：扩展 `SystemVerdict`、`FinalDisposition`、`ArbitrationDecision` 支持 `UNAUDITED` 与 `PENDING_AUDIT`，与底层 `BatchSpecimen.systemVerdict` 彻底统一；
+- 逻辑重构：在 `Step3ComplianceEvaluationPanel.tsx` 中将 `sysVerdict` 由非黑即白的二元推导重构为显式四元推导（`isBatchHitl ? 'MANUAL_REVIEW' : isUnaudited ? 'UNAUDITED' : ...`），根除未比对状态下底层变量被误判为 FAIL 的隐患；
+- 仲裁看板驱动：下部综合看板全面由 `sysVerdict`、`arbitration`、`getDispositionBadgeMeta` 状态机直接消费驱动，彻底消除 UI 表现层与核心数据模型脱节；
+- 伴生单测覆盖：在 `tests/engine/dual-track-verdict.test.ts` 补充对 `UNAUDITED` 仲裁流转及灰色中性徽章的断言；
+- 验证闭环：`pnpm exec tsc --noEmit` 0 错误，`pnpm audit:hygiene` 架构门禁通过，全量 85 个测试文件 530 项用例 100% 绿灯。
+
+
+## 2026-09-18 · 修复步骤 3 HITL“确认并恢复流转”后抽屉未自动关闭问题
+
+- 根因定位：在 `HitlDrawer.tsx` 的 `handleSubmit` 中仅调用了 `await onSubmitResume(payload)`，缺少了提交成功后的 `onClose()` 触发；且在 `WaterfallWorkbench.tsx` 的 `onSubmitResume` 回调中亦未解构设置 `setIsHitlDrawerOpen(false)`，导致流转恢复成功后右侧干预抽屉持续悬挂驻留；
+- 闭环修复：在 `HitlDrawer.tsx` 的 `handleSubmit` 内部追加 `onClose()`，同时在 `WaterfallWorkbench.tsx` 解构激活 `setIsHitlSubmitting` 并在异步提交成功后彻底将抽屉收起（`setIsHitlDrawerOpen(false)`、清除上下文）；修复候选列表缺少稳定 key 的潜在 warning；
+- 伴生单测覆盖：新增 `tests/unit/hitl-drawer.test.ts` 验证抽屉基础要素渲染与状态完整性；
+- 验证闭环：`pnpm exec tsc --noEmit` 保持 0 错误，`pnpm audit:hygiene` 门禁通过，单测 100% 绿灯。
+
+
+## 2026-09-18 · 步骤 3 全景比对矩阵判定逻辑说明排版微调（AI/HITL对齐前缀与判定结论分行）
+
+- 排版优化：在 `Step3ComplianceEvaluationPanel.tsx` 中，当存在 Tier 2 AI消歧推理说明（`[模型名] 推理理由；`）、降级对齐或 HITL 纠偏前缀时，在 `${logicExplanation}` 前补充换行符 `\n`，清晰隔离前置归因与数值判定结论；
+- 样式配套：在单元格渲染容器 `<span className="flex-1 whitespace-pre-line">` 注入 `whitespace-pre-line`，确保浏览器视口中换行正常生效；
+- 伴生单测覆盖：在 `workbench-step3-panel.test.ts` 补充对换行符拼接与样式类的断言；
+- 验证闭环：`pnpm exec tsc --noEmit` 保持 0 错误，`pnpm audit:hygiene` 架构门禁通过，单测 100% 绿灯。
+
+
+## 2026-09-18 · 步骤 3 待核验批次综合看板收敛（待核验统一呈现中性灰，彻底消除未比对误报 FAIL）
+
+- 逻辑收敛：在 `Step3ComplianceEvaluationPanel.tsx` 补充 `isUnaudited` 状态推导（`verdict === 'UNAUDITED' && stage === 'idle'`），打破原有二元非黑即白判定；
+- 界面规范呈现：待核验批次左侧客观判定看板全面采用中性灰（`bg-slate-100/90`、`pending` 灰色图标），标题显示为「系统判定: 待核验」，流转标签为「流转: 待比对」；比对表格与操作按钮联动切换为「开始核验」；
+- 伴生单测覆盖：在 `workbench-step3-panel.test.ts` 新增对初始未核验批次的断言，验证其呈现灰色待核验态且绝不包含 FAIL 否决文案；
+- 验证闭环：`pnpm exec tsc --noEmit` 保持 0 错误，`pnpm audit:hygiene` 门禁通过，527 个全量测试用例 100% 绿灯。
+
+
+## 2026-09-18 · 质检工作台文档选择器与会话实体防重加固（彻底杜绝同名文件多副本与批次翻倍）
+
+- 异常根因诊断：用户上传文件后生成临时 ID `doc_up_...` 放入 session，若该文件命中缓存或恢复，缓存加载使用 MD5 指纹 ID；旧逻辑因 ID 不同未剔除旧条目，叠加推进步骤 2 时未对 `activeDocs` 去重，导致同文档在 `session.documents` 存在两份实体，造成选择器下拉双项及批次翻倍统计；
+- 三维防重与实体融合：在 `workbench/types.ts` 抽象 `deduplicateSessionDocuments` 纯函数，依据 docId、MD5、filename 三维互斥，合并时智能优先保留包含真实切图与解析批次的完整实体；在 `useWorkbenchSession` 的缓存恢复与上传挂载入口均前置同名过滤；
+- 伴生单测覆盖：在 `useWorkbenchSession.test.ts` 新增三维去重与非同名保留的单测断言，防止回归；
+- 验证闭环：`pnpm exec tsc --noEmit` 保持 0 错误，`pnpm audit:hygiene` 架构门禁通过，单测套件 100% 绿灯。
+
+
+## 2026-09-18 · 修复步骤 2 异构置信度导致的 TypeError（_row_confidence.replace is not a function）
+
+- 异常根因诊断：真实抽取时上游可能返回 `number` 类型的置信度（如 `0.98`、`98`），而 UI 渲染层直接假设为字符串并盲目调用 `.replace('%', '')`，导致运行时异常崩溃；且小数被 `parseInt` 截断为 0 误触低置信预警；
+- 健壮性重构：在 `Step2DataVerificationPanel.tsx` 引入 `formatConfidenceDisplay` 与 `parseConfidenceNumber` 纯函数，安全兼顾数字（小数/整数）、字符串（带或不带百分号）及空状态；
+- 伴生单测覆盖：在 `workbench-step2-panel.test.ts` 新增对数字小数/整数/非字符串置信度的断言测试，防止回归；
+- 验证闭环：`pnpm typecheck` 保持 0 错误，`pnpm audit:hygiene` 架构门禁通过，伴生测试与相关套件 100% 绿灯。
+
+## 2026-09-18 · 步骤 2 业务语义表述收敛（全量将“实测”统一为“提取”）
+
+- 步骤 2 页面文案纯化：在 `Step2DataVerificationPanel.tsx` 中全面将 6 处包含“实测”的文案规范化为“提取”；
+- 核心改动映射：Tab 标签（“质保书实测项” -> “质保书提取项”）、全项表格表头（“实测值” -> “提取值”）、化学成分表头（“含量实测值 (wt%)” -> “含量提取值 (wt%)”）、分类视图（“检验项目实测” -> “检验项目提取”）、操作气泡提示及代码注释；
+- 验证闭环：`pnpm typecheck` 保持 0 错误，`pnpm audit:hygiene` 架构门禁通过，测试套件 100% 绿灯通过。
+
+## 2026-09-18 · 机械化代码卫生审计与永久架构门禁落地（告别肉眼排查，固化 CI 一票否决）
+
+- 自动化审计工具就绪：建立 `scripts/audit-code-hygiene.ts`，自动全网扫描四大伪造与泄漏特征（样本特化硬编码、虚假及格兜底、假冒国标/牌号、伪造置信度）；
+- 标定治具物理迁出：将 `src/types/bbox.ts` 中长达 500 行的特定样本坐标函数 `getZPJEBBoxes` 彻底物理移出 `src/`，转入 `tests/fixtures/zpje-bbox.fixture.ts`，生产类型定义恢复纯粹；
+- 生产界面与提取层清理：彻底移除 `Header.tsx` 中写死的特定公司用户头像 `ZPJE`（改为通用质检标识 `QC`）；移除 `openai-compatible-extractor.ts` 中隐蔽残留的 `overall_confidence: 0.95`；
+- Schema 描述彻底去特定化：将 `certificate.schema.ts` 中多处出现的 `Z26022C` 样本炉批号泛化为通用中立工业示例；
+- 架构门禁永久激活：新增 `tests/architecture/code-hygiene-guard.test.ts`，将纯洁度审计固化为自动化门禁测试，任何偷懒兜底将导致 `pnpm test` 当场阻断；
+- 闭环验证：`pnpm typecheck` 保持 0 错误，全量自动化测试 **84 套件 523 项单测 100% 绿灯全部通过**。
+
+## 2026-09-18 · 全工程反偷懒与反假数据地毯式深挖清剿收官（Schema Prompt/DirectLLM/Engine Gate/UI）
+
+- 提示词模板误导根治：在 `certificate.schema.ts` 抽取模板中彻底消除化学成分示例写死的 `"confidence": "99%"`、`"98%"`，防止大模型将示例字面量无脑学入；
+- 核心引擎空评估防线建立：在 `core.ts` 中加严门禁判定，当有效规则评估项为 0（`itemResults.length === 0`）时严禁误判为及格 `PASS`，必须客观标记为 `MANUAL_REVIEW`；
+- DirectLlmExtractor 假置信度拔除：移除桩代码中伪造的 `overall_confidence: 0.95`，未完成 Vision 物理识别前严格返回纯粹空载荷，不带伪造置信度；
+- 全局扫描与彻底归零：全工程彻底消除无来源依据的 `|| 'PASS'`、`?? '06Cr19Ni10'`、`Math.random()` 假哈希，数据缺失均客观降级为客观缺失或触发 HITL；
+- 验证闭环：`pnpm typecheck` 保持 0 错误，全量测试套件 **83 套件 521 项单测 100% 绿灯全部通过**。
+
+## 2026-09-18 · 核心大盘与提取器硬编码彻底纯化（DirectLLM/AuditLedger/ComplianceMatrix/HitlDrawer/PassReleaseModal/StandardExplorer）
+
+- DirectLlmExtractor 拔除假 Mock 载荷：未配置 API Key 时由原本伪造 `GB/T 13296-2023`、`06Cr19Ni10` 与 `0.88` 置信度改为直接抛出具名配置异常，严禁假数据外溢；
+- AuditLedger 消除虚假及格与指标写死：化学项无对应规则不再默认 `PASS`；力学与工艺表格彻底消除硬编码的 `≥ 520 MPa`、`≥ 205 MPa`、`≥ 35.0%` 及全部强制 `✓ PASS`，完全由 `item_results` 动态匹配限值与结论；
+- ComplianceMatrix 真实耗时与条款动态化：清除 `1.6ms` 假耗时兜底；条款复核由静态写死 GB/T 13296 固溶/探伤改为从 `report` 动态渲染与客观空状态提示；
+- HitlDrawer 移除假任务号与补齐 UNKNOWN_STANDARD：移除 `TK-20260828-01` 假任务编号，定性文字争议改为动态从 `qualitative_details` 取值，完整落地 `UNKNOWN_STANDARD` 标准指定与补录交互；
+- PassReleaseModal & StandardExplorer 脱钩 GB/T 8170：移除 `a882f091c7` 假哈希，将表头及修约描述解绑中国国标，采用通用规范表述；
+- 验证闭环：`pnpm typecheck` 保持 0 错误，全量测试套件 **83 套件 521 项单测 100% 绿灯全部通过**。
+
+## 2026-09-18 · 全链路消除假兜底与虚假自洽（确立 UNKNOWN 机制与试验方法真实反映）
+
+- 彻底拔除标准/牌号冒充假兜底：在 `certificate-normalizer.ts`、`specimen-adapter.ts`、`grade-normalizer.ts`、`candidate-grade-recommender.ts`、`normalize.node.ts`、`retrieve-standard.node.ts` 中完全清除对 `GB/T 13296-2023` 与 `06Cr19Ni10` 的静默回退，缺失项一律显式标为 `UNKNOWN`，由工作流挂起为 `UNKNOWN_STANDARD` 并交由步骤 3 进行 HITL 人工介入；
+- 试验方法标准脱钩解绑：清理 `Step2DataVerificationPanel.tsx` 与 `certificate.schema.ts` 中强绑的 10 处 `GB/T` 试验方法标准（如 GB/T 228 等），未识别真实方法标准时客观呈现为 `'-'`，绝不擅自脑补国标；
+- HITL 抽屉动态化重构：清除 `HitlDrawer.tsx` 中硬编码的写死标准单选与 304 指标降级假数据，完全改为基于实际会话中参与核验标准的动态呈现；
+- 类型与单测全量闭环：修复 `ComplianceMatrix.tsx` 字段访问，`pnpm typecheck` 保持 0 错误，全量测试套件 **83 套件 521 项单测 100% 绿灯通过**。
+
+## 2026-09-18 · 数据真实性门禁落地与零假数据纯化（消除 Step2 硬编码置信度与静默兜底）
+
+- 核心规则沉淀：新建 `.agents/rules/data-integrity-and-anti-mock.md`，硬性确立“严禁任何无来源依据的硬编码、默认兜底假数据与伪造高置信”项目级规范；
+- 步骤 2 动态置信度改造：在 `Step2DataVerificationPanel.tsx` 中彻底消除 `|| 95%` 假兜底以及金相、探伤、尺寸、附加检验项中散落的 `'98%'`、`'96%'`、`'99%'` 静态字面量，全量统一接入 `currentBatch.ocrConfidence` 动态评估与未评定（`--`）真实状态；
+- 表格防御性呈现加严：重构理化明细与分类表格的置信度判定逻辑，未评定项展示灰色真实底色，低于 85% 阈值项准确亮起告警徽章，杜绝虚假自洽；
+- 验证闭环：`pnpm typecheck` 保持 0 错误，全量测试套件 **83 套件 521 项单测 100% 绿灯通过**。
+
+## 2026-09-18 · 工作台步骤架构收敛与职责纯化（方案 A 剥离幽灵步骤 4 与步骤 2 去 HITL 越界）
+
+- 幽灵步骤 4 彻底物理移除：执行方案 A，删除未受控挂载的 `Step4ReportArchivePanel.tsx` 与伴生测试 `workbench-step4-panel.test.ts`，主容器滑轨完全收敛为纯粹的 3 步骤闭环（上传 -> 核对 -> 比对）；
+- 步骤 2 职责纯化：彻底移除 `Step2DataVerificationPanel` 底部未比对即存在的人工复核 (双轨制) 冗余卡片及顶部 `BatchContextBar` 的 HITL 穿透按钮，将人机协同治理能力严格内聚在步骤 3 比对阶段；
+- 步骤 1 契约保持：严格遵循用户要求，对步骤 1 技术协议卡片原样保留，不引入任何多余改动；
+- 知识文档同步归档：将专题文档 `cairn/step4-reactivation-guide.md` 正式标记为废弃（status: archived），追加废弃声明与最新 3 步闭环架构指针；
+- 类型检查与全量测试：`pnpm typecheck` 保持 0 错误，全量测试套件 **83 套件 521 项单测 100% 绿灯通过**。
+
+## 2026-09-17 · WaterfallWorkbench 模块化拆分全面收官（阶段 4：步骤 3、4 解耦、流式 Hook 抽取与实机闭环）
+
+- 步骤 3 & 4 面板化：抽离 `Step3ComplianceEvaluationPanel.tsx`（全景比对矩阵与双轨看板）与 `Step4ReportArchivePanel.tsx`（A4 打印与四联大卡）；
+- 领域 Hook 与纯工具下沉：提取 `useBatchStreamAuditor.ts`（内聚 SSE 调度与多标准判定）、`useReportExporter.ts`（内聚截图与存证）、`batch-field-updater.ts`（理化指标纯函数更新并复算 OCR 置信度）；
+- 主容器极限瘦身：`WaterfallWorkbench.tsx` 行数由 6,552 行锐减至 **788 行**（净减 5,764 行，削减达 **88.0%**），无任何死代码，成为纯粹的步骤受控装配层；
+- 伴生单测与类型安全：新建 16 个专有单元测试套件共 55 项单测，全量测试套件增至 **84 套件 524 项单测 100% 绿灯**，`pnpm typecheck` 保持 0 错误；
+- 真实浏览器 E2E 终验：通过 KIMI-CU 在真实 Edge 浏览器对「测试质保书1」完整流转验证（步骤 1 缓存入队 -> 步骤 2 PDF 视窗与 25 项理化数据核对 -> 步骤 3 PASS 全项合规流式比对与 27 项全景矩阵 -> 开启新任务自动归档台账并平滑回滚至步骤 1）。
+
+## 2026-09-17 · WaterfallWorkbench 模块化拆分（阶段 2 & 阶段 3：步骤 1、步骤 2 面板化与 PDF 视窗解耦）
+
+- 步骤 1 面板化：抽离 `Step1DocumentQueuePanel.tsx`，提取领域 Hook `useWorkbenchSession.ts`（内聚会话生命周期与文档队列管理）；
+- 步骤 2 面板化：抽离 `Step2DataVerificationPanel.tsx`（左右分栏 1400+ 行复杂视图组件化），提取 `usePdfViewerLens.ts`（内聚 PDF 视窗缩放、旋转、版式自适应与 BBox 双向联动）；
+- 主容器瘦身：`WaterfallWorkbench.tsx` 行数由 6,552 行降至 **3,702 行**（净减 2,850 行，代码缩减 43.5%），彻底剥离 PDF 交互和局部编辑冗余；
+- 伴生单测闭环：新建 `useWorkbenchSession.test.ts`、`workbench-step1-panel.test.ts`、`usePdfViewerLens.test.ts`、`workbench-step2-panel.test.ts`，单元测试增至 11 套件 37 项 100% 绿灯，`pnpm typecheck` 0 错误；
+- 实机全链路冒烟：通过 KIMI-CU 在真实 Edge 浏览器执行「测试质保书1」完整 3 步骤交互回归（加入队列 -> 步骤 2 核验 -> 步骤 3 全景比对 -> 开启新任务回到步骤 1），100% 吻合重构前金标准。
+
+## 2026-09-17 · WaterfallWorkbench 模块化拆分（阶段 1：契约层与叶子组件抽取）
+
+- 原件备份：创建 `WaterfallWorkbench.tsx.bak` 本地备份（同尺寸 387 KB），供不回滚对比参考；
+- 契约抽取：新建 `src/components/workbench/types.ts`，收敛领域类型、具名异常类与 Barrel re-export；
+- 叶子组件解耦：
+  - `WorkbenchFooterBar.tsx`：抽离常驻 1440px 底部连线导航、各步骤流转按钮、分体截图菜单与保存结果；
+  - `CachedDocsGrid.tsx`：抽离步骤 1 历史已解析缓存卡片列表；
+  - `ScenarioMatrixSection.tsx`：抽离步骤 1 典型场景测试矩阵卡片网格；
+- 主容器瘦身：`WaterfallWorkbench.tsx` 由 6552 行缩减至 6057 行（首期直接减重近 500 行）；
+- 伴生单测闭环：新建 3 套专属测试（`workbench-types` 4 项、`workbench-footer-bar` 4 项、`workbench-step1-cards` 3 项），`tests/unit/` 25 项测试全绿，`pnpm typecheck` 0 错误。
+
+## 2026-09-17 · 工作台静态假数据清理与单源真相门禁加严（拆分前基准建立）
+
+- 静态常量肃清：移除 `WaterfallWorkbench.tsx` 中死代码 `AVAILABLE_GRADE_SLICES`、历史硬编码 `STANDARDS_CATALOG` 与陈旧 MD5 漂移的 `DEFAULT_SCENARIOS`（累计精简 ~100 行）；
+- 异常门禁加严：新增 `StandardCatalogEmptyError` 与 `ScenarioSampleMissingError` 具名异常；
+- 运行断言落地：
+  - 标准比对入口（`evaluateBatches`）若 `standardsData` 未就绪或为空，抛出 `StandardCatalogEmptyError` 并打印错误日志及阻断 Toast；
+  - 测试用例原件装载（`handleLoadScenarioFile`）严格校验元数据与 HTTP 资源完整性，缺失时抛出 `ScenarioSampleMissingError`；
+- 验证就绪：`tsc --noEmit` 0 错误，全量 72 套件 483 项单测 100% 绿灯。
+
 ## 2026-09-16 · 六项集中治理落地与 en-asme 标准档适配（ASME SA-213 部分验证）
 
 - 阶段 A 确定性治理：NB 切片 property_key 注册表归一（flattening/flaring→*_test，迁移 10 条规则 + 碰撞 WARN lint）、expected_visual_result 闭集白名单 + 定性规则 CJK 原文双层记录 lint、硬度表"组织类型+其他"行 ORG 标记确定性挂载、表注穿透页锚点归属合并；

@@ -56,7 +56,7 @@ function formatRoundingDecimals(rule: EvaluationRule): string {
   if (typeof c.rounding_decimals === 'number') {
     return `修约至 ${c.rounding_decimals} 位小数`;
   }
-  return '按 GB/T 8170 修约';
+  return '按执行标准规范修约';
 }
 
 /**
@@ -573,7 +573,7 @@ export const StandardExplorer: React.FC<StandardExplorerProps> = ({ initialStand
                           <th className="px-4 py-2.5 font-sans">元素名称</th>
                           <th className="px-4 py-2.5">化学符号</th>
                           <th className="px-4 py-2.5">国家/行业标准质量分数限值 (wt%)</th>
-                          <th className="px-4 py-2.5 font-sans">GB/T 8170 进舍修约规则</th>
+                          <th className="px-4 py-2.5 font-sans">数值修约与有效位数规则</th>
                           <th className="px-4 py-2.5 font-sans">强制级别</th>
                         </tr>
                       </thead>

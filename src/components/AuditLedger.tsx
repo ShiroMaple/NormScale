@@ -1046,7 +1046,8 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
                               r => r.property_key.toLowerCase() === elem.element.toLowerCase() ||
                                 r.property_key.toLowerCase() === `chem_${elem.element.toLowerCase()}`
                             );
-                            const isPass = matchedRule ? matchedRule.status === 'PASS' : true;
+                            const hasVerdict = Boolean(matchedRule);
+                            const isPass = matchedRule?.status === 'PASS';
 
                             return (
                               <tr key={elem.element} className="hover:bg-surface-container-low/40">
@@ -1060,14 +1061,18 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
                                   {matchedRule?.standard_requirement_text || '--'}
                                 </td>
                                 <td className="px-3 py-2">
-                                  <span
-                                    className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${isPass
-                                      ? 'bg-status-pass-bg text-status-pass-text'
-                                      : 'bg-status-fail-bg text-status-fail-text'
-                                      }`}
-                                  >
-                                    {isPass ? '✓ PASS' : '✗ FAIL'}
-                                  </span>
+                                  {hasVerdict ? (
+                                    <span
+                                      className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${isPass
+                                        ? 'bg-status-pass-bg text-status-pass-text'
+                                        : 'bg-status-fail-bg text-status-fail-text'
+                                        }`}
+                                    >
+                                      {isPass ? '✓ PASS' : '✗ FAIL'}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-on-surface-variant">--</span>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -1095,72 +1100,52 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-outline-variant/20 dark:divide-border-dark/40">
-                          {/* 抗拉强度 */}
-                          {currentActiveDrawerData.batch.mechanical?.tensile_rm && (
-                            <tr className="hover:bg-surface-container-low/40">
-                              <td className="px-3 py-2 font-medium">抗拉强度 Rm</td>
-                              <td className="px-3 py-2 font-bold tabular-nums">{currentActiveDrawerData.batch.mechanical.tensile_rm}</td>
-                              <td className="px-3 py-2 text-on-surface-variant tabular-nums">≥ 520 MPa (标准)</td>
-                              <td className="px-3 py-2">
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-status-pass-bg text-status-pass-text">✓ PASS</span>
-                              </td>
-                            </tr>
-                          )}
-                          {/* 屈服强度 */}
-                          {currentActiveDrawerData.batch.mechanical?.yield_rp02 && (
-                            <tr className="hover:bg-surface-container-low/40">
-                              <td className="px-3 py-2 font-medium">规定塑性延伸强度 Rp0.2</td>
-                              <td className="px-3 py-2 font-bold tabular-nums">{currentActiveDrawerData.batch.mechanical.yield_rp02}</td>
-                              <td className="px-3 py-2 text-on-surface-variant tabular-nums">≥ 205 MPa (标准)</td>
-                              <td className="px-3 py-2">
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-status-pass-bg text-status-pass-text">✓ PASS</span>
-                              </td>
-                            </tr>
-                          )}
-                          {/* 断后伸长率 */}
-                          {currentActiveDrawerData.batch.mechanical?.elongation_a && (
-                            <tr className="hover:bg-surface-container-low/40">
-                              <td className="px-3 py-2 font-medium">断后伸长率 A</td>
-                              <td className="px-3 py-2 font-bold tabular-nums">{currentActiveDrawerData.batch.mechanical.elongation_a}</td>
-                              <td className="px-3 py-2 text-on-surface-variant tabular-nums">≥ 35.0% (标准)</td>
-                              <td className="px-3 py-2">
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-status-pass-bg text-status-pass-text">✓ PASS</span>
-                              </td>
-                            </tr>
-                          )}
-                          {/* 压扁试验 */}
-                          {currentActiveDrawerData.batch.process?.flattening && (
-                            <tr className="hover:bg-surface-container-low/40">
-                              <td className="px-3 py-2 font-medium">压扁试验</td>
-                              <td className="px-3 py-2 text-on-surface-variant">{currentActiveDrawerData.batch.process.flattening}</td>
-                              <td className="px-3 py-2 text-on-surface-variant">无裂纹裂口 (合格)</td>
-                              <td className="px-3 py-2">
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-status-pass-bg text-status-pass-text">✓ PASS</span>
-                              </td>
-                            </tr>
-                          )}
-                          {/* 晶间腐蚀 */}
-                          {currentActiveDrawerData.batch.process?.intergranularCorrosion && (
-                            <tr className="hover:bg-surface-container-low/40">
-                              <td className="px-3 py-2 font-medium">晶间腐蚀倾向</td>
-                              <td className="px-3 py-2 text-on-surface-variant">{currentActiveDrawerData.batch.process.intergranularCorrosion}</td>
-                              <td className="px-3 py-2 text-on-surface-variant">GB/T 4334 E法合格</td>
-                              <td className="px-3 py-2">
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-status-pass-bg text-status-pass-text">✓ PASS</span>
-                              </td>
-                            </tr>
-                          )}
-                          {/* 无损探伤 */}
-                          {(currentActiveDrawerData.batch.process?.ndt_ut || currentActiveDrawerData.batch.process?.ndt) && (
-                            <tr className="hover:bg-surface-container-low/40">
-                              <td className="px-3 py-2 font-medium">无损检测 (NDT)</td>
-                              <td className="px-3 py-2 text-on-surface-variant">{currentActiveDrawerData.batch.process.ndt_ut || currentActiveDrawerData.batch.process.ndt}</td>
-                              <td className="px-3 py-2 text-on-surface-variant">NB/T 47019.5 规范级</td>
-                              <td className="px-3 py-2">
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-status-pass-bg text-status-pass-text">✓ PASS</span>
-                              </td>
-                            </tr>
-                          )}
+                          {(() => {
+                            const findRule = (keys: string[]) => {
+                              return currentActiveDrawerData.batch.auditReport?.item_results?.find(r =>
+                                keys.some(k => r.property_key.toLowerCase() === k.toLowerCase())
+                              );
+                            };
+
+                            const renderTestRow = (label: string, measuredVal: string | number | undefined, ruleKeys: string[]) => {
+                              if (measuredVal === undefined || measuredVal === null || measuredVal === '') return null;
+                              const matched = findRule(ruleKeys);
+                              const reqText = matched?.standard_requirement_text || '--';
+                              const status = matched?.status;
+
+                              return (
+                                <tr key={label} className="hover:bg-surface-container-low/40">
+                                  <td className="px-3 py-2 font-medium">{label}</td>
+                                  <td className="px-3 py-2 font-bold tabular-nums">{String(measuredVal)}</td>
+                                  <td className="px-3 py-2 text-on-surface-variant tabular-nums">{reqText}</td>
+                                  <td className="px-3 py-2">
+                                    {status ? (
+                                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                                        status === 'PASS'
+                                          ? 'bg-status-pass-bg text-status-pass-text'
+                                          : 'bg-status-fail-bg text-status-fail-text'
+                                      }`}>
+                                        {status === 'PASS' ? '✓ PASS' : '✗ FAIL'}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-on-surface-variant">--</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            };
+
+                            return (
+                              <>
+                                {renderTestRow('抗拉强度 Rm', currentActiveDrawerData.batch.mechanical?.tensile_rm, ['mech_tensile_rm', 'tensile_rm', 'rm'])}
+                                {renderTestRow('规定塑性延伸强度 Rp0.2', currentActiveDrawerData.batch.mechanical?.yield_rp02, ['mech_yield_rp02', 'yield_rp02', 'rp02'])}
+                                {renderTestRow('断后伸长率 A', currentActiveDrawerData.batch.mechanical?.elongation_a, ['mech_elongation_a', 'elongation_a', 'a'])}
+                                {renderTestRow('压扁试验', currentActiveDrawerData.batch.process?.flattening, ['proc_flattening', 'flattening'])}
+                                {renderTestRow('晶间腐蚀倾向', currentActiveDrawerData.batch.process?.intergranularCorrosion, ['proc_intergranular_corrosion', 'intergranular_corrosion', 'corrosion'])}
+                                {renderTestRow('无损检测 (NDT)', currentActiveDrawerData.batch.process?.ndt_ut || currentActiveDrawerData.batch.process?.ndt, ['proc_ndt', 'proc_ndt_ut', 'ndt', 'ndt_ut'])}
+                              </>
+                            );
+                          })()}
                         </tbody>
                       </table>
                     </div>

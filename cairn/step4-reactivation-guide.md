@@ -1,15 +1,21 @@
 ---
-title: 步骤 4 代码保留与重启启用指引
+title: 步骤 4 代码保留与重启启用指引（已废弃）
 type: project_topic
+status: archived
 authoring_mode: ai_generated
 contains:
   - decision
   - guide
+updated: 2026-09-18
 ---
 
-# 步骤 4（检验报告生成与归档导出）代码保留与重启启用指引
+# 步骤 4（检验报告生成与归档导出）代码保留与重启启用指引（已废弃）
 
-> **文档定位**：本指南记录了工作台第 4 步（质检报告/证明书生成与导出归档）的代码现状与未来重新启用时的完整操作步骤。
+> [!WARNING]
+> **文档废弃声明 (2026-09-18)**
+> 本文档记录的“步骤 4 代码保留与重启启用指引”已于 2026-09-18 **正式废弃**。
+> **废弃原因**：根据架构决策（方案 A），工作台已彻底剥离未受控挂载的幽灵步骤 4，相关代码组件 `Step4ReportArchivePanel.tsx` 及其单测已全部从工程中物理删除，主工作台全面收敛为精简高内聚的 3 步骤闭环（`0: 上传文档` ➔ `1: 核对数据` ➔ `2: 比对标准`）。本文档所载的“代码保留段落”与“3 处极简重启清单”已不再适用，仅作为历史归档记录留存。
+> 最新架构现状请参阅：[`cairn/LOG.md`](file:///c:/Users/gaoft/Documents/CodeSpace/NormScale/cairn/LOG.md) 与 [`src/components/WaterfallWorkbench.tsx`](file:///c:/Users/gaoft/Documents/CodeSpace/NormScale/src/components/WaterfallWorkbench.tsx)。
 
 ---
 

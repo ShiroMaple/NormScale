@@ -94,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
       </div>
 
-      {/* 右侧动作区：主题切换、默认用户 ZPJE 头像 */}
+      {/* 右侧动作区：主题切换、质检员状态头像 */}
       <div className="flex items-center gap-4">
         {/* 明暗风格切换按钮 */}
         <button
@@ -114,14 +114,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* 质检员认证头像与职务 */}
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <div className="text-xs font-bold leading-none text-on-surface dark:text-surface-bright">默认用户</div>
+            <div className="text-xs font-bold leading-none text-on-surface dark:text-surface-bright">质检工程师</div>
             <div className="text-[10px] text-on-surface-variant dark:text-secondary-fixed-dim leading-tight mt-1 flex items-center justify-end gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-status-pass-text" />
-              <span>当前在线</span>
+              <span>在线就绪</span>
             </div>
           </div>
           <div className="h-8 w-8 rounded-full bg-primary dark:bg-primary-container text-on-primary flex items-center justify-center font-bold text-xs shadow-xs tracking-wider">
-            ZPJE
+            QC
           </div>
         </div>
       </div>

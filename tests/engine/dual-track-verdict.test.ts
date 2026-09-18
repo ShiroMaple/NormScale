@@ -78,5 +78,20 @@ describe('DualTrackVerdict 双轨制放行仲裁矩阵测试', () => {
     const b3 = getDispositionBadgeMeta('REJECTED_BY_HUMAN');
     expect(b3.badgeClass).toContain('rose');
     expect(b3.icon).toBe('gavel');
+
+    const b4 = getDispositionBadgeMeta('PENDING_AUDIT');
+    expect(b4.badgeClass).toContain('slate');
+    expect(b4.icon).toBe('pending');
+    expect(b4.label).toBe('待比对');
+  });
+
+  it('UNAUDITED: 未发起比对状态，仲裁保持中立待比对态 (PENDING_AUDIT)', () => {
+    const decision = resolveFinalDisposition('UNAUDITED', null);
+    expect(decision.disposition).toBe('PENDING_AUDIT');
+    expect(decision.isReleasePermitted).toBe(false);
+    expect(decision.isConcession).toBe(false);
+    expect(decision.effectiveVerdict).toBe('UNAUDITED');
+    expect(decision.statusLabel).toBe('待比对');
+    expect(decision.auditExplanation).toContain('尚未执行标准条款比对');
   });
 });
