@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "audit:hygiene": "tsx scripts/audit-code-hygiene.ts",
     "standard:validate": "vitest run tests/repository/validate-standards.test.ts",
     "standard:ingest": "node --experimental-strip-types scripts/ingest-standard.ts",
     "langgraph:dev": "langgraphjs dev"

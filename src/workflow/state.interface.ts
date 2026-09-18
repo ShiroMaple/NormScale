@@ -84,6 +84,7 @@ export interface HitlInterruptContext {
   /** 挂起触发原因 */
   reason:
     | 'UNKNOWN_GRADE'
+    | 'UNKNOWN_STANDARD'
     | 'PROPERTY_AMBIGUITY'
     | 'SHEARS_ANOMALY'
     | 'ALTERNATIVE_CLAUSE'
@@ -123,6 +124,8 @@ export interface HitlInterruptContext {
 
 /** 人工修正与恢复提交数据 */
 export interface HumanCorrectionInput {
+  /** 质检员确认/修正后的执行标准代号 (针对 UNKNOWN_STANDARD 场景) */
+  corrected_standard?: string;
   /** 质检员确认/修正后的标准材料牌号 (如 'S30408') */
   corrected_grade?: string;
   /** 质检员修正后的实测数据项覆盖映射 (property_key -> value) */

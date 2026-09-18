@@ -144,17 +144,17 @@ export class GradeNormalizer {
   /**
    * 执行牌号归一化消歧
    * @param rawGrade 质保书提取到的原始牌号字符串
-   * @param declaredStandard 声明的执行标准 (可选，默认 'GB/T 13296-2023')
+   * @param declaredStandard 声明的执行标准 (可选)
    */
   public async normalize(
     rawGrade: string,
-    declaredStandard: string = 'GB/T 13296-2023'
+    declaredStandard: string = ''
   ): Promise<NormalizedGradeResult> {
     const cleanStr = GradeNormalizer.cleanRawGradeString(rawGrade);
     const normKey = GradeNormalizer.toNormalizedKey(cleanStr);
 
-    // 1. 若注入了 ruleStore，优先调用仓库的 O(1) 倒排索引
-    if (this.ruleStore) {
+    // 1. 若注入了 ruleStore 且指定了有效标准，优先调用仓库的 O(1) 倒排索引
+    if (this.ruleStore && declaredStandard && declaredStandard !== 'UNKNOWN') {
       const slice = await this.ruleStore.resolveRuleSlice(declaredStandard, cleanStr);
       if (slice) {
         const primary = slice.primary_grade || slice.display_name;

@@ -15,8 +15,8 @@ import { logger } from '../logger/index.ts';
 export function batchSpecimenToCertificateExtract(batch: any, standardIds?: string[], gradeKey?: string) {
   const std = (standardIds && standardIds.length > 0)
     ? standardIds.join('、')
-    : (batch.overrideStandard || batch.standard || 'GB/T 13296-2023');
-  const grade = gradeKey || batch.overrideGrade || batch.grade || '06Cr18Ni11Ti (S32168)';
+    : (batch.overrideStandard || batch.standard || 'UNKNOWN');
+  const grade = gradeKey || batch.overrideGrade || batch.grade || 'UNKNOWN';
 
   // chemical: 支持 Array [{ element: 'C', value: '0.018' }] 或 Object { C: 0.018, ... }，以及 "<0.01", "≤0.005", "0.018" 等数值
   const chemicalRecords: any[] = [];

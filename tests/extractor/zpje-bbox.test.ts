@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getZPJEBBoxes } from '@/types/bbox';
+import { getZPJEBBoxes } from '../fixtures/zpje-bbox.fixture.ts';
 import { DEFAULT_INSPECTION_SESSION } from '../fixtures/demo-session';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -85,11 +85,21 @@ export class CertificateNormalizer {
 
       // 1. 抬头信息 (Header) 清洗与牌号消歧
       const rawHeader = payload.header || {};
-      const rawDeclaredStandard = String(this.unwrapValue(rawHeader.declared_standard) || 'GB/T 13296-2023').trim();
-      const rawDeclaredGrade = String(this.unwrapValue(rawHeader.declared_grade) || '06Cr19Ni10').trim();
+      const rawDeclaredStandard = String(this.unwrapValue(rawHeader.declared_standard) || '').trim() || 'UNKNOWN';
+      const rawDeclaredGrade = String(this.unwrapValue(rawHeader.declared_grade) || '').trim() || 'UNKNOWN';
 
-      // 牌号消歧
-      const gradeRes = await this.gradeNormalizer.normalize(rawDeclaredGrade, rawDeclaredStandard);
+      // 牌号消歧 (真实消歧，缺项直接标记 UNKNOWN 并不予命中)
+      const gradeRes = rawDeclaredGrade !== 'UNKNOWN'
+        ? await this.gradeNormalizer.normalize(rawDeclaredGrade, rawDeclaredStandard !== 'UNKNOWN' ? rawDeclaredStandard : '')
+        : {
+            raw_grade: rawDeclaredGrade,
+            is_matched: false,
+            primary_grade: 'UNKNOWN',
+            unified_code: undefined,
+            standard_id: undefined,
+            confidence: 0,
+            message: '质保书未声明或未识别到有效材料牌号',
+          };
       if (!gradeRes.is_matched) {
         warnings.push(gradeRes.message);
         if (collector) collector.addTrace('NORMALIZER', 'warn', `牌号未收录预警: ${gradeRes.message}`);

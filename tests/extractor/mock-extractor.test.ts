@@ -22,11 +22,16 @@ describe('Extractor 提取适配层多后端测试', () => {
     expect(health.healthy).toBe(false); // 本地无 9999 端口服务
   });
 
-  it('DirectLlmExtractor 提供内置多模态提取 Prompt 与备用链路', async () => {
-    const llm = new DirectLlmExtractor();
+  it('DirectLlmExtractor 提供内置多模态提取 Prompt，未配 Key 明确抛错，配 Key 后正常调用', async () => {
+    const llmWithoutKey = new DirectLlmExtractor();
     expect(DirectLlmExtractor.DEFAULT_MTC_PROMPT).toContain('质量证明书');
 
-    const payload = await llm.extract('mock-base64');
+    // 未配置 Key 时严格抛出异常，杜绝 Mock 假数据外溢
+    await expect(llmWithoutKey.extract('mock-base64')).rejects.toThrow('未配置大模型 API Key');
+
+    // 配置 Key 后返回真实提供商结构
+    const llmWithKey = new DirectLlmExtractor({ apiKey: 'mock-test-key' });
+    const payload = await llmWithKey.extract('mock-base64');
     expect(payload.source_provider).toBe('direct-llm-extractor');
   });
 });

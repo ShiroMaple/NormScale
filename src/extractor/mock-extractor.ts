@@ -36,7 +36,6 @@ export class MockCertificateExtractor implements ICertificateExtractor {
     // 样本 1: 经典 S30408 质保书（带有非标单位 kgf/mm²、牌号别名 SUS304、带单位字符串与压扁试验合格）
     this.presetPayloads.set('s30408_messy_sample', {
       source_provider: 'mock-extractor',
-      overall_confidence: 0.96,
       header: {
         certificate_no: 'MTC-2026-08891',
         supplier_name: '江苏某特种合金钢管制造有限公司',
@@ -76,7 +75,6 @@ export class MockCertificateExtractor implements ICertificateExtractor {
     // 样本 2: 316L 不锈钢管（使用工程制 kgf/mm² 单位、TP-316L 别名、超声波探伤）
     this.presetPayloads.set('s31603_kgf_sample', {
       source_provider: 'mock-extractor',
-      overall_confidence: 0.94,
       header: {
         certificate_no: 'MTC-2026-09102',
         supplier_name: '浙江某不锈钢管道实业有限公司',
@@ -114,7 +112,6 @@ export class MockCertificateExtractor implements ICertificateExtractor {
     // 样本 3: 未知/非标材料牌号样本（用于测试 HITL 人机协同断点挂起与质检员修正）
     this.presetPayloads.set('unknown_grade_sample', {
       source_provider: 'mock-extractor',
-      overall_confidence: 0.96,
       header: {
         certificate_no: 'MTC-2026-UNKNOWN-88',
         supplier_name: '无锡某特种不锈钢管件制造厂',

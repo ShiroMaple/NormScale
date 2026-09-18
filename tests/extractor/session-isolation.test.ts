@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { generateSessionId, InspectionSession } from '@/types/session.ts';
 import { DEFAULT_INSPECTION_SESSION } from '../fixtures/demo-session.ts';
 import { AuditReportSchema } from '@/schemas/report.schema.ts';
-import { getZPJEBBoxes } from '@/types/bbox.ts';
+import { getZPJEBBoxes } from '../fixtures/zpje-bbox.fixture.ts';
 
 describe('Session Isolation and Dynamic Model Verification', () => {
   it('should verify DEFAULT_INSPECTION_SESSION is retained as a valid demo archival session', () => {

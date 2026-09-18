@@ -30,11 +30,8 @@ export function createRetrieveStandardNode(ruleStore?: IRuleStore) {
       standardIds = options.forcedStandardIds;
     } else if (options?.forcedStandardId) {
       standardIds = options.forcedStandardId.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean);
-    } else if (normalizedCert.header.declared_standard) {
-      standardIds = normalizedCert.header.declared_standard.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean);
-    }
-    if (standardIds.length === 0) {
-      standardIds = ['GB/T 13296-2023'];
+    } else if (normalizedCert.header.declared_standard && normalizedCert.header.declared_standard !== 'UNKNOWN') {
+      standardIds = normalizedCert.header.declared_standard.split(/[、,，;；\n]+/).map(s => s.trim()).filter(s => s && s !== 'UNKNOWN');
     }
 
     // 后端防御性去重：基于 normalizeStandardId 去除重复或等价变体，防止同标准被重复加载合成
@@ -47,7 +44,18 @@ export function createRetrieveStandardNode(ruleStore?: IRuleStore) {
         deduplicatedStandardIds.push(sid);
       }
     }
-    standardIds = deduplicatedStandardIds.length > 0 ? deduplicatedStandardIds : ['GB/T 13296-2023'];
+    standardIds = deduplicatedStandardIds;
+
+    if (standardIds.length === 0) {
+      const errorMsg = '质保证书未声明执行标准，且未在核验选项中指定执行标准';
+      logger.error('WORKFLOW', `[Node 3: Retrieve Standard] ${errorMsg}`);
+      collector.addTrace('WORKFLOW', 'error', `[节点 3] ${errorMsg}`);
+      return {
+        error: `Retrieve Standard Node Failed: ${errorMsg}`,
+        traces: collector.getTraces(),
+        workflowStatus: 'failed',
+      };
+    }
 
     const gradeKey = options?.forcedGradeKey || normalizedCert.header.declared_grade;
 

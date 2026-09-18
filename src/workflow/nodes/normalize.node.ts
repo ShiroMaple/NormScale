@@ -100,7 +100,7 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
         certificate = payloadToClean;
         // 牌号必须经过 GradeNormalizer 真实校验，严禁对非标牌号盲目放行
         const rawGrade = String(certificate.header.declared_grade || '').trim();
-        const rawStd = String(certificate.header.declared_standard || 'GB/T 13296-2023').trim();
+        const rawStd = String(certificate.header.declared_standard || '').trim();
         const gradeNorm = await normalizer.normalizeGrade(rawGrade, rawStd);
         if (gradeNorm.is_matched) {
           certificate.header.declared_grade = gradeNorm.primary_grade;
@@ -128,12 +128,24 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
       const minConf = options?.minConfidenceThreshold ?? 0.8;
       const isGradeMatched = audit_log.grade_normalization.is_matched;
 
-      if (!isGradeMatched && !humanCorrection?.corrected_grade) {
-        const declaredStd = String(
-          (typeof payloadToClean.header?.declared_standard === 'object' && payloadToClean.header?.declared_standard !== null
-            ? (payloadToClean.header.declared_standard as any).value
-            : payloadToClean.header?.declared_standard) || 'GB/T 13296-2023'
-        ).trim();
+      const declaredStd = String(
+        (typeof payloadToClean.header?.declared_standard === 'object' && payloadToClean.header?.declared_standard !== null
+          ? (payloadToClean.header.declared_standard as any).value
+          : payloadToClean.header?.declared_standard) || ''
+      ).trim() || 'UNKNOWN';
+
+      const isStandardUnknown =
+        (!options?.forcedStandardId && (!options?.forcedStandardIds || options.forcedStandardIds.length === 0)) &&
+        (declaredStd === 'UNKNOWN' || !declaredStd);
+
+      if (isStandardUnknown && !humanCorrection?.corrected_standard && !humanCorrection?.arbitrated_standard_id) {
+        hitlContext = {
+          reason: 'UNKNOWN_STANDARD',
+          prompt_message: `质保证书未声明执行标准或标准未识别，请质检员人工指定适用的执行标准`,
+          pending_fields: ['declared_standard'],
+          suggestions: {},
+        };
+      } else if (!isGradeMatched && !humanCorrection?.corrected_grade) {
         const rawGrade = String(
           (typeof payloadToClean.header?.declared_grade === 'object' && payloadToClean.header?.declared_grade !== null
             ? (payloadToClean.header.declared_grade as any).value
@@ -143,7 +155,7 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
         // 纯逻辑动态双标尺推荐：绝不写死切片列表，由 store 动态加载当前标准全部切片
         const candidates = await CandidateGradeRecommender.recommend({
           rawGrade,
-          declaredStandard: declaredStd,
+          declaredStandard: declaredStd !== 'UNKNOWN' ? declaredStd : '',
           standardIds: options?.forcedStandardIds,
           testRecords: certificate?.test_records || payloadToClean.test_records || [],
           ruleStore: store,
@@ -154,7 +166,7 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
           reason: 'UNKNOWN_GRADE',
           prompt_message: `材料牌号 [${rawGrade}] 未在标准库中收录，请质检员人工确认或指定国家标准牌号`,
           pending_fields: ['declared_grade'],
-          suggestions: { default: candidates[0]?.id || '06Cr19Ni10' },
+          suggestions: candidates[0]?.id ? { default: candidates[0].id } : undefined,
           candidate_grades: candidates,
         };
       } else if (payloadToClean.overall_confidence !== undefined && payloadToClean.overall_confidence < minConf && !humanCorrection) {

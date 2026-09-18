@@ -41,9 +41,9 @@ export const CertificateHeaderSchema = z.object({
   material_product_name: z.string().optional().describe('产品品名 (如 锅炉、热交换器用不锈钢无缝钢管)'),
   declared_standard: z.string().describe('质保书声称执行标准 (如 GB/T 13296-2023, NB/T 47019.5-2021)'),
   declared_grade: z.string().describe('质保书声称材料牌号 (如 S32168, 06Cr18Ni11Ti, 022Cr17Ni12Mo2)'),
-  heat_number: z.string().optional().describe('原材料冶炼炉号 Heat No. / Melt No. (如 YX2602-2207)'),
-  heat_treatment_lot_number: z.string().optional().describe('钢管热处理炉号 / 装炉号 Pack No. (如 Z26022C)'),
-  batch_lot_number: z.string().optional().describe('检验批号 / 试样编号 Batch No. (如 Z26022C-DB7)'),
+  heat_number: z.string().optional().describe('原材料冶炼炉号 Heat No. / Melt No. (如 HT-2024-8891)'),
+  heat_treatment_lot_number: z.string().optional().describe('钢管热处理炉号 / 装炉号 Pack No. (如 PK-202403-A)'),
+  batch_lot_number: z.string().optional().describe('检验批号 / 试样编号 Batch No. (如 LOT-202403-B01)'),
   material_form: z.string().optional().describe('材料形态 (如 tube_seamless 无缝管, plate 钢板, bar 棒材)'),
   manufacturing_process: z.string().optional().describe('制造工艺 (如 cold_drawn 冷拔, hot_rolled 热轧, hot_extrusion 热挤压)'),
   delivery_state: z.string().optional().describe('交货状态 / 热处理状态 (如 固溶退火, 固溶酸洗, 光亮退火)'),
@@ -137,11 +137,11 @@ export type BatchMechanical = z.infer<typeof BatchMechanicalSchema>;
 
 // 试样级结构化提取根模型
 export const BatchInspectionSchema = z.object({
-  batch_no: z.string().describe('试样批号/炉批号 (如 Z26022C-DB7)'),
+  batch_no: z.string().describe('试样批号/炉批号 (如 LOT-202403-B01)'),
   chemical: z.array(z.object({
     element: z.string().describe('化学元素符号 (如 C, Si, Mn, P, S, Cr, Ni, Ti, N, Mo)'),
     value: z.string().describe('实测含量文本 (如 0.018, <0.01)'),
-    confidence: z.string().optional().describe('识别置信度 (如 99%)'),
+    confidence: z.string().optional().describe('视觉清晰度置信度评估 (如 0.98)'),
   })).describe('化学成分检验列表'),
   mechanical: BatchMechanicalSchema.describe('力学性能检验项'),
   process: BatchProcessSchema.describe('工艺、金相与解耦无损检验项'),
@@ -183,12 +183,12 @@ export interface InspectionFieldDefinition {
 
 // 常用长尾项推荐规范（用于约束大模型输出，杜绝 key 碎片化）
 export const RECOMMENDED_ADDITIONAL_TEST_CONVENTIONS = [
-  { key: 'proc_hydraulic', name: '水压试验', category: 'process', standard: 'GB/T 241' },
-  { key: 'ndt_pt', name: '渗透检测', category: 'ndt', standard: 'GB/T 12604.3' },
-  { key: 'ndt_mt', name: '磁粉检测', category: 'ndt', standard: 'JB/T 4730.4' },
-  { key: 'proc_bending', name: '弯曲试验', category: 'process', standard: 'GB/T 232' },
-  { key: 'mech_impact', name: '夏比冲击试验', category: 'mechanical', standard: 'GB/T 229' },
-  { key: 'mech_high_temp_tensile', name: '高温拉伸试验', category: 'mechanical', standard: 'GB/T 228.2' },
+  { key: 'proc_hydraulic', name: '水压试验', category: 'process' },
+  { key: 'ndt_pt', name: '渗透检测', category: 'ndt' },
+  { key: 'ndt_mt', name: '磁粉检测', category: 'ndt' },
+  { key: 'proc_bending', name: '弯曲试验', category: 'process' },
+  { key: 'mech_impact', name: '夏比冲击试验', category: 'mechanical' },
+  { key: 'mech_high_temp_tensile', name: '高温拉伸试验', category: 'mechanical' },
 ] as const;
 
 export const META_FIELD_ID_MAP: Record<string, string> = {
@@ -232,7 +232,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'mechanical',
       categoryLabel: '力学',
       categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      defaultMethod: 'GB/T 228.1-2021',
     },
     {
       key: 'yield_rp02',
@@ -242,7 +241,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'mechanical',
       categoryLabel: '力学',
       categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      defaultMethod: 'GB/T 228.1-2021',
     },
     {
       key: 'elongation_a',
@@ -252,7 +250,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'mechanical',
       categoryLabel: '力学',
       categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      defaultMethod: 'GB/T 228.1-2021',
     },
     {
       key: 'hardness',
@@ -262,7 +259,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'mechanical',
       categoryLabel: '力学',
       categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      defaultMethod: 'GB/T 4340.1-2024',
     },
     // 工艺与金相项
     {
@@ -273,7 +269,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'process',
       categoryLabel: '工艺',
       categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-      defaultMethod: 'GB/T 246-2017',
     },
     {
       key: 'flaring',
@@ -283,7 +278,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'process',
       categoryLabel: '工艺',
       categoryColor: 'text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-      defaultMethod: 'GB/T 242-2007',
     },
     {
       key: 'grain_size',
@@ -293,7 +287,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'metallographic',
       categoryLabel: '金相',
       categoryColor: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
-      defaultMethod: 'GB/T 6394-2017',
     },
     {
       key: 'intergranular_corrosion',
@@ -303,7 +296,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'corrosion',
       categoryLabel: '腐蚀',
       categoryColor: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-      defaultMethod: 'GB/T 4334-2020',
     },
     // 无损探伤 (解耦为 ET 与 UT)
     {
@@ -314,7 +306,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'ndt',
       categoryLabel: '探伤',
       categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-      defaultMethod: 'GB/T 7735-2016',
     },
     {
       key: 'ndt_ut',
@@ -324,7 +315,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'ndt',
       categoryLabel: '探伤',
       categoryColor: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-      defaultMethod: 'GB/T 5777-2019',
     },
     // 表面质量与几何尺寸
     {
@@ -335,7 +325,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'process',
       categoryLabel: '表面',
       categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
-      defaultMethod: 'GB/T 13296-2023',
     },
     {
       key: 'dimensions',
@@ -345,7 +334,6 @@ export function getCertificateInspectionFieldDefinitions(): InspectionFieldDefin
       category: 'geometry',
       categoryLabel: '尺寸',
       categoryColor: 'text-teal-700 bg-teal-50 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
-      defaultMethod: 'GB/T 13296-2023',
     },
   ];
 
@@ -421,16 +409,9 @@ export function buildDynamicSchemaStructureTemplate(): string {
   },
   "batches": [
     {
-      "batchNo": "试样批号/炉批号 (如 Z26022C-DB7)",
+      "batchNo": "试样批号/炉批号 (如 LOT-202403-B01)",
       "chemical": [
-        { "element": "C", "value": "0.018", "confidence": "99%" },
-        { "element": "Si", "value": "0.44", "confidence": "98%" },
-        { "element": "Mn", "value": "1.16", "confidence": "99%" },
-        { "element": "P", "value": "0.035", "confidence": "97%" },
-        { "element": "S", "value": "0.005", "confidence": "98%" },
-        { "element": "Cr", "value": "17.41", "confidence": "99%" },
-        { "element": "Ni", "value": "9.08", "confidence": "98%" },
-        { "element": "Ti", "value": "0.14", "confidence": "95%" }
+        { "element": "元素符号 (如 C)", "value": "元素含量实测值 (如 0.018)", "confidence": "视觉识别与清晰度置信度 (0.0-1.0 浮点数，如 0.98)" }
       ],
       "mechanical": {
         "tensile_rm": "抗拉强度实测值 (如 621 MPa)",

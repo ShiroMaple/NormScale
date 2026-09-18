@@ -66,15 +66,15 @@ export class CandidateGradeRecommender {
     const targetStandards: string[] = [];
     if (Array.isArray(standardIds) && standardIds.length > 0) {
       for (const s of standardIds) {
-        if (s && s.trim()) targetStandards.push(s.trim());
+        if (s && s.trim() && s.trim() !== 'UNKNOWN') targetStandards.push(s.trim());
       }
-    } else if (declaredStandard) {
-      const parts = declaredStandard.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean);
+    } else if (declaredStandard && declaredStandard !== 'UNKNOWN') {
+      const parts = declaredStandard.split(/[、,，;；\n]+/).map(s => s.trim()).filter(s => s && s !== 'UNKNOWN');
       targetStandards.push(...parts);
     }
 
     if (targetStandards.length === 0) {
-      targetStandards.push('GB/T 13296-2023');
+      return [];
     }
 
     let availableSlices: SpecificationSlice[] = [];

@@ -28,7 +28,7 @@ export class ComplianceEngine {
 
   /**
    * 执行质保书合规性核验的主入口函数
-   * @param standardRuleSet 命中的标准规则全集（如 GB/T 13296-2023）
+   * @param standardRuleSet 命中的标准规则全集
    * @param certificate 结构化提取出的质保书实测数据
    * @param options 可选的日志器与内存审计轨迹收集器
    * @returns 包含各单项明细、全局决策与审计轨迹的完整核验报告
@@ -883,9 +883,9 @@ export class ComplianceEngine {
       }
     }
 
-    // 门禁逻辑：存在任何一项不合格 (FAIL) 或强制项漏检 (MISSING) 即触发一票否决
+    // 门禁逻辑：存在任何一项不合格 (FAIL) 或强制项漏检 (MISSING) 即触发一票否决；若无任何有效规则评估项，不能判定为 PASS，标记为 MANUAL_REVIEW
     const hasCriticalFail = failCount > 0 || missingMandatory.length > 0;
-    const overallStatus = hasCriticalFail ? 'FAIL' : 'PASS';
+    const overallStatus = hasCriticalFail ? 'FAIL' : (itemResults.length === 0 ? 'MANUAL_REVIEW' : 'PASS');
 
     return {
       overall_status: overallStatus,

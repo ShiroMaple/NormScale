@@ -193,7 +193,6 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
   ): RawCertificatePayload {
     return {
       source_provider: `openai-compatible:${this.activeConfig.model}`,
-      overall_confidence: 0.95,
       header: {
         certificate_no: parsed.header?.certificateNo || '',
         declared_standard: parsed.header?.declaredStandard || '',
@@ -598,7 +597,7 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
           result: String(item.result || item.value || ''),
           value_num: typeof item.value_num === 'number' ? item.value_num : null,
           unit: item.unit || '',
-          conclusion: item.conclusion || 'PASS',
+          conclusion: item.conclusion || '',
         }))
         : (Array.isArray(b.additionalTests) ? b.additionalTests : []);
 
@@ -644,9 +643,9 @@ export class OpenAiCompatibleExtractor implements ICertificateExtractor {
         additionalTests: annotatedAdditionalTests,
         testMethods: (b.test_methods && typeof b.test_methods === 'object') ? b.test_methods : ((b.testMethods && typeof b.testMethods === 'object') ? b.testMethods : undefined),
         surfaceQuality: resolvedSurfaceQuality,
-        reportNo: `QA-${Date.now().toString().slice(-8)}`,
-        sha256Hash: `SHA256-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
-        inspector: 'Auto-AI-Inspector',
+        reportNo: String(b.reportNo || b.certificate_no || header.certificate_no || header.certificateNo || ''),
+        sha256Hash: undefined,
+        inspector: String(b.inspector || header.inspector || ''),
       };
     });
 

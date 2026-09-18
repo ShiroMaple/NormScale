@@ -47,26 +47,15 @@ export class DirectLlmExtractor implements ICertificateExtractor {
     _input: Buffer | Uint8Array | string,
     _options?: ExtractOptions
   ): Promise<RawCertificatePayload> {
-    // 如果尚未配置实际的大模型 API 凭证，在开发/演示环境中返回结构化初始载荷
+    // 如果尚未配置实际的大模型 API 凭证，抛出明确配置异常，杜绝 Mock 假数据外溢
     if (!this.config.apiKey && !process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
-      return {
-        source_provider: 'direct-llm-extractor',
-        overall_confidence: 0.88,
-        header: {
-          certificate_no: 'LLM-EXTRACT-DEMO',
-          declared_standard: 'GB/T 13296-2023',
-          declared_grade: '06Cr19Ni10',
-        },
-        test_records: [],
-        unstructured_notes: ['[DirectLlmExtractor] API key not configured, placeholder payload returned.'],
-      };
+      throw new Error('[DirectLlmExtractor] 未配置大模型 API Key 凭据 (OPENAI_API_KEY 或 GEMINI_API_KEY)，无法执行多模态直接抽取。');
     }
 
-    // 生产环境中在此调用对应的 SDK (如 @google/genai 或 openai)
-    // 提取结果将流转至 Normalizer 进行确定性清洗与消歧
+    // 生产环境中在此调用对应的 SDK (如 @google/genai 或 openai) 进行多模态直连抽取
+    // 提取结果将流转至 Normalizer 进行确定性清洗与消歧。在尚未解析出具体字段时，不伪造任何假置信度与假数据
     return {
       source_provider: 'direct-llm-extractor',
-      overall_confidence: 0.95,
       header: {},
       test_records: [],
     };
