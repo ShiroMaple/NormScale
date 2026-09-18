@@ -21,8 +21,8 @@ export function usePdfViewerLens({
   bboxes = [],
   rightScrollContainerRef,
 }: UsePdfViewerLensOptions = {}) {
-  // 视窗变换状态
-  const [zoomLevel, setZoomLevel] = useState<number>(150);
+  // 视窗变换状态（默认显示比例增加到 225%）
+  const [zoomLevel, setZoomLevel] = useState<number>(225);
   const [rotation, setRotation] = useState<number>(0); // 顺时针旋转角度 (0, 90, 180, 270)
   const [pageOrientationOverride, setPageOrientationOverride] = useState<PageOrientationOverride>('auto');
   const [pageAspectRatios, setPageAspectRatios] = useState<Record<number, number>>({});
@@ -100,7 +100,7 @@ export function usePdfViewerLens({
     setZoomLevel(prev => Math.max(50, prev - 25));
   }, []);
 
-  const resetZoom = useCallback((targetZoom = 150) => {
+  const resetZoom = useCallback((targetZoom = 225) => {
     setZoomLevel(targetZoom);
   }, []);
 
@@ -172,7 +172,7 @@ export function usePdfViewerLens({
     });
   }, []);
 
-  // 1. 悬浮/聚焦右侧字段：仅滚动左侧 PDF 视窗，当已在视口中则仅高亮不移动视口
+  // 1. 悬浮/聚焦右侧字段：仅滚动居中与高亮目标 BBox，不再进行任何缩放形变
   const scrollToLeftBBox = useCallback((fieldId: string | null) => {
     if (!isBboxFocusEnabled) return;
 
@@ -189,10 +189,6 @@ export function usePdfViewerLens({
 
     setCurrentDocPage(box.page);
     centerBBoxInContainer(box, false);
-
-    magnifyTimerRef.current = setTimeout(() => {
-      setMagnifiedFieldId(fieldId);
-    }, 1000);
   }, [bboxes, centerBBoxInContainer, isBboxFocusEnabled]);
 
   // 2. 悬浮左侧 BBox：仅滚动右侧解析数据视窗
@@ -234,17 +230,28 @@ export function usePdfViewerLens({
     setPageAspectRatios({});
   }, [selectedDocId]);
 
-  // 首次载入或文档/缩放/旋转变化时，确保 PDF 视窗水平居中
-  useEffect(() => {
+  // 确保 PDF 视窗水平绝对居中且垂直顶端对齐
+  const centerPdfViewport = useCallback(() => {
     const container = pdfScrollContainerRef.current;
     if (!container) return;
-    const centerTimer = setTimeout(() => {
-      if (container.scrollWidth > container.clientWidth) {
-        container.scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
-      }
-    }, 50);
-    return () => clearTimeout(centerTimer);
-  }, [zoomLevel, rotation, currentDocPage, selectedDocId, currentStep]);
+    if (container.scrollWidth > container.clientWidth) {
+      container.scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
+    }
+    container.scrollTop = 0;
+  }, []);
+
+  // 首次载入或文档/缩放/旋转变化时，多阶段触发居中以兼容异步切图与 DOM 渲染
+  useEffect(() => {
+    centerPdfViewport();
+    const t1 = setTimeout(centerPdfViewport, 50);
+    const t2 = setTimeout(centerPdfViewport, 200);
+    const t3 = setTimeout(centerPdfViewport, 600);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [centerPdfViewport, zoomLevel, rotation, currentDocPage, selectedDocId, currentStep]);
 
   // 监听 PDF 视窗物理容器宽度，自适应计算横向呼吸留白与整页完整预览
   useEffect(() => {
@@ -318,6 +325,7 @@ export function usePdfViewerLens({
     // 视窗鼠标拖拽交互
     isMouseDownDragging,
     handlePdfMouseDown,
+    centerPdfViewport,
     // 滚动容器引用
     pdfScrollContainerRef,
   };

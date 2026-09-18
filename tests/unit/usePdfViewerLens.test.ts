@@ -31,7 +31,7 @@ describe('usePdfViewerLens Hook 单元测试 (阶段 3)', () => {
     expect(captured).not.toBeNull();
     if (!captured) return;
 
-    expect((captured as any).zoomLevel).toBe(150);
+    expect((captured as any).zoomLevel).toBe(225);
     expect((captured as any).rotation).toBe(0);
     expect((captured as any).currentDocPage).toBe(1);
     expect((captured as any).pageOrientationOverride).toBe('auto');

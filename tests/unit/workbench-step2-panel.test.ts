@@ -211,5 +211,77 @@ describe('Step2DataVerificationPanel 单元测试 (阶段 3)', () => {
     expect(html).toContain('98%');
     expect(html).toContain('95%');
   });
+
+  it('步骤 2 应采用无 max-w-[1440px] 留白限制的全宽容器，并按 6:4 比例渲染原件与提取视窗，支持全屏展开与折叠', () => {
+    const html = renderToString(
+      React.createElement(Step2DataVerificationPanel, {
+        session: mockSession,
+        selectedDocId: 'doc-101',
+        selectedBatchNo: 'BATCH-2026-X1',
+        onSelectDoc: vi.fn(),
+        onSelectBatch: vi.fn(),
+        currentDoc: mockDoc,
+        currentBatch: mockBatch,
+        parsingTasks: {},
+        totalCombinedMetrics: null,
+        isStreamingTerminalExpanded: false,
+        onToggleStreamingTerminal: vi.fn(),
+        onReparseDocument: vi.fn(),
+        bboxes: [],
+        onUpdateBatchNo: vi.fn(),
+        onUpdateExtractValue: vi.fn(),
+        onGoToStep: vi.fn(),
+      })
+    );
+
+    // 验证定宽限制已被彻底移除
+    expect(html).not.toContain('max-w-[1440px]');
+    // 验证 6:4 比例分配 (左 60% 右 40%)
+    expect(html).toContain('lg:w-[60%]');
+    expect(html).toContain('lg:w-[40%]');
+    // 验证全屏/折叠沉浸查阅入口
+    expect(html).toContain('全屏沉浸查看原件');
+    expect(html).toContain('收起右侧核对视窗');
+    // 验证中缝细长条胶囊折叠把手
+    expect(html).toContain('w-3.5 h-16 rounded-full');
+    expect(html).toContain('chevron_right');
+    // 验证原件预览视窗容器注入了 aspect-ratio 动态等比样式
+    expect(html).toContain('aspect-ratio');
+  });
+
+  it('提取项提取值居左对齐，单位与数值合并展示，原件预览默认 225%', () => {
+    const html = renderToString(
+      React.createElement(Step2DataVerificationPanel, {
+        session: mockSession,
+        selectedDocId: 'doc-101',
+        selectedBatchNo: 'BATCH-2026-X1',
+        onSelectDoc: vi.fn(),
+        onSelectBatch: vi.fn(),
+        currentDoc: mockDoc,
+        currentBatch: mockBatch,
+        parsingTasks: {},
+        totalCombinedMetrics: null,
+        isStreamingTerminalExpanded: false,
+        onToggleStreamingTerminal: vi.fn(),
+        onReparseDocument: vi.fn(),
+        bboxes: [],
+        onUpdateBatchNo: vi.fn(),
+        onUpdateExtractValue: vi.fn(),
+        onGoToStep: vi.fn(),
+      })
+    );
+
+    // 1. 验证总览表格表头提取值居左，且移除了独立的「单位」表头列
+    expect(html).toContain('text-left w-40">提取值</th>');
+    expect(html).not.toContain('<th class="px-3.5 py-2 font-bold w-16">单位</th>');
+
+    // 2. 验证提取值与单位合并展示（如元素含量含 wt%，抗拉强度含 MPa）
+    expect(html).toContain('wt%');
+    expect(html).toContain('MPa');
+
+    // 3. 验证工具栏还原缩放为 225%
+    expect(html).toContain('225%');
+    expect(html).toContain('点击一键还原为 225%');
+  });
 });
 

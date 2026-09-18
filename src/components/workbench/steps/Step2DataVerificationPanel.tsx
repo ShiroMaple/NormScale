@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   InspectionSession,
   SessionDocument,
@@ -131,14 +131,13 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
     currentDocPage,
     setCurrentDocPage,
     highlightedFieldId,
-    magnifiedFieldId,
     isBboxFocusEnabled,
     handleToggleBboxFocus,
-    handleResetMagnify,
     handleFieldHover,
     scrollToRightField,
     isMouseDownDragging,
     handlePdfMouseDown,
+    centerPdfViewport,
     pdfScrollContainerRef,
   } = usePdfViewerLens({
     selectedDocId,
@@ -150,6 +149,31 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
   // 分类页签与打标折叠状态
   const [activeTabCategory, setActiveTabCategory] = useState<string>('all');
   const [isDuplicateDetailsExpanded, setIsDuplicateDetailsExpanded] = useState<boolean>(false);
+
+  // 原件全屏与右侧核对视窗折叠状态 (思路 2 + 3 融合体验)
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState<boolean>(false);
+
+  // 快捷键监听：当处于全屏/折叠态时，按 ESC 键平滑退出还原
+  useEffect(() => {
+    if (!isRightPanelCollapsed) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsRightPanelCollapsed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRightPanelCollapsed]);
+
+  // 当全屏/折叠切换导致容器宽度改变时，待过渡动画完成后平滑重新水平居中
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      centerPdfViewport();
+    }, 320);
+    return () => clearTimeout(timer);
+  }, [isRightPanelCollapsed, centerPdfViewport]);
 
   // Schema 反射派生的检验项默认方法标准字典
   const fieldDefMap = useMemo(() => {
@@ -187,9 +211,16 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
     );
   };
 
+  // 动态获取当前活动页真实切图比例（若未获取则默认标准 A4 竖版 0.7071，旋转 90/270 度时动态换算）
+  const activePageRatio = pageAspectRatios[currentDocPage];
+  const isRotated = rotation === 90 || rotation === 270;
+  const currentRatio = activePageRatio
+    ? (isRotated ? Number((1 / activePageRatio).toFixed(4)) : activePageRatio)
+    : (isRotated ? 1.4142 : 0.7071);
+
   return (
-    <section className="w-full h-full shrink-0 overflow-hidden p-6 flex flex-col">
-      <div className="max-w-[1440px] mx-auto w-full h-full flex flex-col space-y-4 min-h-0">
+    <section className="w-full h-full shrink-0 overflow-hidden px-4 sm:px-6 py-4 flex flex-col">
+      <div className="w-full h-full flex flex-col space-y-4 min-h-0">
         {/* 顶部统一标题与两层树状批次选择条 */}
         <div className="shrink-0 relative z-40">
           <BatchContextBar
@@ -241,41 +272,31 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0 relative z-10">
-            {/* 左侧 45%：源文档视图与自适应交互式 OCR BBox 高亮图层 */}
-            <div className="lg:col-span-5 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet h-full">
-              {/* PDF 阅读器顶部工具栏 */}
+          <div className="flex flex-col lg:flex-row gap-4 sm:gap-5 flex-1 min-h-0 relative z-10 w-full">
+            {/* 左侧：源文档视图与自适应交互式 OCR BBox 高亮图层 (默认 60%，全屏折叠时自适应 flex-1 撑满) */}
+            <div className={`flex items-center justify-center min-h-0 min-w-0 h-full overflow-hidden transition-all duration-300 ${
+              isRightPanelCollapsed ? 'w-full lg:flex-1' : 'w-full lg:w-[60%]'
+            }`}>
+              <div
+                className="w-full h-full max-w-full max-h-full bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl flex flex-col overflow-hidden shadow-sheet transition-[aspect-ratio] duration-250"
+                style={{
+                  aspectRatio: `${currentRatio}`,
+                }}
+              >
+                {/* PDF 阅读器顶部工具栏 */}
               <div className="h-11 min-h-[44px] max-h-[44px] px-3 bg-surface-container-low dark:bg-surface-dark-low border-b border-outline-variant/40 dark:border-border-dark flex items-center justify-between gap-2 text-xs text-on-surface-variant shrink-0 box-border">
                 {/* 左侧：定位聚焦开关 / 活跃气泡徽章 */}
                 <div className="flex items-center min-w-0 shrink-0">
                   {(() => {
-                    const isPageMagnified = isBboxFocusEnabled && Boolean(magnifiedFieldId);
-                    const activeFieldBox = (isBboxFocusEnabled && (magnifiedFieldId || highlightedFieldId))
-                      ? bboxes.find(b => b.id === (magnifiedFieldId || highlightedFieldId))
+                    const activeFieldBox = (isBboxFocusEnabled && highlightedFieldId)
+                      ? bboxes.find(b => b.id === highlightedFieldId)
                       : null;
 
-                    if (isBboxFocusEnabled && (isPageMagnified || activeFieldBox)) {
+                    if (isBboxFocusEnabled && activeFieldBox) {
                       return (
                         <div className="h-7 box-border flex items-center gap-1.5 px-2 bg-primary text-on-primary text-[11px] font-bold rounded-lg shadow-sm animate-fade-in truncate max-w-[180px] shrink-0">
-                          <span className="material-symbols-outlined text-xs shrink-0">
-                            {isPageMagnified ? 'zoom_in' : 'filter_center_focus'}
-                          </span>
-                          <span className="truncate">
-                            {isPageMagnified ? '聚焦' : '已定位'}: {activeFieldBox?.label || '当前项'}
-                          </span>
-                          {isPageMagnified && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleResetMagnify();
-                              }}
-                              className="ml-0.5 px-1 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px] font-normal transition-colors cursor-pointer shrink-0"
-                              title="按 ESC 键亦可快速退出放大"
-                            >
-                              退出（ESC）
-                            </button>
-                          )}
+                          <span className="material-symbols-outlined text-xs shrink-0">filter_center_focus</span>
+                          <span className="truncate">已定位: {activeFieldBox?.label || '当前项'}</span>
                         </div>
                       );
                     }
@@ -317,9 +338,9 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                     </button>
                     <button
                       type="button"
-                      onClick={() => setZoomLevel(150)}
+                      onClick={() => setZoomLevel(225)}
                       className="px-1.5 py-0.5 rounded text-xs font-bold hover:bg-surface-container-high dark:hover:bg-surface-dark-high text-on-surface dark:text-surface-bright transition-colors cursor-pointer"
-                      title="点击一键还原为 150%"
+                      title="点击一键还原为 225%"
                     >
                       {zoomLevel}%
                     </button>
@@ -400,6 +421,26 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                       &gt;
                     </button>
                   </div>
+
+                  {/* 原件视窗全屏/还原按钮 (思路 2 + 3 融合体验) */}
+                  <div className="flex items-center pl-1 border-l border-outline-variant/40 dark:border-border-dark">
+                    <button
+                      type="button"
+                      onClick={() => setIsRightPanelCollapsed(prev => !prev)}
+                      className={`h-6 px-1.5 flex items-center gap-1 hover:bg-surface-container-high dark:hover:bg-surface-dark-high rounded transition-colors cursor-pointer text-xs ${isRightPanelCollapsed
+                        ? 'text-primary dark:text-primary-fixed-dim bg-primary/10 font-bold ring-1 ring-primary/40'
+                        : 'text-on-surface-variant hover:text-primary'
+                        }`}
+                      title={isRightPanelCollapsed ? '还原分栏布局 (快捷键 ESC)' : '全屏沉浸查看原件 (快捷键 ESC 还原)'}
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {isRightPanelCollapsed ? 'fullscreen_exit' : 'fullscreen'}
+                      </span>
+                      <span className="text-[10px] font-medium hidden sm:inline">
+                        {isRightPanelCollapsed ? '还原' : '全屏'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -421,22 +462,15 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                       className={`flex-1 p-4 overflow-auto custom-scrollbar bg-surface-container/40 dark:bg-surface-dark-low ${isMouseDownDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
                     >
                       <div
-                        className="w-full flex flex-col items-center gap-5 py-3 transition-[padding,min-width]"
+                        className="w-full flex flex-col items-center gap-5 py-3"
                         style={{
-                          minWidth: (magnifiedFieldId || zoomLevel > 100 || rotation > 0) ? `${Math.max(100, Math.round((zoomLevel / 100) * (magnifiedFieldId ? 160 : 100)))}%` : '100%',
-                          padding: magnifiedFieldId ? '16px 32px' : '10px 0px',
+                          minWidth: (zoomLevel > 100 || rotation > 0) ? `${Math.max(100, Math.round(zoomLevel))}%` : '100%',
+                          padding: '10px 0px',
                         }}
                       >
                         {docPages.map((pageSrc, pageIdx) => {
                           const pageNum = pageIdx + 1;
                           const pageBBoxes = bboxes.filter(b => b.page === pageNum);
-                          const activeMagnifiedBox = (isBboxFocusEnabled && magnifiedFieldId)
-                            ? pageBBoxes.find(b => b.id === magnifiedFieldId)
-                            : null;
-                          const isPageMagnified = isBboxFocusEnabled && Boolean(activeMagnifiedBox);
-                          const originX = activeMagnifiedBox ? activeMagnifiedBox.x + activeMagnifiedBox.w / 2 : 50;
-                          const originY = activeMagnifiedBox ? activeMagnifiedBox.y + activeMagnifiedBox.h / 2 : 50;
-                          const MAGNIFY_SCALE = 1.5;
 
                           const detectedRatio = pageAspectRatios[pageNum];
                           let effectiveRatio: number;
@@ -457,27 +491,14 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                           const visualWidth = isRotated90or270 ? rawPageHeight : rawPageWidth;
                           const visualHeight = isRotated90or270 ? rawPageWidth : rawPageHeight;
 
-                          const extraHeight = (MAGNIFY_SCALE - 1) * visualHeight;
-                          const extraWidth = (MAGNIFY_SCALE - 1) * visualWidth;
-                          const topMargin = isPageMagnified ? Math.round((originY / 100) * extraHeight) : 0;
-                          const bottomMargin = isPageMagnified ? Math.round(((100 - originY) / 100) * extraHeight) : 0;
-                          const leftMargin = isPageMagnified ? Math.round((originX / 100) * extraWidth) : 0;
-                          const rightMargin = isPageMagnified ? Math.round(((100 - originX) / 100) * extraWidth) : 0;
-
                           return (
                             <div
                               key={pageNum}
-                              className="relative flex items-center justify-center transition-[margin] duration-250 ease-out"
-                              style={{
-                                marginTop: isPageMagnified ? `${topMargin + 8}px` : '0px',
-                                marginBottom: isPageMagnified ? `${bottomMargin + 8}px` : '0px',
-                                marginLeft: isPageMagnified ? `${leftMargin + 8}px` : '0px',
-                                marginRight: isPageMagnified ? `${rightMargin + 8}px` : '0px',
-                              }}
+                              className="relative flex items-center justify-center"
                             >
                               <div
                                 id={`pdf-page-${pageNum}`}
-                                className={`relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 ${isPageMagnified ? 'z-30 shadow-2xl ring-2 ring-primary/60' : 'shadow-md'}`}
+                                className="relative bg-white dark:bg-zinc-900 rounded-sm border border-outline-variant/40 shrink-0 shadow-md"
                                 style={{
                                   width: `${visualWidth}px`,
                                   height: `${visualHeight}px`,
@@ -493,8 +514,8 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                                     height: `${rawPageHeight}px`,
                                     left: '50%',
                                     top: '50%',
-                                    transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${isPageMagnified ? MAGNIFY_SCALE : 1})`,
-                                    transformOrigin: isPageMagnified && !isRotated90or270 ? `${originX}% ${originY}%` : 'center center',
+                                    transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+                                    transformOrigin: 'center center',
                                     transition: 'transform 250ms cubic-bezier(0.16, 1, 0.3, 1)',
                                   }}
                                 >
@@ -509,6 +530,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                                         if (pageAspectRatios[pageNum] !== ratio) {
                                           setPageAspectRatios(prev => (prev[pageNum] === ratio ? prev : { ...prev, [pageNum]: ratio }));
                                         }
+                                        centerPdfViewport();
                                       }
                                     }}
                                     src={pageSrc}
@@ -519,6 +541,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                                         const ratio = Number((img.naturalWidth / img.naturalHeight).toFixed(4));
                                         setPageAspectRatios(prev => (prev[pageNum] === ratio ? prev : { ...prev, [pageNum]: ratio }));
                                       }
+                                      centerPdfViewport();
                                     }}
                                     className="w-full h-full object-fill block select-none pointer-events-none"
                                     loading="eager"
@@ -570,210 +593,285 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                   </div>
                 );
               })()}
+              </div>
             </div>
 
-            {/* 右侧 55%：结构化提取核对卡片 */}
-            <div className="lg:col-span-7 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs flex flex-col overflow-hidden h-full">
-              <div
-                ref={effectiveRightScrollRef as any}
-                className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-4 scroll-smooth"
+            {/* 中间分隔线折叠/展开把手（细长条胶囊形态） */}
+            <div className="hidden lg:flex items-center justify-center shrink-0 -mx-2.5 z-20 self-center">
+              <button
+                type="button"
+                onClick={() => setIsRightPanelCollapsed(prev => !prev)}
+                className="w-3.5 h-16 rounded-full bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/80 dark:border-border-dark hover:border-primary hover:bg-primary hover:text-white dark:hover:bg-primary dark:hover:text-white text-on-surface-variant/80 shadow-xs flex items-center justify-center cursor-pointer transition-all duration-200 group focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                title={isRightPanelCollapsed ? "展开右侧核对视窗 (快捷键 ESC)" : "收起右侧核对视窗，全屏专注查阅原件 (快捷键 ESC)"}
+                aria-label={isRightPanelCollapsed ? "展开右侧核对视窗" : "收起右侧核对视窗"}
               >
-                {/* 基础元数据 4行3列统一网格卡片 */}
-                <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-lg p-3.5 sm:p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
-                    {/* 第 1 行：标题 | 批次号输入/修改控件 | 当前批次 OCR 置信度徽章 */}
-                    <div className="flex items-center gap-1.5 h-8">
-                      <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">info</span>
-                      <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider">
-                        基础元数据
-                      </h3>
-                    </div>
+                <span className="material-symbols-outlined text-xs group-hover:scale-125 transition-transform">
+                  {isRightPanelCollapsed ? 'chevron_left' : 'chevron_right'}
+                </span>
+              </button>
+            </div>
 
-                    <div
-                      id="right-field-meta_batchNo"
-                      onMouseEnter={() => handleFieldHover('meta_batchNo')}
-                      onMouseLeave={() => handleFieldHover(null)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container-lowest dark:bg-surface-dark border shadow-2xs h-8 transition-all cursor-pointer ${highlightedFieldId === 'meta_batchNo'
-                        ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
-                        : 'border-primary/40 dark:border-primary/50'
-                        }`}
-                    >
+            {/* 右侧：折叠态紧凑竖条 vs 展开态核对卡片 (思路 2 + 3 融合体验) */}
+            {isRightPanelCollapsed ? (
+              <div
+                onClick={() => setIsRightPanelCollapsed(false)}
+                className="w-full lg:w-11 shrink-0 bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs flex lg:flex-col items-center justify-between p-2 cursor-pointer hover:border-primary/60 hover:bg-surface-container-high/30 transition-all group select-none h-auto lg:h-full"
+                title="点击展开右侧核对视窗 (快捷键 ESC)"
+              >
+                {/* 顶部展开按钮 */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsRightPanelCollapsed(false);
+                  }}
+                  className="p-1.5 rounded-lg text-primary hover:bg-primary/10 transition-colors flex items-center justify-center cursor-pointer"
+                  title="展开核对视窗 (ESC)"
+                >
+                  <span className="material-symbols-outlined text-lg">first_page</span>
+                </button>
+
+                {/* 中间竖排批次与置信度摘要 */}
+                <div className="flex lg:flex-col items-center gap-2 text-[11px] text-on-surface-variant font-bold">
+                  <div className="hidden lg:flex flex-col items-center py-2 border-y border-outline-variant/30 gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-primary">label</span>
+                    <span className="[writing-mode:vertical-lr] tracking-widest text-primary dark:text-primary-fixed-dim max-h-40 truncate">
+                      {currentBatch?.batchNo || '当前批次'}
+                    </span>
+                  </div>
+                  {typeof currentBatch?.ocrConfidence === 'number' && currentBatch.ocrConfidence > 0 && (
+                    <span className="text-[10px] px-1 py-0.5 rounded bg-surface-container-high dark:bg-surface-dark-high text-on-surface-variant">
+                      {currentBatch.ocrConfidence}%
+                    </span>
+                  )}
+                </div>
+
+                {/* 底部展开指示 */}
+                <div className="hidden lg:flex flex-col items-center gap-0.5 text-outline-variant group-hover:text-primary transition-colors">
+                  <span className="material-symbols-outlined text-sm">chevron_left</span>
+                  <span className="text-[9px] [writing-mode:vertical-lr] tracking-tighter">展开</span>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full lg:w-[40%] bg-surface-container-lowest dark:bg-surface-dark border border-outline-variant/60 dark:border-border-dark rounded-xl shadow-xs flex flex-col overflow-hidden h-full transition-all duration-300">
+                <div
+                  ref={effectiveRightScrollRef as any}
+                  className="flex-1 p-4 sm:p-5 overflow-y-auto custom-scrollbar space-y-4 scroll-smooth"
+                >
+                  {/* 基础元数据紧凑卡片 */}
+                  <div className="bg-surface-container-low dark:bg-surface-dark-low border border-outline-variant/40 dark:border-border-dark rounded-xl p-3 sm:p-3.5 space-y-2.5">
+                    {/* 1. 顶部栏：标题 + 批次号输入框 + 置信度徽章 + 折叠按钮 */}
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="material-symbols-outlined text-sm text-primary dark:text-primary-fixed-dim">label</span>
-                        <span className="text-[11px] text-on-surface-variant dark:text-outline-variant font-bold">批次号:</span>
+                        <span className="material-symbols-outlined text-base text-primary dark:text-primary-fixed-dim">info</span>
+                        <h3 className="text-xs font-bold text-on-surface dark:text-surface-bright uppercase tracking-wider">
+                          基础元数据
+                        </h3>
                       </div>
-                      <EditableValueField
-                        value={currentBatch.batchNo}
-                        onChange={onUpdateBatchNo}
-                        title="修改当前批次号，将自动同步至上方选择器"
-                        className="flex-1"
-                      />
+
+                      {/* 批次号核心控件：中间自适应 */}
+                      <div
+                        id="right-field-meta_batchNo"
+                        onMouseEnter={() => handleFieldHover('meta_batchNo')}
+                        onMouseLeave={() => handleFieldHover(null)}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-surface-container-lowest dark:bg-surface-dark border shadow-2xs h-7.5 transition-all cursor-pointer flex-1 min-w-0 max-w-[260px] ${highlightedFieldId === 'meta_batchNo'
+                          ? 'border-primary ring-2 ring-primary/40 bg-primary/5'
+                          : 'border-outline-variant/60 dark:border-border-dark hover:border-primary/50'
+                          }`}
+                        title={`批次号: ${currentBatch.batchNo} (点击修改当前批次号)`}
+                      >
+                        <div className="flex items-center gap-1 shrink-0 text-primary dark:text-primary-fixed-dim">
+                          <span className="material-symbols-outlined text-sm">label</span>
+                          <span className="text-[11px] font-bold">批次号:</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <EditableValueField
+                            value={currentBatch.batchNo}
+                            onChange={onUpdateBatchNo}
+                            title="修改当前批次号，将自动同步至上方选择器"
+                            truncate={true}
+                            className="min-w-0"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 右侧置信度轻量徽章 */}
+                      {(() => {
+                        const hasOcrConfidence = typeof currentBatch.ocrConfidence === 'number' && currentBatch.ocrConfidence > 0;
+                        return (
+                          <div
+                            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border shadow-2xs select-none shrink-0 transition-colors ${!hasOcrConfidence
+                              ? 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant dark:text-outline-variant border-outline-variant/50'
+                              : currentBatch.ocrConfidence >= 90
+                                ? 'bg-status-pass-bg text-status-pass-text border-emerald-300 dark:border-emerald-800'
+                                : currentBatch.ocrConfidence >= 75
+                                  ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                              }`}
+                            title={`当前批次 OCR 置信度: ${hasOcrConfidence ? `${currentBatch.ocrConfidence}%` : '未评定'}`}
+                          >
+                            <span className="material-symbols-outlined text-[13px]">
+                              {!hasOcrConfidence ? 'help' : currentBatch.ocrConfidence >= 90 ? 'verified' : currentBatch.ocrConfidence >= 75 ? 'info' : 'warning'}
+                            </span>
+                            <span>{hasOcrConfidence ? `OCR: ${currentBatch.ocrConfidence}%` : 'OCR: --'}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {(() => {
-                      const hasOcrConfidence = typeof currentBatch.ocrConfidence === 'number' && currentBatch.ocrConfidence > 0;
-                      return (
-                        <div
-                          className={`flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border shadow-2xs h-8 select-none transition-colors ${!hasOcrConfidence
-                            ? 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant dark:text-outline-variant border-outline-variant/50'
-                            : currentBatch.ocrConfidence >= 90
-                              ? 'bg-status-pass-bg text-status-pass-text border-emerald-300 dark:border-emerald-800'
-                              : currentBatch.ocrConfidence >= 75
-                                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                            }`}
-                          title="当前批次综合数据抽取质量与定位覆盖率加权评估值"
-                        >
-                          <span className="material-symbols-outlined text-sm">
-                            {!hasOcrConfidence ? 'help' : currentBatch.ocrConfidence >= 90 ? 'verified' : currentBatch.ocrConfidence >= 75 ? 'info' : 'warning'}
-                          </span>
-                          <span>当前批次 OCR 置信度: {hasOcrConfidence ? `${currentBatch.ocrConfidence}%` : '未评定'}</span>
-                        </div>
-                      );
-                    })()}
-
-                    {/* 第 2 行：质保书编号 | 冶炼炉号 | 热处理炉号 */}
+                  {/* 2. 基础字段 3 列紧凑九宫格，保持最小纵向占用 */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                    {/* 质保书编号 */}
                     <div
                       id="right-field-meta_certificateNo"
                       onMouseEnter={() => handleFieldHover('meta_certificateNo')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">质保书编号 (Certificate No)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">质保书编号 (Certificate No)</span>
                       <EditableValueField
                         value={currentBatch.certificateNo || ''}
                         onChange={(val) => onUpdateExtractValue('meta_certificateNo', val)}
                         isHighlighted={highlightedFieldId === 'meta_certificateNo'}
-                        className="mt-1"
+                        className="mt-0.5"
                       />
                     </div>
 
+                    {/* 冶炼炉号 */}
                     <div
                       id="right-field-meta_heatNo"
                       onMouseEnter={() => handleFieldHover('meta_heatNo')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">冶炼炉号 (Heat No.)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">冶炼炉号 (Heat No.)</span>
                       <EditableValueField
                         value={currentBatch.heatNo || ''}
                         onChange={(val) => onUpdateExtractValue('meta_heatNo', val)}
                         placeholder="--"
                         title="原材料冶炼炉号 (Heat No.)"
                         isHighlighted={highlightedFieldId === 'meta_heatNo'}
-                        className="mt-1"
+                        className="mt-0.5"
                       />
                     </div>
 
+                    {/* 热处理装炉号 */}
                     <div
                       id="right-field-meta_packNo"
                       onMouseEnter={() => handleFieldHover('meta_packNo')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理炉号 (Pack No.)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">热处理炉号 (Pack No.)</span>
                       <EditableValueField
                         value={currentBatch.packNo || ''}
                         onChange={(val) => onUpdateExtractValue('meta_packNo', val)}
                         placeholder="--"
                         title="钢管热处理炉号 (Pack No.)"
                         isHighlighted={highlightedFieldId === 'meta_packNo'}
-                        className="mt-1"
+                        className="mt-0.5"
                       />
                     </div>
 
-                    {/* 第 3 行：产品品名 | 材料牌号 | 声称执行标准 */}
+                    {/* 产品品名 */}
                     <div
                       id="right-field-meta_productName"
                       onMouseEnter={() => handleFieldHover('meta_productName')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">产品品名 (Product Name)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">产品品名 (Product Name)</span>
                       <EditableValueField
                         value={currentBatch.productName || ''}
                         onChange={(val) => onUpdateExtractValue('meta_productName', val)}
                         isHighlighted={highlightedFieldId === 'meta_productName'}
-                        className="mt-1"
+                        className="mt-0.5"
                       />
                     </div>
 
+                    {/* 材料牌号 */}
                     <div
                       id="right-field-meta_grade"
                       onMouseEnter={() => handleFieldHover('meta_grade')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">材料牌号 (Material Grade)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">材料牌号 (Material Grade)</span>
                       <EditableValueField
                         value={currentBatch.grade || ''}
                         onChange={(val) => onUpdateExtractValue('meta_grade', val)}
                         isHighlighted={highlightedFieldId === 'meta_grade'}
-                        className="mt-1"
+                        className="mt-0.5"
                       />
                     </div>
 
+                    {/* 声称执行标准 (允许换行展示) */}
                     <div
                       id="right-field-meta_standard"
                       onMouseEnter={() => handleFieldHover('meta_standard')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">声称执行标准 (Declared Standard)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">声称执行标准 (Declared Standard)</span>
                       <EditableValueField
                         value={currentBatch.standard || ''}
                         onChange={(val) => onUpdateExtractValue('meta_standard', val)}
                         isHighlighted={highlightedFieldId === 'meta_standard'}
-                        className="mt-1"
+                        truncate={false}
+                        className="mt-0.5"
                       />
                     </div>
 
-                    {/* 第 4 行：交货几何规格 | 热处理状态 | 供货厂家 */}
+                    {/* 交货几何规格 (允许换行展示) */}
                     <div
                       id="right-field-meta_dimensions"
                       onMouseEnter={() => handleFieldHover('meta_dimensions')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">交货几何规格 (Dimensions)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">交货几何规格 (Dimensions)</span>
                       <EditableValueField
                         value={currentBatch.dimensions || ''}
                         onChange={(val) => onUpdateExtractValue('meta_dimensions', val)}
                         placeholder="--"
                         isHighlighted={highlightedFieldId === 'meta_dimensions'}
-                        className="mt-1"
+                        truncate={false}
+                        className="mt-0.5"
                       />
                     </div>
 
+                    {/* 热处理状态 */}
                     <div
                       id="right-field-meta_deliveryState"
                       onMouseEnter={() => handleFieldHover('meta_deliveryState')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">热处理状态 (Delivery State)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">热处理状态 (Delivery State)</span>
                       <EditableValueField
                         value={currentBatch.deliveryState || ''}
                         onChange={(val) => onUpdateExtractValue('meta_deliveryState', val)}
                         placeholder="--"
                         isHighlighted={highlightedFieldId === 'meta_deliveryState'}
-                        className="mt-1"
+                        className="mt-0.5"
                       />
                     </div>
 
+                    {/* 供货厂家 (允许换行展示) */}
                     <div
                       id="right-field-meta_supplier"
                       onMouseEnter={() => handleFieldHover('meta_supplier')}
                       onMouseLeave={() => handleFieldHover(null)}
-                      className="transition-all cursor-pointer"
+                      className="transition-all cursor-pointer min-w-0"
                     >
-                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block">供货厂家 (Supplier)</span>
+                      <span className="text-[11px] text-on-surface-variant dark:text-outline-variant block truncate">供货厂家 (Supplier)</span>
                       <EditableValueField
                         value={currentBatch.supplier || ''}
                         onChange={(val) => onUpdateExtractValue('meta_supplier', val)}
                         placeholder="--"
                         isHighlighted={highlightedFieldId === 'meta_supplier'}
-                        className="mt-1"
+                        truncate={false}
+                        className="mt-0.5"
                       />
                     </div>
                   </div>
@@ -806,6 +904,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                       categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                       name: '抗拉强度 Rm',
                       value: currentBatch.mechanical.tensile_rm,
+                      unit: currentBatch.mechanical.tensile_rm.toLowerCase().includes('mpa') ? undefined : 'MPa',
                       method: getTestMethod('tensile_rm', 'mech_tensile'),
                       confidence: batchConfidenceStr,
                       status: 'ok' as const,
@@ -818,6 +917,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                       categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                       name: '规定塑性延伸强度 Rp0.2',
                       value: currentBatch.mechanical.yield_rp02,
+                      unit: currentBatch.mechanical.yield_rp02.toLowerCase().includes('mpa') ? undefined : 'MPa',
                       method: getTestMethod('yield_rp02', 'mech_yield'),
                       confidence: batchConfidenceStr,
                       status: 'ok' as const,
@@ -830,6 +930,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                       categoryColor: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                       name: '断后伸长率 A',
                       value: currentBatch.mechanical.elongation_a,
+                      unit: currentBatch.mechanical.elongation_a.includes('%') ? undefined : '%',
                       method: getTestMethod('elongation_a', 'mech_elongation'),
                       confidence: batchConfidenceStr,
                       status: 'ok' as const,
@@ -921,9 +1022,13 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                       note: (currentBatch.process.ndt_ut.includes('不') || currentBatch.process.ndt_ut.toUpperCase().includes('FAIL')) ? '探伤不合格' : undefined,
                     }] : []),
                     ...(Array.isArray(currentBatch.additionalTests) ? currentBatch.additionalTests.map((t, idx) => {
-                      const safeValue = t.result
+                      const hasRawUnit = Boolean(t.unit && t.unit.trim() !== '');
+                      const rawValStr = t.result
                         ? String(t.result)
-                        : (t.value_num !== null && t.value_num !== undefined ? `${t.value_num}${t.unit ? ` ${t.unit}` : ''}` : '--');
+                        : (t.value_num !== null && t.value_num !== undefined ? String(t.value_num) : '--');
+                      const alreadyContainsUnit = Boolean(hasRawUnit && rawValStr.toLowerCase().includes(t.unit!.toLowerCase()));
+                      const safeValue = rawValStr;
+                      const itemUnit = alreadyContainsUnit ? undefined : (t.unit || undefined);
                       const isFail = t.conclusion === 'FAIL' || safeValue.includes('不') || safeValue.toUpperCase().includes('FAIL');
                       const tagged = t as typeof t & {
                         is_composite?: boolean;
@@ -982,6 +1087,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                         categoryColor: catColorMap[catKey] || 'text-gray-700 bg-gray-50 dark:bg-gray-950/60 dark:text-gray-300 border-gray-200 dark:border-gray-800',
                         name: t.name || (t.key || '附加检验项'),
                         value: safeValue,
+                        unit: itemUnit,
                         method: t.standard || '依据设计技术要求',
                         confidence: formatConfidenceDisplay((t as any).confidence) !== '--' ? formatConfidenceDisplay((t as any).confidence) : batchConfidenceStr,
                         status: isTagged || isFail ? ('warn' as const) : ('ok' as const),
@@ -1054,12 +1160,13 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                             {row.name}
                           </span>
                         </td>
-                        <td className="px-3.5 py-2 text-right">
-                          <div className="flex justify-end">
+                        <td className="px-3.5 py-2 text-left">
+                          <div className="flex justify-start">
                             <EditableValueField
                               value={row.value}
                               placeholder="--"
-                              align="right"
+                              unit={row.unit}
+                              align="left"
                               onChange={(val) => onUpdateExtractValue(row.fieldId, val)}
                               onHover={() => handleFieldHover(row.fieldId)}
                               onLeave={() => handleFieldHover(null)}
@@ -1068,9 +1175,6 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                               className="max-w-[200px]"
                             />
                           </div>
-                        </td>
-                        <td className="px-3.5 py-2 text-on-surface-variant dark:text-outline-variant text-[11px] whitespace-nowrap">
-                          {row.unit || '-'}
                         </td>
                         <td className="px-3.5 py-2 text-on-surface-variant dark:text-outline-variant text-[11px]">
                           {row.method && row.method !== '-' ? (
@@ -1160,8 +1264,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                               <tr className="bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant border-b border-outline-variant/30">
                                 <th className="px-3.5 py-2 font-bold w-16">类别</th>
                                 <th className="px-3.5 py-2 font-bold">检验项目</th>
-                                <th className="px-3.5 py-2 font-bold text-right w-36">提取值</th>
-                                <th className="px-3.5 py-2 font-bold w-16">单位</th>
+                                <th className="px-3.5 py-2 font-bold text-left w-40">提取值</th>
                                 <th className="px-3.5 py-2 font-bold">检测方法 / 依据</th>
                                 <th className="px-3.5 py-2 font-bold w-20">置信度</th>
                               </tr>
@@ -1171,7 +1274,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                               {foldedDuplicateItems.length > 0 && (
                                 <>
                                   <tr>
-                                    <td colSpan={6} className="p-2 bg-surface-container-low/50 dark:bg-surface-dark-low/50">
+                                    <td colSpan={5} className="p-2 bg-surface-container-low/50 dark:bg-surface-dark-low/50">
                                       <button
                                         type="button"
                                         onClick={() => setIsDuplicateDetailsExpanded(v => !v)}
@@ -1202,7 +1305,7 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                             <thead>
                               <tr className="bg-surface-container-low dark:bg-surface-dark-low text-on-surface-variant border-b border-outline-variant/30">
                                 <th className="px-3.5 py-2 font-bold">元素</th>
-                                <th className="px-3.5 py-2 font-bold text-right">含量提取值 (wt%)</th>
+                                <th className="px-3.5 py-2 font-bold text-left">含量提取值 (wt%)</th>
                                 <th className="px-3.5 py-2 font-bold">置信度</th>
                                 <th className="px-3.5 py-2 font-bold">备注</th>
                               </tr>
@@ -1211,12 +1314,12 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                               {displayedItems.map((item, idx) => (
                                 <tr key={idx} className="hover:bg-surface-container-low/40 dark:hover:bg-surface-dark-low/40 transition-colors">
                                   <td className="px-3.5 py-2 font-bold text-on-surface dark:text-surface-bright">{item.name}</td>
-                                  <td className="px-3.5 py-2 text-right">
-                                    <div className="flex justify-end">
+                                  <td className="px-3.5 py-2 text-left">
+                                    <div className="flex justify-start">
                                       <EditableValueField
                                         value={item.value}
                                         placeholder="--"
-                                        align="right"
+                                        align="left"
                                         onChange={(val) => onUpdateExtractValue(item.fieldId, val)}
                                         onHover={() => handleFieldHover(item.fieldId)}
                                         onLeave={() => handleFieldHover(null)}
@@ -1311,11 +1414,12 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex-1 flex justify-end max-w-[360px] sm:max-w-[480px]">
+                                  <div className="flex-1 flex justify-start max-w-[360px] sm:max-w-[480px]">
                                     <EditableValueField
                                       value={item.value}
                                       placeholder="--"
-                                      align="right"
+                                      unit={item.unit}
+                                      align="left"
                                       onChange={(val) => onUpdateExtractValue(item.fieldId, val)}
                                       onHover={() => handleFieldHover(item.fieldId)}
                                       onLeave={() => handleFieldHover(null)}
@@ -1340,11 +1444,11 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                     </div>
                   );
                 })()}
-
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      )}
       </div>
     </section>
   );
