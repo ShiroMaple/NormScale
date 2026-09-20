@@ -115,11 +115,19 @@ node --experimental-strip-types scripts/ingest-standard.ts <pdf> --out <临时�
 
 全链路完成，化学精度抽验 TP304 七元素全对。门禁拦截暴露的 en 档问题（按优先级）：
 
-1. **en 档 lint bug**：`LINT_QUALITATIVE_DESCRIPTION` 在 en profile 下仍强制 CJK——定性原文层应随 `gateRules.requireCjk=false` 接受英文原文（修 gates 即可，纯确定性）；
-2. **力学覆盖缺口**：48/54 切片缺 mechanical——SA-213 TABLE4 的牌号行形态（TP 后缀/分组行）未命中切片 token，需 en 档 mech 映射细化；
-3. **UNS↔TP 映射缺失**：化学切片 `unified_code` 应填 UNS 号（S30400），稳定化元素规则的 applies_to 常以 UNS 声明——需在 en 档 prompt 与 token 匹配中补齐 UNS 通道；
-4. 牌号对账 48 vs 54：续行/双代号行（TP347W、TP347HFG 等）拆切差异，人工核定后调整 en gradeTokenRe；
-5. surface 族零规则：SA-213 表面质量条款形态与现有路由不符，en 关键词补充。
+1. ~~**en 档 lint bug**：定性原文层强制 CJK~~（已修：requireCjk 随 profile 接线 + 英文原文合法，commit 03d536d/f5fc02b）；
+2. **力学覆盖**：碎块根因已根治（硬度单位折行误判标题，v1.7.2），T 系列低合金牌号力学缺口实为**摘要 PDF 不含其力学表行**（见下"关键发现"）；
+3. ~~UNS↔TP 映射缺失~~（已修：backfillUnifiedCodes 确定性回补 + 重挂载，无需 LLM 重提）；
+4. 牌号对账差异：核表结论——54 切片中 51 个原文有据（含 UNS 主键形态合法牌号），**3 个幻影（S34752/N08925/N08926，用户已确认删除口径）**，其余为行计数正则对无序号行的口径差异；
+5. **伪切片拦截**（已修）："Heat"/"ORG:*" 提取工件由 SCHEMA 门禁显式拦截。
+
+**关键发现（2026-09-20）**：当前 `docs/standards/sa-213-….pdf` 仅 16 页，为**摘要/节选件**——TP316L/TP321/TP347 等常见牌号根本不在其化学表文本中，S4 补充条款引用的 TP347HFG/S32615/800H/Alloy20 等牌号同理。管线对这些的 unmounted/MANUAL_REVIEW 拦截是**忠实于节选件的**正确行为，非缺陷。全量验证需完整版 SA-213 PDF。
+
+## 待办
+
+1. 完整版 SA-213 PDF 到位后重跑 E2E（缓存兼容，直接 `pnpm standard:ingest`）；
+2. drafts 分块增量缓存：当前 drafts.json 在 extractAll 完成后才落盘，长链路中断整段重提；按块/任务粒度增量落盘可大幅降本；
+3. T 系列低合金牌号力学表（TABLE4 低合金段）在完整版语料下的映射复核。
 
 ## 视觉通道 E2E 验证（GB 13296-2023，乱码 PDF，v1.3.5 真实多模态）
 
