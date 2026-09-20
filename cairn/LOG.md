@@ -4,6 +4,19 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-20 · ASME SA-213 en-asme 全链路 E2E 完成（k3-coding 订阅通道）
+
+- 订阅额度恢复后 `ingestConfigId` 切回 `k3-coding`（api.kimi.com/coding/v1, k3-256k），SA-213 全链路跑通：profile 嗅探 → S1 → 化学两表 5 批 → 力学 5 块 → 工艺/条款 → 公差表 → S3 门禁；
+- **化学精度抽验**：TP304 七元素区间与 SA-213 真值完全一致（C≤0.08 / Cr 18-20 / Ni 8-11 / Si≤1 / Mn≤2 / P≤0.045 / S≤0.03）；
+- 门禁产出精确问题清单（设计意图达成，逐条可行动）：
+  1. `LINT_QUALITATIVE_DESCRIPTION` ×54：**en 档 bug**——定性规则原文层 lint 仍强制 CJK，英文标准的英文描述被误拦（应随 profile.gateRules.requireCjk 关闭）；
+  2. 力学覆盖缺口：48/54 切片缺 mechanical（SA-213 TABLE4 牌号映射未对齐，TP 后缀形态未命中切片 token）；
+  3. `LINT_APPLIES_TO_GRADES` ×9：**UNS↔TP 映射缺失**——稳定化元素规则以 UNS 号（S30940）声明适用，切片以 TP 名为主键（unified_code 未填 UNS）；
+  4. 牌号对账 48 vs 54（续行/双代号行拆切差异，待人工核）；
+  5. surface 族零规则（SA-213 表面质量条款形态与 zh 路由不符）。
+- 验证就绪：72 套件 483 项单测 100% 绿灯，`tsc --noEmit` 0 错误；产物在 `.cache/standard-ingest/c22e010b…/drafts.json` 备查。
+- 详情沉淀: [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md) 待办节。
+
 ## 2026-09-20 · 未收录执行标准前端诊断反馈与选择器交互改进闭环
 
 - 前端诊断卡片与 Toast 反馈：在 `useBatchStreamAuditor.ts` 错误处理中精准捕获未收录标准异常，弹出全局 Toast 并在 `Step3ComplianceEvaluationPanel.tsx` 表格中央渲染诊断卡片，明确呈现“质保书声明标准未收录，无法开始核验。请在标准库中补充或选择等效替代标准。”文案，并提供一键打开选择器入口；

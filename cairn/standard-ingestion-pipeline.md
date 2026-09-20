@@ -107,9 +107,19 @@ node --experimental-strip-types scripts/ingest-standard.ts <pdf> --out <临时�
 
 ## 待办（额度恢复后）
 
-1. SA-213 剩余 E2E（工艺/条款/公差提取 + S3 门禁 + 报告验收），化学/力学两阶段已实测通过；
+1. ~~SA-213 剩余 E2E~~（2026-09-20 已全链路完成，见下）；
 2. drafts 分块增量缓存：当前 drafts.json 在 extractAll 完成后才落盘，长链路中断整段重提；按块/任务粒度增量落盘可大幅降本；
 3. en 语料的幻影牌号方差观察与 TABLE5/TABLE7 过路由细化。
+
+## SA-213 E2E 结果与 en 档遗留问题（2026-09-20，k3-coding）
+
+全链路完成，化学精度抽验 TP304 七元素全对。门禁拦截暴露的 en 档问题（按优先级）：
+
+1. **en 档 lint bug**：`LINT_QUALITATIVE_DESCRIPTION` 在 en profile 下仍强制 CJK——定性原文层应随 `gateRules.requireCjk=false` 接受英文原文（修 gates 即可，纯确定性）；
+2. **力学覆盖缺口**：48/54 切片缺 mechanical——SA-213 TABLE4 的牌号行形态（TP 后缀/分组行）未命中切片 token，需 en 档 mech 映射细化；
+3. **UNS↔TP 映射缺失**：化学切片 `unified_code` 应填 UNS 号（S30400），稳定化元素规则的 applies_to 常以 UNS 声明——需在 en 档 prompt 与 token 匹配中补齐 UNS 通道；
+4. 牌号对账 48 vs 54：续行/双代号行（TP347W、TP347HFG 等）拆切差异，人工核定后调整 en gradeTokenRe；
+5. surface 族零规则：SA-213 表面质量条款形态与现有路由不符，en 关键词补充。
 
 ## 视觉通道 E2E 验证（GB 13296-2023，乱码 PDF，v1.3.5 真实多模态）
 

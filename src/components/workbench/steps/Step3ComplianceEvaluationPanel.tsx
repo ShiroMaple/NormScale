@@ -892,7 +892,7 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                                 type="text"
                                 value={standardSearchQuery}
                                 onChange={e => setStandardSearchQuery(e.target.value)}
-                                placeholder="搜索标准代号或名称 (如 47019, 13296)..."
+                                placeholder="搜索标准代号或名称"
                                 autoFocus
                                 className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-outline-variant/60 dark:border-border-dark bg-surface-container-low dark:bg-surface-dark-low text-on-surface dark:text-surface-bright focus:outline-none focus:border-primary"
                               />
@@ -1327,9 +1327,6 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                                   {currentBatchState.error?.includes('未收录') || currentBatchState.error?.includes('未找到标准代号')
                                     ? '质保书声明标准未收录，无法开始核验。请在标准库中补充或选择等效替代标准。'
                                     : (currentBatchState.error || '核验异常，无法完成比对')}
-                                </p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                  系统标准库未收录此标准规范。您可以在上方「执行标准」选择器中选择等效替代标准（如 GB/T 13296、GB/T 47019），或联系管理员在系统中维护录入对应标准。
                                 </p>
                               </div>
                               <div className="flex items-center gap-2 pt-1">
