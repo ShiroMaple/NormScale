@@ -392,12 +392,37 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     let newSelected: string[];
     const targetNorm = normalizeStandardId(stdId);
     const existingIndex = selectedStandardIds.findIndex(s => normalizeStandardId(s) === targetNorm);
+
+    const isListedInCatalog = (id: string) => {
+      const idNorm = normalizeStandardId(id);
+      return dynamicStandardsCatalog.some(s =>
+        normalizeStandardId(s.id) === idNorm ||
+        normalizeStandardId(s.shortCode) === idNorm
+      );
+    };
+
     if (existingIndex >= 0) {
-      if (selectedStandardIds.length <= 1) return;
-      newSelected = selectedStandardIds.filter((_, idx) => idx !== existingIndex);
+      if (selectedStandardIds.length <= 1) {
+        // 如果仅剩唯一标准且该标准未入库，点击移除时自动切换为库内首选标准
+        const fallbackStd = dynamicStandardsCatalog[0]?.id;
+        if (fallbackStd && normalizeStandardId(fallbackStd) !== targetNorm) {
+          newSelected = [fallbackStd];
+        } else {
+          return;
+        }
+      } else {
+        newSelected = selectedStandardIds.filter((_, idx) => idx !== existingIndex);
+      }
     } else {
-      newSelected = [...selectedStandardIds, stdId];
+      // 勾选新标准：若当前已选列表仅包含未入库标准，点击收录标准时平滑替换
+      const listedCurrent = selectedStandardIds.filter(isListedInCatalog);
+      if (listedCurrent.length === 0) {
+        newSelected = [stdId];
+      } else {
+        newSelected = [...listedCurrent, stdId];
+      }
     }
+
     const newStandardStr = newSelected.join('、');
     setSession(prev => ({
       ...prev,
@@ -417,8 +442,19 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
         };
       }),
     }));
+
+    if (selectedBatchNo) {
+      setBatchPresentationMap(prev => ({
+        ...prev,
+        [selectedBatchNo]: {
+          ...(prev[selectedBatchNo] || { batchNo: selectedBatchNo }),
+          stage: 'idle',
+          error: undefined,
+        },
+      }));
+    }
     batchEvaluatingKeyRef.current = '';
-  }, [selectedDocId, selectedStandardIds, setSession, batchEvaluatingKeyRef]);
+  }, [dynamicStandardsCatalog, selectedBatchNo, selectedDocId, selectedStandardIds, setBatchPresentationMap, setSession, batchEvaluatingKeyRef]);
 
   // 人工复核判定
   const handleSetHumanVerdict = useCallback((humanDecision: 'PASS' | 'REJECT' | null) => {

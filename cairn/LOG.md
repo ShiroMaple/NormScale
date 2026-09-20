@@ -4,6 +4,13 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-20 · 未收录执行标准前端诊断反馈与选择器交互改进闭环
+
+- 前端诊断卡片与 Toast 反馈：在 `useBatchStreamAuditor.ts` 错误处理中精准捕获未收录标准异常，弹出全局 Toast 并在 `Step3ComplianceEvaluationPanel.tsx` 表格中央渲染诊断卡片，明确呈现“质保书声明标准未收录，无法开始核验。请在标准库中补充或选择等效替代标准。”文案，并提供一键打开选择器入口；
+- 执行标准选择器交互重构：在已选 Tag 上增加“未收录”高亮警示徽章与一键移除（x）按钮；在下拉列表中单独呈现“质保书声明标准（未入库）”分区并支持直接勾选/取消勾选；
+- 智能替换与状态复位：在 `WaterfallWorkbench.tsx` 的 `handleToggleStandard` 中支持从未收录标准平滑单选替换至收录标准，并在切换后自动清除当前批次阻断报错状态，实现正向恢复闭环；
+- 验证闭环：`pnpm exec tsc --noEmit` 0 错误，`pnpm audit:hygiene` 架构门禁通过，全量 86 个测试套件 534 项单测 100% 绿灯。
+
 ## 2026-09-19 · 未收录执行标准 (ASTM A312) PDF 测试质保书设计与工作流拦截验证闭环
 
 - PDF 测试质保书生成：编写 `scripts/generate-unsupported-standard-pdf.ts`，原生 PDF 1.4 矢量排版生成外来美标执行标准 `ASTM A312 / A312M`（牌号 `TP316L (UNS S31603)`）高保真 MTC 质保证书，编译输出至 `public/samples/astm_a312_tp316l_unsupported_standard.pdf`；

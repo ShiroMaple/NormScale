@@ -381,10 +381,19 @@ export function useBatchStreamAuditor({
             onError: (err) => {
               if (err.taskId && !err.taskId.endsWith(`::${runId}`)) return;
               if (controller.signal.aborted) return;
+              const errorText = err.error || '核验异常';
+              const isUnsupportedStd = errorText.includes('未收录标准') ||
+                errorText.includes('未找到标准代号') ||
+                errorText.includes('StandardNotFound');
+              const displayError = isUnsupportedStd
+                ? '质保书声明标准未收录，无法开始核验。请在标准库中补充或选择等效替代标准。'
+                : errorText;
+
               setBatchPresentationMap(prev => ({
                 ...prev,
-                [batch.batchNo]: { ...(prev[batch.batchNo] || { batchNo: batch.batchNo }), stage: 'error', error: err.error },
+                [batch.batchNo]: { ...(prev[batch.batchNo] || { batchNo: batch.batchNo }), stage: 'error', error: displayError },
               }));
+              showToast(displayError, 'error');
             },
           },
           controller.signal
@@ -392,10 +401,19 @@ export function useBatchStreamAuditor({
       } catch (taskErr) {
         if (controller.signal.aborted) return;
         console.error(`[WaterfallWorkbench] 批次 ${batch.batchNo} 执行流式核验异常:`, taskErr);
+        const errStr = String(taskErr);
+        const isUnsupportedStd = errStr.includes('未收录标准') ||
+          errStr.includes('未找到标准代号') ||
+          errStr.includes('StandardNotFound');
+        const displayError = isUnsupportedStd
+          ? '质保书声明标准未收录，无法开始核验。请在标准库中补充或选择等效替代标准。'
+          : errStr;
+
         setBatchPresentationMap(prev => ({
           ...prev,
-          [batch.batchNo]: { ...(prev[batch.batchNo] || { batchNo: batch.batchNo }), stage: 'error', error: String(taskErr) },
+          [batch.batchNo]: { ...(prev[batch.batchNo] || { batchNo: batch.batchNo }), stage: 'error', error: displayError },
         }));
+        showToast(displayError, 'error');
       } finally {
         if (batchAbortControllersRef.current[batch.batchNo] === controller) delete batchAbortControllersRef.current[batch.batchNo];
         if (batch.batchNo === selectedBatchNo) setIsEvaluatingBatch(false);

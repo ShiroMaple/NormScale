@@ -626,6 +626,16 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
   const currentBatchState = currentBatch ? batchPresentationMap[currentBatch.batchNo] : undefined;
   const isUnaudited = Boolean(currentBatch && currentBatch.verdict === 'UNAUDITED' && !currentBatch.auditReport);
 
+  const unlistedStandards = useMemo(() => {
+    return selectedStandardIds.filter(sel =>
+      !dynamicStandardsCatalog.some(s =>
+        s.id === sel ||
+        normalizeStandardId(s.id) === normalizeStandardId(sel) ||
+        normalizeStandardId(s.shortCode) === normalizeStandardId(sel)
+      )
+    );
+  }, [selectedStandardIds, dynamicStandardsCatalog]);
+
   return (
     <section
       ref={scrollContainerRef as any}
@@ -832,13 +842,32 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                               normalizeStandardId(s.id) === normalizeStandardId(stdId) ||
                               normalizeStandardId(s.shortCode) === normalizeStandardId(stdId)
                             );
+                            const isOutOfScope = !catalogItem;
                             return (
                               <span
                                 key={stdId}
-                                className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-surface-container-high dark:bg-surface-dark-high text-on-surface dark:text-surface-bright border border-outline-variant/40 dark:border-border-dark whitespace-nowrap shadow-2xs"
-                                title={catalogItem ? catalogItem.name : stdId}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border whitespace-nowrap shadow-2xs ${isOutOfScope
+                                  ? 'bg-amber-500/10 text-amber-800 dark:text-amber-200 border-amber-500/40'
+                                  : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface dark:text-surface-bright border-outline-variant/40 dark:border-border-dark'
+                                  }`}
+                                title={isOutOfScope ? `${stdId} (未入库标准)` : (catalogItem ? catalogItem.name : stdId)}
                               >
-                                {catalogItem ? catalogItem.id : stdId}
+                                <span>{catalogItem ? catalogItem.id : stdId}</span>
+                                {isOutOfScope && (
+                                  <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 font-medium">
+                                    未收录
+                                  </span>
+                                )}
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleStandard(stdId);
+                                  }}
+                                  className="hover:bg-black/10 dark:hover:bg-white/10 rounded p-0.5 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                  title="移除此标准"
+                                >
+                                  <span className="material-symbols-outlined text-[12px] block">close</span>
+                                </span>
                               </span>
                             );
                           })}
@@ -879,6 +908,40 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                             </div>
 
                             <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1">
+                              {/* 质保书声明但未收录标准分区 */}
+                              {unlistedStandards.length > 0 && (
+                                <div className="mb-2 pb-2 border-b border-outline-variant/30 dark:border-border-dark space-y-1">
+                                  <div className="px-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-xs">warning</span>
+                                    <span>质保书声明标准（未入库）</span>
+                                  </div>
+                                  {unlistedStandards.map(unlistedStd => (
+                                    <div
+                                      key={unlistedStd}
+                                      onClick={() => onToggleStandard(unlistedStd)}
+                                      className="p-2 rounded-lg text-xs transition-colors flex items-start gap-2.5 cursor-pointer bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 hover:bg-amber-500/20"
+                                    >
+                                      <span className="material-symbols-outlined text-base mt-0.5 shrink-0 text-amber-600 dark:text-amber-400">
+                                        check_box
+                                      </span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-1">
+                                          <span className="font-bold text-amber-800 dark:text-amber-200 truncate">
+                                            {unlistedStd}
+                                          </span>
+                                          <span className="px-1.5 py-0.2 rounded text-[9px] font-medium border shrink-0 text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700">
+                                            质保书原始声明
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px] text-amber-600/90 dark:text-amber-400/90 mt-0.5">
+                                          当前标准库尚未收录此标准，点击可取消勾选并选择下方等效替代标准
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
                               {dynamicStandardsCatalog
                                 .filter(s => {
                                   if (!standardSearchQuery.trim()) return true;
@@ -1254,6 +1317,42 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                               <span className="material-symbols-outlined text-2xl mb-1 block">rule</span>
                               <span>合规检验计算中...</span>
                             </>
+                          ) : currentBatchState?.stage === 'error' ? (
+                            <div className="flex flex-col items-center justify-center space-y-3 py-8 text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
+                              <div className="w-12 h-12 rounded-full bg-amber-500/10 dark:bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                                <span className="material-symbols-outlined text-2xl">report_problem</span>
+                              </div>
+                              <div className="space-y-1.5 text-center">
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                                  {currentBatchState.error?.includes('未收录') || currentBatchState.error?.includes('未找到标准代号')
+                                    ? '质保书声明标准未收录，无法开始核验。请在标准库中补充或选择等效替代标准。'
+                                    : (currentBatchState.error || '核验异常，无法完成比对')}
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                  系统标准库未收录此标准规范。您可以在上方「执行标准」选择器中选择等效替代标准（如 GB/T 13296、GB/T 47019），或联系管理员在系统中维护录入对应标准。
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsStandardSelectorOpen(true)}
+                                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary/90 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-sm">swap_horiz</span>
+                                  <span>选择替代标准</span>
+                                </button>
+                                {currentBatch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onEvaluateBatch(currentBatch, selectedStandardIds)}
+                                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-surface-container-high hover:bg-surface-container-highest dark:bg-surface-dark-high dark:hover:bg-surface-dark border border-outline-variant/60 dark:border-border-dark text-on-surface dark:text-surface-bright transition-colors flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">refresh</span>
+                                    <span>重试核验</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           ) : step3Category === 'issues' ? (
                             <div className="flex flex-col items-center justify-center space-y-1 py-3">
                               <span className="material-symbols-outlined text-3xl text-emerald-600 dark:text-emerald-400 mb-1 block">check_circle</span>
