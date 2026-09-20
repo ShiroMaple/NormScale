@@ -48,6 +48,8 @@ function isClauseHeading(line: string, profile: StandardProfile): { clauseRef: s
   const { min, max } = profile.headingTitleLength;
   if (heading.title.length < min || heading.title.length > max) return null;
   if (!profile.headingTitleTest(heading.title)) return null;
+  // 标题部拒绝模式（en：力学表硬度列折行值 "90 HRB" 的标题部 HRB 为纯硬度单位令牌）
+  if (profile.headingTitleReject?.test(heading.title)) return null;
   // 牌号表行（单行形态，去掉 /g /m 避免 lastIndex 状态污染）
   const gradeRowLineRe = new RegExp(profile.gradeRowRe.source);
   if (gradeRowLineRe.test(line)) return null;

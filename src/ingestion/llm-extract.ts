@@ -183,8 +183,21 @@ export function createDefaultChatClient(configId?: string): ChatClient {
       const decoder = new TextDecoder();
       let buffer = '';
       let content = '';
+      // 停滞看门狗：长思考期间连接可能半挂起（服务端不再吐 chunk 但不断开），
+      // AbortController 对这种半开流不生效；120s 无任何字节流入即判定停滞并主动放弃
+      const STALL_MS = 120000;
+      const readWithStallGuard = (): Promise<{ done: boolean; value?: Uint8Array }> => {
+        let stallTimer: ReturnType<typeof setTimeout>;
+        const stall = new Promise<never>((_, reject) => {
+          stallTimer = setTimeout(() => {
+            controller.abort();
+            reject(new ModelApiExecutionError(`流式响应停滞（${STALL_MS / 1000}s 无数据流入）`));
+          }, STALL_MS);
+        });
+        return Promise.race([reader.read(), stall]).finally(() => clearTimeout(stallTimer));
+      };
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithStallGuard();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split('\n\n');
@@ -305,8 +318,9 @@ async function extractMeta(chat: ChatClient, blocks: TextBlock[]): Promise<Recor
    逐批调用提取后经 mergeSliceDrafts 按 spec_key 合并（绝不截断牌号行）
    ========================================================================== */
 
-// 每批最大牌号行数（可配置常量；SA-213 TABLE2 真实超时案例校准：12 行/批单批输出可控）
-export const GRADE_TABLE_BATCH_SIZE = 12;
+// 每批最大牌号行数（可配置常量；SA-213 TABLE2 真实超时案例校准：12 行/批单批输出可控；
+// v1.7.3 降 6：K3 订阅端点深度思考下单批 12 行反复触及 600s 超时，6 行/批单批收敛）
+export const GRADE_TABLE_BATCH_SIZE = 6;
 
 /**
  * 表块按牌号行确定性拆批（同输入同输出）：
@@ -386,7 +400,7 @@ async function extractChemicalSlices(chat: ChatClient, blocks: TextBlock[], prof
     return {
       spec_key: String(slice.spec_key || ''),
       primary_grade: slice.primary_grade ? String(slice.primary_grade) : undefined,
-      unified_code: slice.spec_key ? String(slice.spec_key) : undefined,
+      unified_code: typeof slice.unified_code === 'string' && slice.unified_code.trim().length > 0 ? slice.unified_code.trim() : undefined,
       structure_type: slice.structure_type ? String(slice.structure_type) : undefined,
       display_name: String(slice.display_name || slice.spec_key || ''),
       aliases: Array.isArray(slice.aliases) ? slice.aliases.map(String) : [],
@@ -395,7 +409,25 @@ async function extractChemicalSlices(chat: ChatClient, blocks: TextBlock[], prof
   });
 }
 
-async function extractMechanicalSlices(chat: ChatClient, blocks: TextBlock[], profile: StandardProfile): Promise<DraftSlice[]> {
+/**
+ * 牌号主键闭集清单注入段（力学表提取用）：力学表 spec_key 必须严格取自化学表已建切片
+ * 主键（SA-213 力学覆盖 6/54 事故：力学表牌号写法漂移——TP304H/T91 Type 1/Grade 660 等——
+ * 导致挂载对不上化学切片主键）；空清单（无化学切片）时不注入
+ */
+export function gradeCatalogLines(slices: DraftSlice[]): string[] {
+  const keys = [...new Set(slices.map((s) => s.spec_key).filter((k) => k.length > 0))].sort();
+  if (keys.length === 0) return [];
+  return [
+    `【牌号主键清单（化学表切片 spec_key，本表 spec_key 必须从此清单逐字选取；含变体牌号原样保留）】${keys.join('、')}`,
+  ];
+}
+
+async function extractMechanicalSlices(
+  chat: ChatClient,
+  blocks: TextBlock[],
+  profile: StandardProfile,
+  gradeLines: string[] = [],
+): Promise<DraftSlice[]> {
   const userPrompt = [
     '【任务】从力学性能相关文本块中提取力学性能规则（室温拉伸性能 + 硬度多选一等），输出切片草稿数组。文本块可能是拉伸性能表、硬度表或含力学条款的正文块——按块内容类型分别处理，不得因"非拉伸"跳过硬度表。',
     '【硬性要求】',
@@ -407,6 +439,7 @@ async function extractMechanicalSlices(chat: ChatClient, blocks: TextBlock[], pr
     '4. 硬度表（or_choice_group，强制）：当文本块为硬度表（含 HBW/HRB/HV 列）或条款提及硬度试验时，必须为适用牌号各输出一条 or_choice_group 规则：property_key="hardness"，category "mechanical"，requirement_level 按条款（协商/条件触发项用 CONDITIONAL 或 OPTIONAL_AGREED），trigger_condition 取对应条款中的壁厚/外径前置条件（JS 表达式惯例，如 "ctx.header.dimensions.wall_thickness_mm >= 1.7"），criteria={options:[{sub_key:"HRB"|"HBW"|"HV", rule_type:"numeric_range", criteria:{max,unit}}]}，option 数值严格取自硬度表原文。硬度表按组织类型（如"奥氏体型""其他""铁素体型"行）而非逐牌号给值时分两种情形：① 行内显式列名牌号 -> applies_to_grades 取这些牌号；② 行值为该组织类型的兜底值（如"奥氏体型 其他 ≤192 ≤90 ≤200"）-> 输出一条 applies_to_grades=["ORG:<组织类型>:OTHERS"] 的规则（组织类型取值：austenitic/ferritic/martensitic/duplex/precipitation_hardening，OTHERS 表示该组织类型中未被本表显式列名的全部牌号），由管线确定性展开挂载到对应切片。',
     '5. requirement_level 固定 "MANDATORY"（硬度等协商/条件项除外，见第 4 条），rule_id 格式 "MECH_{spec_key}_{指标}"，display_name 如 "抗拉强度 (Rm)"。',
     '6. 每条规则 source_clause = 所在文本块的【条款号】。',
+    ...gradeLines,
     '【输出 JSON 结构】{"slices": [{"spec_key": string, "primary_grade": string, "display_name": string, "aliases": string[], "mechanical_rules": [{"rule_id": string, "category": "mechanical", "property_key": string, "display_name": string, "rule_type": "numeric_range" | "or_choice_group", "requirement_level": string, "trigger_condition"?: string, "criteria": object, "source_clause": string}]}]}',
     '【力学性能相关块】',
     blockSection(blocks),
@@ -421,7 +454,7 @@ async function extractMechanicalSlices(chat: ChatClient, blocks: TextBlock[], pr
     return {
       spec_key: String(slice.spec_key || ''),
       primary_grade: slice.primary_grade ? String(slice.primary_grade) : undefined,
-      unified_code: slice.spec_key ? String(slice.spec_key) : undefined,
+      unified_code: typeof slice.unified_code === 'string' && slice.unified_code.trim().length > 0 ? slice.unified_code.trim() : undefined,
       display_name: String(slice.display_name || slice.spec_key || ''),
       aliases: Array.isArray(slice.aliases) ? slice.aliases.map(String) : [],
       evaluation_rules: (Array.isArray(slice.mechanical_rules) ? slice.mechanical_rules : []) as DraftSlice['evaluation_rules'],
@@ -956,6 +989,7 @@ export async function extractAll(
   }
 
   const mechSlices: DraftSlice[] = [];
+  const gradeLines = gradeCatalogLines(chemSlices);
   for (const [i, block] of mechBlocks.entries()) {
     const batches = splitGradeTableBlock(block, profile);
     if (batches.length > 1) {
@@ -963,7 +997,7 @@ export async function extractAll(
     }
     onTask?.(`提取力学性能切片（第 ${i + 1}/${mechBlocks.length} 个表块 ${block.clauseRef}${batches.length > 1 ? `，${batches.length} 批` : ''}）...`);
     for (const batch of batches) {
-      mechSlices.push(...(await extractMechanicalSlices(chat, [batch], profile)));
+      mechSlices.push(...(await extractMechanicalSlices(chat, [batch], profile, gradeLines)));
     }
   }
 

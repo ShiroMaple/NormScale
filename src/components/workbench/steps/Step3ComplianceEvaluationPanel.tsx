@@ -1145,7 +1145,7 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                             : 'bg-surface-container-low dark:bg-surface-dark-low text-on-surface dark:text-surface-bright md:border-outline-variant/50 dark:md:border-border-dark'
                         }`}>
                         <div className="flex flex-col justify-center gap-1 shrink-0">
-                          <div className="flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 text-xm font-bold whitespace-nowrap">
                             <span className="material-symbols-outlined text-[15px]">person_check</span>
                             <span>人工复核:</span>
                           </div>
@@ -1225,7 +1225,7 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                       全景合规比对矩阵
                     </h3>
                     <p className="text-[11px] text-on-surface-variant dark:text-outline-variant">
-                      执行标准条款规范与质保书提取测量值同行左右相邻紧凑对照
+                      执行标准条款规范与质保书提取测量值对照
                     </p>
                   </div>
                 </div>

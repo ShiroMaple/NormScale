@@ -44,7 +44,7 @@ describe('行级拆批：splitGradeTableBlock（en-asme 档，SA-213 TABLE2 形�
 
   it('25 行拆 3 批（12/12/1）：每批携带表头与表注，牌号行零截断、无重复无丢失', () => {
     const block = enTableBlock(25);
-    const batches = splitGradeTableBlock(block, EN_ASME_PROFILE);
+    const batches = splitGradeTableBlock(block, EN_ASME_PROFILE, 12);
     expect(batches.length).toBe(3);
 
     const allGradeLines = gradeLinesOf(block.text);
@@ -79,7 +79,7 @@ describe('行级拆批：splitGradeTableBlock（en-asme 档，SA-213 TABLE2 形�
       clauseRef: '表1',
       text: ['表 1 钢的牌号和化学成分', '序 号 牌号 统一数字代号 C Si Mn P S Ni Cr', ...zhRows, '注 2：表中所列成分除标明范围外，其余均为最大值。'].join('\n'),
     };
-    const batches = splitGradeTableBlock(block, ZH_CN_PROFILE);
+    const batches = splitGradeTableBlock(block, ZH_CN_PROFILE, 12);
     expect(batches.length).toBe(2); // 13 行 -> 12 + 1
     const collected = batches.flatMap((b) =>
       b.text.split('\n').filter((l) => /^\s*\d{1,2}\s+(?:\d{2,3}Cr[0-9A-Za-z]+|S\d{5})\b/.test(l)),
@@ -138,9 +138,10 @@ describe('行级拆批：extractAll 接线', () => {
       }
     };
     const drafts = await extractAll([block], chat, (m) => messages.push(m), undefined, EN_ASME_PROFILE);
-    expect(calls.length).toBe(2);
+    const expectedBatches = Math.ceil(13 / GRADE_TABLE_BATCH_SIZE);
+    expect(calls.length).toBe(expectedBatches);
     for (const prompt of calls) expect(prompt).toContain('TABLE 2 Chemical Composition Limits');
-    expect(messages.some((m) => m.includes('表块 TABLE2 拆为 2 批提取'))).toBe(true);
+    expect(messages.some((m) => m.includes(`表块 TABLE2 拆为 ${expectedBatches} 批提取`))).toBe(true);
     // 合并后 13 个牌号齐全（mergeSliceDrafts 按 spec_key 归并）
     expect(drafts.slices.length).toBe(13);
     const keys = drafts.slices.map((s) => s.spec_key).sort();

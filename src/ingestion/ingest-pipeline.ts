@@ -57,7 +57,12 @@ import type { RenderPagesFn } from './vision-transcribe.ts';
 //         牌号行全走 profile 注入；CLI --profile 显式 > 嗅探自动判定（结果写入报告）；en 档关闭 CJK lint
 // 1.7.1：大表行级拆批——化学/力学表块牌号行 >12 时按完整牌号行确定性拆批（每批携带表头/表注上下文），
 //         根治 ASME TABLE2 类大表单块提取超时
-export const ingestConfigVersion = '1.7.1';
+// 1.7.2：SA-213 E2E en 档定点——⑤ surface 关键词补全（surface condition/free of scale/pickled/special finish）；
+//         ③ unified_code 解析去冒充（不再缺省回填 spec_key）+ en prompt 强制 UNS 逐字/缺省留空；
+//         ② 标题拒绝纯硬度单位令牌（"90 HRB" 折行值曾把 TABLE4 碎成数十块）+ 力学 prompt 注入牌号主键闭集
+// 1.7.3：拆批阈值 12→6 行/批（K3 订阅端点深度思考下 12 行单批反复触及 600s 超时；6 行单批可收敛）；
+//       入库默认客户端增加停滞看门狗（120s 无数据流入即放弃重试，根治半开流挂死）
+export const ingestConfigVersion = '1.7.3';
 
 export class GarbledTextLayerError extends Error {
   public garbledRefs: string[];

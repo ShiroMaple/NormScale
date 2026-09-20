@@ -36,6 +36,8 @@ export interface StandardProfile {
   scopeTextRe: RegExp;
   /** 章节标题标题部长度界（zh 2..40；en 标题含拉丁长词，放宽至 60；规格接口外增补） */
   headingTitleLength: { min: number; max: number };
+  /** 标题部拒绝模式（en：力学表硬度列折行值 "90 HRB"/"25 HRC" 的标题部为纯硬度单位令牌；规格接口外增补） */
+  headingTitleReject?: RegExp;
   /** clauseRef 是否表锚（表注归属合并的归属目标判定；规格接口外增补） */
   isTableRef: (clauseRef: string) => boolean;
   /** clauseRef 是否附录锚（切块/提取排除；zh "附录X" 与 "表A.1"，en "ANNEX X"/"APPENDIX X"；规格接口外增补） */
@@ -152,11 +154,12 @@ const EN_PUNCT_SYMBOL_RE = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/g;
 // 标题部：纯拉丁（允许 & / ( ) - ' — – : 与空格）、无数字、不以逗号/分号结尾
 const EN_TITLE_ALLOWED_RE = /^[A-Z][A-Za-z][A-Za-z &/()\-'—–:]{0,58}$/;
 
-const EN_PROCESS_KEYWORDS = /flattening|flaring|hydrostatic|nondestructive|intergranular corrosion|grain size|reverse bend|hardness test/i;
-const EN_CHEMISTRY_KEYWORDS = /Chemical Composition/i;
-const EN_MECHANICAL_KEYWORDS = /Tensile|Yield Strength|Hardness Requirements|Elongation/i;
-const EN_TOLERANCE_KEYWORDS = /Permitted Variations|tolerance/i;
-const EN_DIMENSION_CONTEXT = /Wall Thickness|Outside Diameter|Thickness/i;
+// 关键词短语内空白以 \s+ 表示：PDF 提取的断行会把 "free of\nscale" 截断，逐词容忍任意空白
+const EN_PROCESS_KEYWORDS = /flattening|flaring|hydrostatic|nondestructive|intergranular\s+corrosion|grain\s+size|reverse\s+bend|hardness\s+test|surface\s+condition|free\s+of\s+(?:loose\s+)?scale|pickl(?:ed|ing)|special\s+finish/i;
+const EN_CHEMISTRY_KEYWORDS = /Chemical\s+Composition/i;
+const EN_MECHANICAL_KEYWORDS = /Tensile|Yield\s+Strength|Hardness\s+Requirements|Elongation/i;
+const EN_TOLERANCE_KEYWORDS = /Permitted\s+Variations|tolerance/i;
+const EN_DIMENSION_CONTEXT = /Wall\s+Thickness|Outside\s+Diameter|Thickness/i;
 // 牌号形态：TP304/TP316L/T5b/T91/H Grade、UNS K11547/S30400、XM-19
 const EN_GRADE_TOKEN_RE = /(?:\b(?:TP|T|H|HT)\d{1,3}[A-Za-z]{0,3}\b|\b[KS]\d{5}\b|\bXM-\d+[A-Za-z]?\b)/;
 // 牌号表行：行首牌号 + 可选 "Type n [Heat]" + UNS（K/S + 5 位数字）
@@ -207,6 +210,8 @@ export const EN_ASME_PROFILE: StandardProfile = {
   noteLineTest: (line) => /^[A-Z]\s+\S/.test(line.trim()),
   scopeTextRe: /This specification covers|This international standard|covers seamless/i,
   headingTitleLength: { min: 2, max: 60 },
+  // 力学表硬度列折行值（"90 HRB"/"25 HRC"）形似标题，标题部为纯硬度单位令牌时拒绝（SA-213 TABLE4 碎块事故）
+  headingTitleReject: /^(?:HRB|HBW|HV|HRC|HS|HB)$/,
   isTableRef: (ref) => /^TABLE\d/.test(ref),
   isAppendixRef: (ref) => /^(?:ANNEX|APPENDIX)[A-Z]?/i.test(ref),
   matchHeading: (line) => {
@@ -225,7 +230,7 @@ export const EN_ASME_PROFILE: StandardProfile = {
     return plain;
   },
   promptLocale: {
-    gradeConcepts: 'ASME 无统一数字代号：spec_key 用 ASME 牌号（如 TP304/T5b）或 UNS 代号（如 S30400），两者皆有时 display_name="TP304 (S30400)"；aliases 可填 SUS304/1.4301 等国际别名',
+    gradeConcepts: 'ASME 无统一数字代号：spec_key 用 ASME 商用牌号（如 TP304/T5b，含变体时原样保留如 "T91 Type 1"）；化学表含 UNS 列时 unified_code 必须逐字取 UNS 号（如 S30400），display_name="TP304 (S30400)"；无 UNS 列时 unified_code 留空，严禁用商用牌号冒充 unified_code（冒充将破坏 UNS 适用的规则挂载）。applies_to_grades 声明须优先用商用牌号（与 spec_key 同形态），UNS 号仅作辅助。aliases 可填 SUS304/1.4301 等国际别名',
     structureTypeMap: '英文直通：表题含 Austenitic -> austenitic，Ferritic -> ferritic，Low Alloy Steel 按合金钢归 ferritic（组织类型以表题与化学成分判读）',
   },
   gateRules: { requireCjk: false },

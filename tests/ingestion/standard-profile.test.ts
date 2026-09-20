@@ -205,7 +205,8 @@ describe('阶段 C：en prompt 术语段与视觉转录 locale', () => {
     await extractAll([chemBlock], chat, undefined, undefined, EN_ASME_PROFILE);
     const prompt = contents.get('slices_chemical') ?? '';
     expect(prompt).toContain('ASME 无统一数字代号');
-    expect(prompt).toContain('UNS 代号');
+    expect(prompt).toContain('unified_code 必须逐字取 UNS 号');
+    expect(prompt).toContain('严禁用商用牌号冒充');
     expect(prompt).toContain('TP304');
   });
 
