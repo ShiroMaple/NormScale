@@ -530,7 +530,6 @@ export const Step2DataVerificationPanel: React.FC<Step2DataVerificationPanelProp
                                         if (pageAspectRatios[pageNum] !== ratio) {
                                           setPageAspectRatios(prev => (prev[pageNum] === ratio ? prev : { ...prev, [pageNum]: ratio }));
                                         }
-                                        centerPdfViewport();
                                       }
                                     }}
                                     src={pageSrc}
