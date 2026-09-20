@@ -133,7 +133,7 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
   const isStandardOverridden = propIsStandardOverridden !== undefined
     ? propIsStandardOverridden
     : Boolean(
-      currentBatch?.overrideStandard &&
+      currentBatch?.overrideStandard !== undefined &&
       !areStandardCollectionsEquivalent(currentBatch.overrideStandard, currentBatch.standard)
     );
 
@@ -780,13 +780,13 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                       <button
                         type="button"
                         onClick={() => {
-                          if (isReevaluatingCooldownRef.current || isEvaluatingBatch) return;
+                          if (isReevaluatingCooldownRef.current || isEvaluatingBatch || selectedStandardIds.length === 0) return;
                           isReevaluatingCooldownRef.current = true;
                           setTimeout(() => { isReevaluatingCooldownRef.current = false; }, 500);
                           onEvaluateBatch(currentBatch, selectedStandardIds);
                         }}
-                        disabled={isEvaluatingBatch}
-                        title="强制调用合规引擎对当前试样重新计算"
+                        disabled={isEvaluatingBatch || selectedStandardIds.length === 0}
+                        title={selectedStandardIds.length === 0 ? '请先选择至少一部执行标准' : '强制调用合规引擎对当前试样重新计算'}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shadow-2xs border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary cursor-pointer disabled:opacity-50"
                       >
                         <span className={`material-symbols-outlined text-[13px] ${isEvaluatingBatch ? 'animate-spin' : ''}`}>
@@ -836,41 +836,45 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                           }`}
                       >
                         <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
-                          {selectedStandardIds.map(stdId => {
-                            const catalogItem = dynamicStandardsCatalog.find(s =>
-                              s.id === stdId ||
-                              normalizeStandardId(s.id) === normalizeStandardId(stdId) ||
-                              normalizeStandardId(s.shortCode) === normalizeStandardId(stdId)
-                            );
-                            const isOutOfScope = !catalogItem;
-                            return (
-                              <span
-                                key={stdId}
-                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border whitespace-nowrap shadow-2xs ${isOutOfScope
-                                  ? 'bg-amber-500/10 text-amber-800 dark:text-amber-200 border-amber-500/40'
-                                  : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface dark:text-surface-bright border-outline-variant/40 dark:border-border-dark'
-                                  }`}
-                                title={isOutOfScope ? `${stdId} (未入库标准)` : (catalogItem ? catalogItem.name : stdId)}
-                              >
-                                <span>{catalogItem ? catalogItem.id : stdId}</span>
-                                {isOutOfScope && (
-                                  <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 font-medium">
-                                    未收录
-                                  </span>
-                                )}
+                          {selectedStandardIds.length === 0 ? (
+                            <span className="text-on-surface-variant/60 text-xs">请选择执行标准</span>
+                          ) : (
+                            selectedStandardIds.map(stdId => {
+                              const catalogItem = dynamicStandardsCatalog.find(s =>
+                                s.id === stdId ||
+                                normalizeStandardId(s.id) === normalizeStandardId(stdId) ||
+                                normalizeStandardId(s.shortCode) === normalizeStandardId(stdId)
+                              );
+                              const isOutOfScope = !catalogItem;
+                              return (
                                 <span
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onToggleStandard(stdId);
-                                  }}
-                                  className="hover:bg-black/10 dark:hover:bg-white/10 rounded p-0.5 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
-                                  title="移除此标准"
+                                  key={stdId}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border whitespace-nowrap shadow-2xs ${isOutOfScope
+                                    ? 'bg-amber-500/10 text-amber-800 dark:text-amber-200 border-amber-500/40'
+                                    : 'bg-surface-container-high dark:bg-surface-dark-high text-on-surface dark:text-surface-bright border-outline-variant/40 dark:border-border-dark'
+                                    }`}
+                                  title={isOutOfScope ? `${stdId} (未入库标准)` : (catalogItem ? catalogItem.name : stdId)}
                                 >
-                                  <span className="material-symbols-outlined text-[12px] block">close</span>
+                                  <span>{catalogItem ? catalogItem.id : stdId}</span>
+                                  {isOutOfScope && (
+                                    <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 font-medium">
+                                      未收录
+                                    </span>
+                                  )}
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onToggleStandard(stdId);
+                                    }}
+                                    className="hover:bg-black/10 dark:hover:bg-white/10 rounded p-0.5 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                    title="移除此标准"
+                                  >
+                                    <span className="material-symbols-outlined text-[12px] block">close</span>
+                                  </span>
                                 </span>
-                              </span>
-                            );
-                          })}
+                              );
+                            })
+                          )}
                         </div>
                         <span className={`material-symbols-outlined text-base transition-transform text-on-surface-variant shrink-0 ${isStandardSelectorOpen ? 'rotate-180 text-primary' : ''}`}>
                           expand_more
@@ -1317,6 +1321,28 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                               <span className="material-symbols-outlined text-2xl mb-1 block">rule</span>
                               <span>合规检验计算中...</span>
                             </>
+                          ) : selectedStandardIds.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center space-y-3 py-10 text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
+                              <div className="w-12 h-12 rounded-full bg-surface-container-high dark:bg-surface-dark-high flex items-center justify-center text-on-surface-variant">
+                                <span className="material-symbols-outlined text-2xl">menu_book</span>
+                              </div>
+                              <div className="space-y-1 text-center">
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                                  尚未选择执行标准
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  请在上方选择至少一部标准以开始合规比对
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsStandardSelectorOpen(true)}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary/90 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer mt-1"
+                              >
+                                <span className="material-symbols-outlined text-sm">add</span>
+                                <span>选择执行标准</span>
+                              </button>
+                            </div>
                           ) : currentBatchState?.stage === 'error' ? (
                             <div className="flex flex-col items-center justify-center space-y-3 py-8 text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
                               <div className="w-12 h-12 rounded-full bg-amber-500/10 dark:bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">

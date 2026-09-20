@@ -116,12 +116,12 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
 
   const isGradeOverridden = Boolean(currentBatch?.overrideGrade && currentBatch.overrideGrade !== currentBatch.grade);
   const isStandardOverridden = Boolean(
-    currentBatch?.overrideStandard &&
+    currentBatch?.overrideStandard !== undefined &&
     !areStandardCollectionsEquivalent(currentBatch.overrideStandard, currentBatch.standard)
   );
   const isOverridden = isGradeOverridden || isStandardOverridden;
   const activeGrade = currentBatch ? (isGradeOverridden ? currentBatch.overrideGrade! : currentBatch.grade) : '';
-  const activeStandard = currentBatch ? (isStandardOverridden ? currentBatch.overrideStandard! : currentBatch.standard) : '';
+  const activeStandard = currentBatch ? (isStandardOverridden ? currentBatch.overrideStandard! : (currentBatch.standard || '')) : '';
 
   const bboxes: FieldBBox[] = useMemo(() => {
     if (!currentDoc || currentDoc.ocrStatus !== 'DONE') return [];
@@ -276,13 +276,14 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
   // 步骤 3 自动触发未比对批次核验
   useEffect(() => {
     if (currentStep !== 2 || !currentDoc || currentDoc.batches.length === 0) return;
+    if (!selectedStandardIds || selectedStandardIds.length === 0) return;
     const pendingBatches = currentDoc.batches.filter(b => !b.auditReport || b.verdict === 'UNAUDITED');
     if (pendingBatches.length === 0) return;
     const batchSignature = `${selectedDocId}:${pendingBatches.map(b => b.batchNo).sort().join(',')}`;
     if (batchEvaluatingKeyRef.current === batchSignature) return;
     batchEvaluatingKeyRef.current = batchSignature;
     evaluateBatches(pendingBatches);
-  }, [currentStep, selectedDocId, currentDoc, evaluateBatches, batchEvaluatingKeyRef]);
+  }, [currentStep, selectedDocId, currentDoc, selectedStandardIds, evaluateBatches, batchEvaluatingKeyRef]);
 
   // 步骤流转守卫
   const goToStep = useCallback((stepIdx: number) => {
@@ -402,17 +403,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
     };
 
     if (existingIndex >= 0) {
-      if (selectedStandardIds.length <= 1) {
-        // 如果仅剩唯一标准且该标准未入库，点击移除时自动切换为库内首选标准
-        const fallbackStd = dynamicStandardsCatalog[0]?.id;
-        if (fallbackStd && normalizeStandardId(fallbackStd) !== targetNorm) {
-          newSelected = [fallbackStd];
-        } else {
-          return;
-        }
-      } else {
-        newSelected = selectedStandardIds.filter((_, idx) => idx !== existingIndex);
-      }
+      newSelected = selectedStandardIds.filter((_, idx) => idx !== existingIndex);
     } else {
       // 勾选新标准：若当前已选列表仅包含未入库标准，点击收录标准时平滑替换
       const listedCurrent = selectedStandardIds.filter(isListedInCatalog);
@@ -434,7 +425,7 @@ export const WaterfallWorkbench: React.FC<WaterfallWorkbenchProps> = ({
             const isEquiv = areStandardCollectionsEquivalent(newSelected, b.standard);
             return {
               ...b,
-              overrideStandard: isEquiv ? undefined : newStandardStr,
+              overrideStandard: isEquiv ? undefined : (newSelected.length === 0 ? '' : newStandardStr),
               auditReport: undefined,
               verdict: 'UNAUDITED' as const,
             };

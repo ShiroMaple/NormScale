@@ -94,11 +94,18 @@ function deriveStandardCatalog(standardsData?: { standards: any[] }): StandardCa
  * 辅助函数：解析批次声明标准，容错修复空格并规范化标准 ID
  */
 function resolveStandardIds(activeStandard: string, catalog: StandardCatalogItem[]): string[] {
+  if (!activeStandard || activeStandard === 'UNKNOWN' || !activeStandard.trim()) {
+    return [];
+  }
   const rawList = activeStandard.split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean);
   const sanitized: string[] = [];
   let i = 0;
   while (i < rawList.length) {
     const current = rawList[i]!;
+    if (current === 'UNKNOWN' || !current) {
+      i++;
+      continue;
+    }
     const currentNorm = normalizeStandardId(current);
     const matched = catalog.find(s => normalizeStandardId(s.id) === currentNorm || normalizeStandardId(s.shortCode) === currentNorm);
     if (matched) {
@@ -119,9 +126,7 @@ function resolveStandardIds(activeStandard: string, catalog: StandardCatalogItem
     if (!sanitized.some(s => normalizeStandardId(s) === currentNorm)) sanitized.push(current);
     i++;
   }
-  if (sanitized.length > 0) return sanitized;
-  const defaultStdId = catalog[0]?.id;
-  return defaultStdId ? [defaultStdId] : [];
+  return sanitized;
 }
 
 /**
@@ -244,6 +249,7 @@ export function useBatchStreamAuditor({
   const evaluateBatches = useCallback(async (batchesToEval: BatchSpecimen[], forcedStdIds?: string[]) => {
     if (!batchesToEval || batchesToEval.length === 0) return;
     const stdIds = forcedStdIds || selectedStandardIds;
+    if (!stdIds || stdIds.length === 0) return;
 
     if (dynamicStandardsCatalog.length === 0 && (!standardsData?.standards || standardsData.standards.length === 0)) {
       const errorMsg = '[StandardCatalogEmptyError] 执行标准规则库未初始化或加载为空，无法对批次发起合规检验。';

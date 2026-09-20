@@ -163,4 +163,31 @@ describe('useBatchStreamAuditor 单元测试 (阶段 4.2)', () => {
     expect(captured!.selectedStandardIds).toContain('GB/T 13296-2023');
     expect(captured!.selectedStandardIds.length).toBe(2);
   });
+
+  it('当 activeStandard 为空字符串或未声明时，selectedStandardIds 返回空数组且不强行回退到首选标准', async () => {
+    let captured: ReturnType<typeof useBatchStreamAuditor> | null = null;
+
+    renderToString(
+      React.createElement(TestHarness, {
+        options: {
+          session: mockSession,
+          setSession: vi.fn(),
+          selectedDocId: 'doc-01',
+          selectedBatchNo: 'BATCH-2026-B1',
+          standardsData: mockStandardsData,
+          activeStandard: '',
+          currentBatch: { ...mockBatch, standard: '' },
+          sessionMetrics: { totalDurationSeconds: 0, totalInputTokens: 0, totalOutputTokens: 0 },
+          showToast: vi.fn(),
+        },
+        onHookResult: res => {
+          captured = res;
+        },
+      })
+    );
+
+    expect(captured!.selectedStandardIds).toEqual([]);
+    // 当 stdIds 为空数组时，evaluateBatches 应该守卫直接返回，不发起调用
+    await expect(captured!.evaluateBatches([mockBatch], [])).resolves.toBeUndefined();
+  });
 });
