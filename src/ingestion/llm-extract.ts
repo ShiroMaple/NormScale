@@ -649,6 +649,31 @@ const TOLERANCE_NUMERIC_FIELDS = [
   'minus_tolerance_value',
 ] as const;
 
+/** UNS/统一代号形态（ASME UNS 与国标统一数字代号同形：字母+5 位数字） */
+const UNIFIED_CODE_RE = /\b[SKN]\d{5}\b/;
+
+/**
+ * 统一代号确定性回补（en 档 UNS 通道，LLM 未填或旧数据商用名冒充时修复）：
+ * 切片缺 unified_code（或等于 spec_key 的冒充形态）时，在化学表块中定位含该牌号行，
+ * 逐字取同行 UNS/统一代号。纯文本行内匹配，不调用模型；
+ * 供管线在挂载（mountRulesByGrades）前调用，使以 UNS 声明的 applies_to_grades 可挂载
+ */
+export function backfillUnifiedCodes(drafts: ExtractionDrafts, blocks: TextBlock[]): ExtractionDrafts {
+  const chemLines = blocks
+    .filter((b) => b.blockType === 'chemistry_table')
+    .flatMap((b) => b.text.split('\n'));
+  for (const slice of drafts.slices ?? []) {
+    if (typeof slice.unified_code === 'string' && slice.unified_code.trim().length > 0 && slice.unified_code !== slice.spec_key) {
+      continue; // 已有真实统一代号，不动
+    }
+    const tokens = [slice.spec_key, slice.primary_grade].filter((t): t is string => typeof t === 'string' && t.trim().length > 0);
+    const line = chemLines.find((l) => tokens.some((t) => l.includes(t)) && UNIFIED_CODE_RE.test(l));
+    const m = line ? UNIFIED_CODE_RE.exec(line) : null;
+    if (m) slice.unified_code = m[0];
+  }
+  return drafts;
+}
+
 /**
  * source_clause 引用确定性归一：模型偶发把 prompt 的块标记原文抄入
  * （如 "【条款号 7.8】"），剥离标记字符与空白，使其与切块 clauseRef 精确对齐。

@@ -116,7 +116,7 @@ const UNIT_WHITELIST = new Set([
   '%', 'MPa', 'GPa', 'N/mm2', 'N/mm²',
   'HRB', 'HBW', 'HV', 'HRC',
   'J', 'kJ', 'J/cm2', 'mm', 'μm', 'um',
-  '级', '°', '℃',
+  '级', '°', '℃', '°F',
 ]);
 
 // expected_visual_result 闭集白名单（视觉判定结论机器码；语义真相由 description 原文层承载）：
@@ -199,7 +199,10 @@ function collectTraceableValues(rule: DraftRule): number[] {
 function collectUnits(rule: DraftRule): string[] {
   const units: string[] = [];
   const fromCriteria = (c: { unit?: unknown } | undefined): void => {
-    if (typeof c?.unit === 'string' && c.unit.trim().length > 0) units.push(c.unit.trim());
+    if (typeof c?.unit === 'string' && c.unit.trim().length > 0) {
+      // 复合标尺形态（如 "HRB/HRC" 多标尺合一）按 / 拆分后逐段校验
+      units.push(...c.unit.trim().split('/').map((u) => u.trim()).filter((u) => u.length > 0));
+    }
   };
   fromCriteria(rule.criteria as { unit?: unknown });
   const options = rule.criteria?.options;
@@ -281,6 +284,12 @@ export function runGates(input: GateInput): GateResult {
       issue('SCHEMA', `切片 ${slice.spec_key || '(无 spec_key)'} 契约校验失败: ${parsed.error.issues.map((i) => i.path.join('.') + ' ' + i.message).join('; ')}`);
     } else {
       validSlices.push(slice);
+    }
+    // v1.7.3 伪切片拦截：spec_key 为 harness 挂载标记（ORG: 前缀）或不含任何数字的
+    // 裸词（如 "Heat"，来自表格折行残片），均为提取工件而非真实牌号，显式拦截
+    const key = slice.spec_key || '';
+    if (key.startsWith('ORG:') || !/\d/.test(key)) {
+      issue('SCHEMA', `伪切片拦截：spec_key "${key}" 不是合法牌号形态（ORG: 挂载标记或纯文字残片），判定为提取工件`);
     }
   }
   for (const clause of input.clauses) {

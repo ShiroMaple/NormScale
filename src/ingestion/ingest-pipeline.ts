@@ -5,7 +5,7 @@ import { NoTextLayerError, pdfCacheDir, preprocessPdf } from './preprocess.ts';
 import { countGradeRows, segmentText } from './segmenter.ts';
 import { PROFILES, sniffProfile } from './standard-profile.ts';
 import type { ProfileId, StandardProfile } from './standard-profile.ts';
-import { createDefaultChatClient, dedupeDraftRules, extractAll, fillSliceHarnessFields, isAppendixLikeRef, normalizeSourceClauseRefs, sanitizeToleranceNumericFields } from './llm-extract.ts';
+import { createDefaultChatClient, dedupeDraftRules, extractAll, fillSliceHarnessFields, isAppendixLikeRef, normalizeSourceClauseRefs, sanitizeToleranceNumericFields, backfillUnifiedCodes, mountRulesByGrades, dedupeSliceRulesByPropertyKey } from './llm-extract.ts';
 import { buildClauseTextIndex, FULL_RULE_FAMILIES, runGates } from './gates.ts';
 import type { GateIssue } from './gates.ts';
 import type { ChatClient, DraftToleranceTable, ExtractionDrafts, TextBlock } from './types.ts';
@@ -431,6 +431,24 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   dedupeDraftRules(cached.drafts);
   sanitizeToleranceNumericFields(cached.drafts);
   normalizeSourceClauseRefs(cached.drafts);
+  // v1.7.3 UNS/统一代号确定性回补与重挂载（无需重提 LLM）：
+  // 切片缺 unified_code（或商用名冒充形态）时从化学表行逐字回补，再对未挂载规则重挂载
+  backfillUnifiedCodes(cached.drafts, cached.blocks);
+  if ((cached.drafts.unmounted_rules?.length ?? 0) > 0) {
+    const remount = mountRulesByGrades(cached.drafts.unmounted_rules!, cached.drafts.slices);
+    let remounted = 0;
+    remount.perSlice.forEach((rules, i) => {
+      if (rules.length > 0) {
+        cached.drafts.slices[i]!.evaluation_rules.push(...rules);
+        remounted += rules.length;
+      }
+    });
+    if (remounted > 0) {
+      dedupeSliceRulesByPropertyKey(cached.drafts.slices);
+      progress(`UNS 回补后重挂载：${remounted} 条规则挂载成功，${remount.unmounted.length} 条仍未挂载（交 S3 拦截）`);
+    }
+    cached.drafts.unmounted_rules = remount.unmounted;
+  }
   // S2 产物契约（含缓存草稿归一）：spec_type/standard_code/description 由 harness 确定性补齐
   fillSliceHarnessFields(cached.drafts);
   // v3 文本来源标记：视觉转录通道产物显式记录（review-report 显著标注，溯源断言对象为转录文本）
@@ -478,6 +496,8 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
     unmountedRules: cached.drafts.unmounted_rules,
     // v1.4.1 两级溯源：全文档拼接文本供块边界漂移 WARN 兜底
     fullDocumentText: cached.blocks.map((b) => b.text).join('\n\n'),
+    // v1.7.3：en 档关闭 CJK 强制（定性原文层与语言一致性 lint 以源语言为准）
+    requireCjk: resolvedProfile!.gateRules.requireCjk,
   });
 
   const metaId = String(cached.drafts.meta.standard_id || 'UNKNOWN_STANDARD');
