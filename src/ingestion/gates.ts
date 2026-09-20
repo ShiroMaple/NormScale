@@ -429,7 +429,8 @@ export function runGates(input: GateInput): GateResult {
       }
 
       // 项3.2 定性规则原文双层记录 lint：qualitative_pass/qualitative_enum/exemption 的机器码 criteria
-      // 仅做路由，必须携带含 CJK 的描述性字段（description 或 criteria.criteria_description）作为语义真相原文层
+      // 仅做路由，必须携带描述性字段（description 或 criteria.criteria_description）作为语义真相原文层；
+      // zh 档要求含 CJK（防译英），en 档（requireCjk=false）英文原文即为源语言，仅要求非空
       if (QUALITATIVE_RULE_TYPES.has(rule.rule_type)) {
         const criteriaDescription = (rule.criteria as { criteria_description?: unknown }).criteria_description;
         const descriptionText = typeof rule.description === 'string' && rule.description.trim().length > 0
@@ -438,8 +439,8 @@ export function runGates(input: GateInput): GateResult {
             ? criteriaDescription
             : null;
         if (descriptionText === null) {
-          issue('LINT_QUALITATIVE_DESCRIPTION', `${ref} 定性规则（${rule.rule_type}）缺少语义真相原文层：必须携带含 CJK 的 description 或 criteria.criteria_description`);
-        } else if (!CJK_IDEOGRAPH_RE.test(descriptionText)) {
+          issue('LINT_QUALITATIVE_DESCRIPTION', `${ref} 定性规则（${rule.rule_type}）缺少语义真相原文层：必须携带 description 或 criteria.criteria_description`);
+        } else if (requireCjk && !CJK_IDEOGRAPH_RE.test(descriptionText)) {
           issue('LINT_QUALITATIVE_DESCRIPTION', `${ref} 定性规则（${rule.rule_type}）描述性字段不含 CJK 字符（中文标准原文层禁止被译为英文）: "${descriptionText.slice(0, 40)}"`);
         }
       }

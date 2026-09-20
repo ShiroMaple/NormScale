@@ -131,6 +131,25 @@ describe('项3.2：定性规则原文双层记录（description/criteria_descrip
     expect(issues.some((i) => i.message.includes('不含 CJK'))).toBe(true);
     expect(result.passed).toBe(false);
   });
+
+  it('en 档（requireCjk=false）：英文原文描述合法放行，缺失描述仍拦截', () => {
+    const english = makeRule({ rule_id: 'Q1', category: 'surface', rule_type: 'qualitative_pass', property_key: 'surface_quality', criteria: { expected: 'CLEAN_PASS' }, description: 'Surface shall be free of cracks, laps, and seams per SA-213 §12' });
+    const noDesc = makeRule({ rule_id: 'Q2', category: 'surface', rule_type: 'qualitative_pass', property_key: 'surface_quality', criteria: { expected: 'CLEAN_PASS' } });
+    const result = runGates(gateInput({
+      requireCjk: false,
+      slices: [
+        makeSlice('TP304', 'austenitic', [english]),
+        makeSlice('TP316', 'austenitic', [noDesc]),
+      ],
+      declaredFamilies: ['surface'],
+    }));
+    const issues = result.issues.filter((i) => i.code === 'LINT_QUALITATIVE_DESCRIPTION');
+    // 英文原文是 en 标准的源语言，合法；只有缺失描述的 Q2 被拦
+    expect(issues.length).toBe(1);
+    expect(issues[0]!.message).toContain('Q2');
+    expect(issues[0]!.message).toContain('缺少语义真相原文层');
+    expect(result.passed).toBe(false);
+  });
 });
 
 describe('项4：ORG:type:OTHERS 组织类型兜底挂载', () => {
