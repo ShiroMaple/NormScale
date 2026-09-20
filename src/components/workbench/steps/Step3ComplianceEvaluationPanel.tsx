@@ -1397,13 +1397,15 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                               const evals = row.multiStandardEvaluations;
                               if (!evals || evals.length === 0) {
                                 const match = row.standardRequirement?.match(/^(.*?)\s*\[(.*?)\]$/);
-                                if (match) {
-                                  const [, reqText, stdTag] = match;
-                                  return (
-                                    <div className="flex flex-col items-start gap-1.5 py-0.5">
-                                      <div className="font-bold text-[12px] text-on-surface dark:text-surface-bright flex items-center gap-1">
-                                        <span>{reqText}</span>
-                                      </div>
+                                const reqText = match ? match[1] : row.standardRequirement;
+                                const stdTag = match ? match[2] : (selectedStandardIds[0] || currentBatch?.standard);
+
+                                return (
+                                  <div className="flex flex-col items-start gap-1.5 py-0.5">
+                                    <div className="font-bold text-[12px] text-on-surface dark:text-surface-bright flex items-center gap-1">
+                                      <span>{reqText}</span>
+                                    </div>
+                                    {stdTag && (
                                       <div className="flex flex-col items-start gap-1 w-full">
                                         <span
                                           className="px-1.5 py-0.5 rounded text-[10px] border whitespace-nowrap inline-flex items-center bg-surface-container-high/70 dark:bg-surface-dark-high/70 text-on-surface-variant dark:text-outline-variant border-outline-variant/30 dark:border-border-dark leading-tight"
@@ -1412,13 +1414,7 @@ export const Step3ComplianceEvaluationPanel: React.FC<Step3ComplianceEvaluationP
                                           {stdTag}
                                         </span>
                                       </div>
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div className="py-0.5 font-bold text-[12px] text-on-surface dark:text-surface-bright">
-                                    {row.standardRequirement}
+                                    )}
                                   </div>
                                 );
                               }

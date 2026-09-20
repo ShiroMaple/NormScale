@@ -4,6 +4,14 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-20 · 统一多标合成架构（单标归为 N=1 特例）与来源胶囊常驻闭环
+
+- 彻底拔除双轨制：废除 `DeterministicEvalNode` 中单标 `evaluate(standardRuleSet)` 回退分支，将单标准核验彻底统一为多标准合成核验在 $N=1$ 时的特例，全链路唯一消费 `evaluateSlice`；
+- 牌号路由双向穿透与括号剥离：`FileRuleStore` 在路由键清洗中自动剥离括号及附注，并在索引切片时同时注册括号内外别名；`RetrieveStandardNode` 优先采用归一化消歧主牌号检索切片，消灭跨标准体系切片落空问题；
+- 严格质量红线门禁：切片装配若有任意一部标准未收录对应牌号切片，显式阻断并报错，彻底终结了“暗中丢弃第二部标准静默降级”的重大缺陷；
+- 前端来源胶囊 100% 常驻：`Step3ComplianceEvaluationPanel.tsx` 比对矩阵第 3 列无论单标还是多标统一常驻展示标准编号胶囊，第 7 列判定格式高度统一；
+- 验证闭环：`pnpm exec tsc --noEmit` 0 错误，`pnpm audit:hygiene` 架构门禁通过，全量 86 个测试套件 534 项单测 100% 绿灯。
+
 ## 2026-09-20 · ASME SA-213 en-asme 全链路 E2E 完成（k3-coding 订阅通道）
 
 - 订阅额度恢复后 `ingestConfigId` 切回 `k3-coding`（api.kimi.com/coding/v1, k3-256k），SA-213 全链路跑通：profile 嗅探 → S1 → 化学两表 5 批 → 力学 5 块 → 工艺/条款 → 公差表 → S3 门禁；

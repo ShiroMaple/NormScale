@@ -55,10 +55,13 @@ export class FileRuleStore implements IRuleStore {
   }
 
   /**
-   * 规格别名归一化 (如 'tp-304' -> 'TP304')
+   * 规格别名归一化 (如 'tp-304' -> 'TP304', 'TP316L (UNS S31603)' -> 'TP316L')
    */
   public normalizeRoutingKey(key: string): string {
-    return key.toUpperCase().replace(/[\s\-_]/g, '');
+    const cleaned = key
+      .replace(/\s*[(（][^()（）]*[)）]/g, '')
+      .trim();
+    return cleaned.toUpperCase().replace(/[\s\-_]/g, '');
   }
 
   /**
@@ -271,8 +274,19 @@ export class FileRuleStore implements IRuleStore {
     }
 
     for (const k of keysToIndex) {
-      const normK = this.normalizeRoutingKey(k);
-      slicesMap.set(normK, slice);
+      const rawNorm = k.toUpperCase().replace(/[\s\-_]/g, '');
+      if (rawNorm) slicesMap.set(rawNorm, slice);
+
+      const cleanedNorm = this.normalizeRoutingKey(k);
+      if (cleanedNorm) slicesMap.set(cleanedNorm, slice);
+
+      // 若自身带有括号 (如 022Cr17Ni12Mo2 (S31603) 或 TP316L (UNS S31603))，将括号内提取项也单独索引
+      const bracketMatch = k.match(/[(（]([^()（）]+)[)）]/);
+      if (bracketMatch && bracketMatch[1]) {
+        const innerClean = bracketMatch[1].replace(/UNS\s*/i, '').trim();
+        const innerNorm = innerClean.toUpperCase().replace(/[\s\-_]/g, '');
+        if (innerNorm) slicesMap.set(innerNorm, slice);
+      }
     }
   }
 
@@ -284,8 +298,26 @@ export class FileRuleStore implements IRuleStore {
       return undefined;
     }
 
+    // 1. 尝试使用清洗后的主键匹配 (已剔除括号与外围说明)
     const normKey = this.normalizeRoutingKey(routingKey);
-    const slice = standardEntry.slices.get(normKey);
+    let slice = standardEntry.slices.get(normKey);
+
+    // 2. 若未命中且原始 key 中包含括号 (如 'TP316L (UNS S31603)')，尝试使用括号内部提取的内容匹配
+    if (!slice) {
+      const bracketMatch = routingKey.match(/[(（]([^()（）]+)[)）]/);
+      if (bracketMatch && bracketMatch[1]) {
+        const innerClean = bracketMatch[1].replace(/UNS\s*/i, '').trim();
+        const innerNorm = innerClean.toUpperCase().replace(/[\s\-_]/g, '');
+        slice = standardEntry.slices.get(innerNorm);
+      }
+    }
+
+    // 3. 若仍未命中，尝试原始直通 (纯大写去空格)
+    if (!slice) {
+      const rawKey = routingKey.toUpperCase().replace(/[\s\-_]/g, '');
+      slice = standardEntry.slices.get(rawKey);
+    }
+
     if (slice) {
       logger.debug('REPOSITORY', `倒排索引精准命中规格切片: [${standardId}] -> 路由键 [${routingKey}] 映射至 [${slice.spec_key}]`);
     } else {
@@ -302,6 +334,8 @@ export class FileRuleStore implements IRuleStore {
     if (!standardIds || standardIds.length === 0) return undefined;
 
     const slicesWithMeta: SliceWithStandardMeta[] = [];
+    const missingStandards: string[] = [];
+
     for (const stdId of standardIds) {
       const slice = await this.resolveRuleSlice(stdId, routingKey);
       if (slice) {
@@ -311,7 +345,15 @@ export class FileRuleStore implements IRuleStore {
           standardId: stdId,
           standardName: meta?.standard_name,
         });
+      } else {
+        missingStandards.push(stdId);
       }
+    }
+
+    // 严格质量红线：若参与的标准中任意一部未能匹配切片，严禁静默丢弃，返回 undefined 交由流程显式阻断
+    if (missingStandards.length > 0) {
+      logger.warn('REPOSITORY', `标准 [${missingStandards.join(', ')}] 未能命中规格切片 [${routingKey}]，中止静默降级`);
+      return undefined;
     }
 
     if (slicesWithMeta.length === 0) {

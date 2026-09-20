@@ -57,18 +57,25 @@ export function createRetrieveStandardNode(ruleStore?: IRuleStore) {
       };
     }
 
-    const gradeKey = options?.forcedGradeKey || normalizedCert.header.declared_grade;
+    // 确定切片路由牌号：优先采用归一化消歧后的主牌号 (如 022Cr17Ni12Mo2)，防止前端透传未清洗的括号附注导致路由落空
+    const primaryGrade = (normalizedCert.header.declared_grade && normalizedCert.header.declared_grade !== 'UNKNOWN')
+      ? normalizedCert.header.declared_grade
+      : (options?.forcedGradeKey || 'UNKNOWN');
 
-    logger.info('WORKFLOW', `[Node 3: Retrieve Standard] 正在检索标准 [${standardIds.join('、')}] 与规格切片 [${gradeKey}]...`);
-    collector.addTrace('WORKFLOW', 'info', `[节点 3] 检索标准库: 标准 [${standardIds.join('、')}] 切片 [${gradeKey}]`);
+    logger.info('WORKFLOW', `[Node 3: Retrieve Standard] 正在检索标准 [${standardIds.join('、')}] 与规格切片 [${primaryGrade}]...`);
+    collector.addTrace('WORKFLOW', 'info', `[节点 3] 检索标准库: 标准 [${standardIds.join('、')}] 切片 [${primaryGrade}]`);
 
     try {
       const primaryStandardId = standardIds[0]!;
       const standardRuleSet = await store.getCompleteStandard(primaryStandardId);
 
       // 无论单标或多标，统一调用 resolveCompositeSlice 获得带追溯元数据的合成切片
-      const compositeSlice = await store.resolveCompositeSlice(standardIds, gradeKey);
-      const matchedSlice = compositeSlice || (await store.resolveRuleSlice(primaryStandardId, gradeKey));
+      let compositeSlice = await store.resolveCompositeSlice(standardIds, primaryGrade);
+
+      // 若以 primaryGrade 未命中且 options?.forcedGradeKey 存在且不同，尝试二次检索
+      if (!compositeSlice && options?.forcedGradeKey && options.forcedGradeKey !== primaryGrade) {
+        compositeSlice = await store.resolveCompositeSlice(standardIds, options.forcedGradeKey);
+      }
 
       if (!standardRuleSet && !compositeSlice) {
         const errorMsg = `未收录标准 [${standardIds.join('、')}]，请检查标准代号或在标准库中补充配置`;
@@ -81,20 +88,27 @@ export function createRetrieveStandardNode(ruleStore?: IRuleStore) {
         };
       }
 
-      if (!matchedSlice) {
-        const msg = `标准 [${standardIds.join('、')}] 中未检索到规格切片 [${gradeKey}]`;
-        logger.warn('WORKFLOW', `[Node 3: Retrieve Standard] ${msg}`);
-        collector.addTrace('WORKFLOW', 'warn', `[节点 3] ${msg}`);
-      } else {
-        logger.info(
-          'WORKFLOW',
-          `[Node 3: Retrieve Standard] 成功装载${compositeSlice ? '多标准合成' : ''}规格切片 [${matchedSlice.spec_key}] (包含 ${matchedSlice.evaluation_rules.length} 项检验规则)`
-        );
+      // 严格质量红线：若参与标准中未能完整装配切片，杜绝隐式回退丢标，显式阻断
+      if (!compositeSlice) {
+        const targetGradeStr = options?.forcedGradeKey || primaryGrade;
+        const msg = `标准 [${standardIds.join('、')}] 中未能完整检索到牌号规格切片 [${targetGradeStr}]，请检查标准代号或在上方指定等效标准与牌号`;
+        logger.error('WORKFLOW', `[Node 3: Retrieve Standard] ${msg}`);
+        collector.addTrace('WORKFLOW', 'error', `[节点 3] ${msg}`);
+        return {
+          error: `Retrieve Standard Node Failed: ${msg}`,
+          traces: collector.getTraces(),
+          workflowStatus: 'failed',
+        };
       }
+
+      logger.info(
+        'WORKFLOW',
+        `[Node 3: Retrieve Standard] 成功装载规格切片 [${compositeSlice.spec_key}] (包含 ${compositeSlice.evaluation_rules.length} 项检验规则)`
+      );
 
       return {
         standardRuleSet,
-        matchedSlice,
+        matchedSlice: compositeSlice,
         compositeSlice,
         traces: collector.getTraces(),
         workflowStatus: 'evaluating',

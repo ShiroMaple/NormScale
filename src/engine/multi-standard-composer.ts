@@ -397,8 +397,12 @@ export function composeMultiStandardSlices(
 
   return {
     ...primarySlice,
-    display_name: `${primarySlice.display_name} (多标准合成切片)`,
-    description: `多标准严苛交集切片 (${sourceStandards.join(' + ')})`,
+    display_name: sourceStandards.length > 1
+      ? `${primarySlice.display_name} (多标准合成切片)`
+      : `${primarySlice.display_name} (${sourceStandards[0]})`,
+    description: sourceStandards.length > 1
+      ? `多标准严苛交集切片 (${sourceStandards.join(' + ')})`
+      : `执行标准切片 (${sourceStandards[0]})`,
     composite_meta: {
       source_standards: sourceStandards,
       source_standards_names: sourceStandardsNames,
