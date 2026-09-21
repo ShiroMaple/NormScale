@@ -688,13 +688,31 @@ export function enrichChemicalOtherColumn(drafts: ExtractionDrafts, blocks: Text
   const ENTRY_RE = /([A-Z][a-z]?)：\s*([≤≥<>])?\s*([\d.]+)(?:\s*[～~]\s*([\d.]+))?/g;
   let added = 0;
   for (const block of chemBlocks) {
-    // 折行表格按行组处理：含牌号令牌的行开启新行组，其后的折行（含"其他"列条目）归属该行组
+    // 折行表格按行组处理：含牌号令牌的行开启新行组，其后的折行（含"其他"列条目）归属该行组。
+    // 令牌匹配必须按"最长命中优先 + 非字母数字边界"，否则 06Cr19Ni10N 会误命中 06Cr19Ni10
+    // （子串包含），把含氮牌号的 N 规则错挂到无氮牌号切片（S30408 误挂 N 规则实证）
+    const tokenBoundary = (line: string, token: string): boolean => {
+      let idx = line.indexOf(token);
+      while (idx >= 0) {
+        const before = idx > 0 ? line[idx - 1]! : ' ';
+        const after = idx + token.length < line.length ? line[idx + token.length]! : ' ';
+        if (!/[A-Za-z0-9]/.test(before) && !/[A-Za-z0-9]/.test(after)) return true;
+        idx = line.indexOf(token, idx + 1);
+      }
+      return false;
+    };
     let currentSlice: (typeof drafts.slices)[number] | null = null;
     for (const line of block.text.split('\n')) {
-      const owner = drafts.slices.find((s) =>
-        [s.spec_key, s.primary_grade].filter((t): t is string => typeof t === 'string' && t.length > 0).some((t) => line.includes(t)),
-      );
-      if (owner) currentSlice = owner;
+      // 收集本行所有边界命中，取 token 最长者对应的切片（防前缀牌号误吞）
+      let best: { slice: (typeof drafts.slices)[number]; len: number } | null = null;
+      for (const s of drafts.slices) {
+        for (const t of [s.spec_key, s.primary_grade]) {
+          if (typeof t === 'string' && t.length > 0 && tokenBoundary(line, t) && (!best || t.length > best.len)) {
+            best = { slice: s, len: t.length };
+          }
+        }
+      }
+      if (best) currentSlice = best.slice;
       if (!currentSlice) continue;
       for (const m of line.matchAll(ENTRY_RE)) {
         const el = m[1]!;
@@ -728,6 +746,25 @@ export function enrichChemicalOtherColumn(drafts: ExtractionDrafts, blocks: Text
     }
   }
   return added;
+}
+
+/**
+ * MPa 强度规则修约位数确定性归一：标准中 MPa 级强度指标均为整数值，
+ * LLM 偶发漏填 rounding_decimals 导致修约行为漂移（z26022c 回归实证：
+ * 0.2 应修约为 0 判 FAIL，缺字段时引擎默认精度判 0.2）。
+ * unit=MPa 且未声明 rounding_decimals 的 numeric_range 规则统一补 0（幂等）
+ */
+export function normalizeStrengthRounding(drafts: ExtractionDrafts): ExtractionDrafts {
+  for (const slice of drafts.slices ?? []) {
+    for (const rule of slice.evaluation_rules ?? []) {
+      if (rule.rule_type !== 'numeric_range') continue;
+      const c = rule.criteria as { unit?: unknown; rounding_decimals?: unknown };
+      if (c?.unit === 'MPa' && typeof c.rounding_decimals !== 'number') {
+        c.rounding_decimals = 0;
+      }
+    }
+  }
+  return drafts;
 }
 
 /**

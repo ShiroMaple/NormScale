@@ -44,13 +44,14 @@ function loadManifest(): Manifest {
   return JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8')) as Manifest;
 }
 
-describe('golden 规则族对账清单（NB/T 47019.5-2021 五切片）', () => {
+describe('golden 规则族对账清单（NB/T 47019.5-2021 全量切片）', () => {
   it('清单结构自检：字段齐备、rule_id 切片内唯一、族范围限定五族、计数一致', () => {
     const manifest = loadManifest();
     expect(manifest.standard_id).toBe('NB/T 47019.5-2021');
     expect(manifest.families).toEqual([...RECONCILE_FAMILIES]);
-    expect(manifest.slice_count).toBe(5);
-    expect(manifest.slices.map((s) => s.spec_key)).toEqual(['S30408', 'S31008', 'S31603', 'S32168', 'S34778']);
+    // v1.7.4 promote 后正式库为管线全量产物（22 切片）；清单由导出脚本生成，计数以其为准
+    expect(manifest.slice_count).toBe(22);
+    expect(manifest.slice_count).toBe(manifest.slices.length);
 
     let ruleCount = 0;
     for (const slice of manifest.slices) {

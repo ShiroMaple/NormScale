@@ -5,7 +5,7 @@ import { NoTextLayerError, pdfCacheDir, preprocessPdf } from './preprocess.ts';
 import { countGradeRows, segmentText } from './segmenter.ts';
 import { PROFILES, sniffProfile } from './standard-profile.ts';
 import type { ProfileId, StandardProfile } from './standard-profile.ts';
-import { createDefaultChatClient, dedupeDraftRules, enrichChemicalOtherColumn, extractAll, fillSliceHarnessFields, isAppendixLikeRef, normalizeSourceClauseRefs, sanitizeToleranceNumericFields, backfillUnifiedCodes, mountRulesByGrades, dedupeSliceRulesByPropertyKey } from './llm-extract.ts';
+import { createDefaultChatClient, dedupeDraftRules, enrichChemicalOtherColumn, extractAll, fillSliceHarnessFields, isAppendixLikeRef, normalizeSourceClauseRefs, sanitizeToleranceNumericFields, backfillUnifiedCodes, normalizeStrengthRounding, mountRulesByGrades, dedupeSliceRulesByPropertyKey } from './llm-extract.ts';
 import { repairHardnessOptions } from './hardness-table.ts';
 import { buildClauseTextIndex, FULL_RULE_FAMILIES, runGates } from './gates.ts';
 import type { GateIssue } from './gates.ts';
@@ -445,6 +445,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
     progress(`化学"其他"列区间补提取：新增 ${enrichedChem} 条元素规则（Cu/N 等，确定性）`);
     dedupeDraftRules(cached.drafts);
   }
+  normalizeStrengthRounding(cached.drafts);
   // v1.7.4 硬度空 options 确定性修复（幂等，无需重提 LLM）：已有草稿中 criteria.options 数值缺失的
   // 硬度规则按 source_clause 定位原块做确定性解析并就地替换；无解析结果时保持原样交人工/S3
   const hardnessRepaired = repairHardnessOptions(cached.drafts, cached.blocks);

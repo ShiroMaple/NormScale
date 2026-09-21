@@ -1,10 +1,13 @@
 {
   "spec_key": "S31668",
   "primary_grade": "06Cr17Ni12Mo2Ti",
-  "unified_code": "S31668",
   "structure_type": "austenitic",
   "display_name": "06Cr17Ni12Mo2Ti (S31668)",
-  "aliases": [],
+  "aliases": [
+    "316Ti",
+    "SUS316Ti",
+    "TP316Ti"
+  ],
   "evaluation_rules": [
     {
       "rule_id": "CHEM_S31668_C",
@@ -119,20 +122,6 @@
       }
     },
     {
-      "rule_id": "CHEM_S31668_Ti",
-      "category": "chemical",
-      "property_key": "Ti",
-      "display_name": "Ti含量 (Ti)",
-      "rule_type": "numeric_range",
-      "requirement_level": "MANDATORY",
-      "criteria": {
-        "min": null,
-        "max": 0.7,
-        "unit": "%",
-        "rounding_decimals": 2
-      }
-    },
-    {
       "rule_id": "MECH_S31668_tensile_strength",
       "category": "mechanical",
       "property_key": "tensile_strength",
@@ -142,7 +131,8 @@
       "criteria": {
         "min": 530,
         "max": null,
-        "unit": "MPa"
+        "unit": "MPa",
+        "rounding_decimals": 0
       }
     },
     {
@@ -155,7 +145,8 @@
       "criteria": {
         "min": 205,
         "max": null,
-        "unit": "MPa"
+        "unit": "MPa",
+        "rounding_decimals": 0
       }
     },
     {
@@ -170,12 +161,202 @@
         "max": null,
         "unit": "%"
       }
+    },
+    {
+      "rule_id": "PROC_FLATTENING_S31668",
+      "category": "process",
+      "property_key": "flattening_test",
+      "display_name": "压扁试验",
+      "description": "依据 NB/T 47019.5-2021 第6.5.1条：壁厚不大于10mm的管子按 NB/T 47019.1 规定进行压扁试验。【公式来源标注】引自 NB/T 47019.1（待被引标准入库后复核）。",
+      "rule_type": "dynamic_formula_pass",
+      "requirement_level": "MANDATORY",
+      "trigger_condition": "ctx.header.dimensions.wall_thickness_mm <= 10",
+      "criteria": {
+        "formula_distance_H": "(1 + 0.09) * S / (0.09 + S / D)",
+        "expected_visual_result": "NO_CRACKS",
+        "test_standard": "NB/T 47019.1"
+      }
+    },
+    {
+      "rule_id": "PROC_FLARING_SEAMLESS_AUSTENITIC_S31668",
+      "category": "process",
+      "property_key": "flaring_test",
+      "display_name": "无缝管扩口试验（奥氏体型）",
+      "description": "壁厚不大于10mm的无缝管应进行扩口试验；顶心锥度60°；奥氏体型管子外径扩口率不小于18%；扩口试验后的试样不应出现裂缝或裂口。",
+      "rule_type": "qualitative_and_numeric",
+      "requirement_level": "MANDATORY",
+      "trigger_condition": "ctx.header.dimensions.wall_thickness_mm <= 10",
+      "criteria": {
+        "cone_angle_deg": 60,
+        "flaring_rate_min_percent": 18,
+        "expected_visual_result": "NO_CRACKS_OR_SPLITS"
+      }
+    },
+    {
+      "rule_id": "PROC_REVERSE_BEND_S31668",
+      "category": "process",
+      "property_key": "reverse_bend_test",
+      "display_name": "焊接接头反向弯曲试验",
+      "description": "焊接管应进行焊接接头反向弯曲试验。从管子上截取一段长100mm的试样，沿距焊缝两侧成90°角位置纵向剖开，并将试样展平。弯芯直径为4倍试样厚度，弯曲时弯芯应紧靠并平行于外焊缝，使焊缝处于最大弯曲点，弯曲角度为180°。反向弯曲试验后，试样不应出现裂纹或焊接缺陷。【适用性修正】仅焊接管适用（焊接接头反向弯曲），无缝管法定免检。",
+      "rule_type": "qualitative_pass",
+      "requirement_level": "CONDITIONAL",
+      "criteria": {
+        "expected": "NO_CRACKS_OR_WELD_DEFECTS"
+      },
+      "trigger_condition": "ctx.header.manufacturing_process == 'welded'"
+    },
+    {
+      "rule_id": "NDT_TIGHTNESS_SEAMLESS_GROUP_S31668",
+      "category": "ndt",
+      "property_key": "pressure_tightness",
+      "display_name": "无缝管致密性检验组",
+      "description": "无缝管应逐根进行水压试验；经供需双方协商确定，可用涡流检测代替水压试验。",
+      "rule_type": "alternative_group",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "group_logic": "AT_LEAST_ONE_PASS",
+        "candidates": [
+          {
+            "candidate_key": "hydraulic_test",
+            "display_name": "逐根水压试验",
+            "test_standard": "NB/T 47019.1—2021",
+            "max_pressure_cap": 20,
+            "min_holding_time_s": 10,
+            "criteria_description": "水压试验应符合 NB/T 47019.1—2021 中 7.5 的规定，最大试验压力不超过 20MPa，稳压时间不小于 10s；具体阈值以被引标准为准。"
+          },
+          {
+            "candidate_key": "eddy_current_test",
+            "display_name": "涡流检测替代",
+            "test_standard": "GB/T 7735—2016",
+            "required_level": "E2H",
+            "criteria_description": "经供需双方协商确定，可用涡流检测代替水压试验。无缝管外径≤25mm 的对比样管人工缺陷为通孔直径 0.8mm；外径＞25mm 的对比样管，人工缺陷和验收等级应符合 GB/T 7735—2016 中 E2H 级的规定。"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CORR_INTERGRANULAR_S31668",
+      "category": "corrosion",
+      "property_key": "intergranular_corrosion",
+      "display_name": "晶间腐蚀试验",
+      "description": "管子应按 GB/T 4334—2020 中方法 E 的规定进行晶间腐蚀试验，试验后试样不应出现晶间腐蚀倾向。根据需方要求并在合同中注明，也可采用其他腐蚀试验方法。",
+      "rule_type": "qualitative_enum",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "method": "Method_E",
+        "test_standard": "GB/T 4334—2020",
+        "expected": "NO_CORROSION_TREND"
+      }
+    },
+    {
+      "rule_id": "NDT_ULTRASONIC_S31668",
+      "category": "ndt",
+      "property_key": "ultrasonic_test",
+      "display_name": "超声检测",
+      "description": "无缝管应逐根进行超声检测，对比样管纵向刻槽深度等级应符合 GB/T 5777—2019 中 U2 级的规定。",
+      "rule_type": "enum_acceptance",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "required_level": "U2",
+        "test_standard": "GB/T 5777—2019"
+      }
+    },
+    {
+      "rule_id": "SURFACE_DEFECT_FREE_S31668",
+      "category": "surface",
+      "property_key": "surface_quality",
+      "display_name": "无缝管表面质量",
+      "description": "无缝管的内外表面不应有裂缝、折叠、轧折、离层和结疤。若有这些缺陷应清除，清除处的实际壁厚应不小于壁厚允许的最小值，且清除处应圆滑过渡。不超过壁厚允许最小值的其他局部缺陷允许存在。",
+      "rule_type": "qualitative_pass",
+      "requirement_level": "MANDATORY",
+      "criteria": {
+        "expected": "CLEAN_PASS"
+      }
+    },
+    {
+      "rule_id": "SURFACE_ROUGHNESS_S31668",
+      "category": "surface",
+      "property_key": "surface_roughness",
+      "display_name": "表面粗糙度",
+      "description": "依据 NB/T 47019.5-2021 第6.12条：管子内外表面粗糙度 Ra 应符合 NB/T 47019.1—2021 中 7.11.4 的规定。【阈值来源标注】0.8μm 为被引标准惯例值，约定检验项（待 NB/T 47019.1 入库后复核替换）。",
+      "rule_type": "numeric_range",
+      "requirement_level": "OPTIONAL_AGREED",
+      "criteria": {
+        "min": null,
+        "max": 0.8,
+        "unit": "μm",
+        "rounding_decimals": 2
+      }
+    },
+    {
+      "rule_id": "CHEM_TI_STABILIZED_5C_S31668",
+      "category": "chemical",
+      "property_key": "Ti",
+      "display_name": "Ti含量 (Ti 动态公式)",
+      "rule_type": "dynamic_expression",
+      "criteria": {
+        "formula_min": "5 * ctx.chemical.C",
+        "formula_max": null,
+        "min": null,
+        "max": 0.7,
+        "unit": "%",
+        "rounding_decimals": 3
+      }
+    },
+    {
+      "rule_id": "DET_HARDNESS_AUSTENITIC_2_S31668",
+      "category": "mechanical",
+      "property_key": "hardness",
+      "display_name": "硬度试验 (HRB/HBW/HV)",
+      "description": "确定性硬度表解析：表4 第 2 数据行（组织类型 austenitic）",
+      "rule_type": "or_choice_group",
+      "requirement_level": "OPTIONAL_AGREED",
+      "trigger_condition": "ctx.header.dimensions.wall_thickness_mm >= 1.7",
+      "criteria": {
+        "options": [
+          {
+            "sub_key": "HBW",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "min": null,
+              "max": 187,
+              "unit": "HBW"
+            }
+          },
+          {
+            "sub_key": "HRB",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "min": null,
+              "max": 90,
+              "unit": "HRB"
+            }
+          },
+          {
+            "sub_key": "HV",
+            "rule_type": "numeric_range",
+            "criteria": {
+              "min": null,
+              "max": 200,
+              "unit": "HV"
+            }
+          }
+        ]
+      }
     }
   ],
+  "spec_type": "grade",
+  "standard_code": "NB/T 47019.5-2021",
+  "description": "NB/T 47019.5-2021 06Cr17Ni12Mo2Ti (S31668) 化学成分、力学性能与工艺检验规则切片",
+  "unified_code": "S31668",
   "coverage": "partial",
   "extracted_families": [
     "chemical",
-    "mechanical"
-  ],
-  "standard_code": "NB/T 47019.5-2021"
+    "mechanical",
+    "process",
+    "metallographic",
+    "corrosion",
+    "ndt",
+    "surface"
+  ]
 }
