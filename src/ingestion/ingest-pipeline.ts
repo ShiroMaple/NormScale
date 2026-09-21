@@ -6,6 +6,7 @@ import { countGradeRows, segmentText } from './segmenter.ts';
 import { PROFILES, sniffProfile } from './standard-profile.ts';
 import type { ProfileId, StandardProfile } from './standard-profile.ts';
 import { createDefaultChatClient, dedupeDraftRules, extractAll, fillSliceHarnessFields, isAppendixLikeRef, normalizeSourceClauseRefs, sanitizeToleranceNumericFields, backfillUnifiedCodes, mountRulesByGrades, dedupeSliceRulesByPropertyKey } from './llm-extract.ts';
+import { repairHardnessOptions } from './hardness-table.ts';
 import { buildClauseTextIndex, FULL_RULE_FAMILIES, runGates } from './gates.ts';
 import type { GateIssue } from './gates.ts';
 import type { ChatClient, DraftToleranceTable, ExtractionDrafts, TextBlock } from './types.ts';
@@ -60,9 +61,11 @@ import type { RenderPagesFn } from './vision-transcribe.ts';
 // 1.7.2：SA-213 E2E en 档定点——⑤ surface 关键词补全（surface condition/free of scale/pickled/special finish）；
 //         ③ unified_code 解析去冒充（不再缺省回填 spec_key）+ en prompt 强制 UNS 逐字/缺省留空；
 //         ② 标题拒绝纯硬度单位令牌（"90 HRB" 折行值曾把 TABLE4 碎成数十块）+ 力学 prompt 注入牌号主键闭集
+// 1.7.4：确定性硬度表解析器（NB 表4/GB 表5 样例全覆盖：列对位按标尺表头/折行拼接/其他行 ORG 标记）
+//         ——extractAll 命中即不走 LLM；管线级 repairHardnessOptions 支持缓存草稿幂等回放修复
 // 1.7.3：拆批阈值 12→6 行/批（K3 订阅端点深度思考下 12 行单批反复触及 600s 超时；6 行单批可收敛）；
 //       入库默认客户端增加停滞看门狗（120s 无数据流入即放弃重试，根治半开流挂死）
-export const ingestConfigVersion = '1.7.3';
+export const ingestConfigVersion = '1.7.4';
 
 export class GarbledTextLayerError extends Error {
   public garbledRefs: string[];
@@ -87,6 +90,8 @@ export interface IngestOptions {
   visionChatClient?: ChatClient;
   /** 关闭视觉转录通道：无文本层/乱码显式报错（退回 v1 语义），不转多模态 */
   noVision?: boolean;
+  /** 人工确认放行的全新 property_key（注册表外合法新指标，CLI --accept-keys 传入） */
+  acceptNewKeys?: string[];
   /** 入库专用 LLM 配置 id（config.json llm.configs 中的 id）；缺省走 llm.ingestConfigId / isDefault */
   llmConfigId?: string;
   /** 测试注入：替换 PDF 页面渲染实现（隔离 @napi-rs/canvas 真实渲染） */
@@ -434,6 +439,12 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
   // v1.7.3 UNS/统一代号确定性回补与重挂载（无需重提 LLM）：
   // 切片缺 unified_code（或商用名冒充形态）时从化学表行逐字回补，再对未挂载规则重挂载
   backfillUnifiedCodes(cached.drafts, cached.blocks);
+  // v1.7.4 硬度空 options 确定性修复（幂等，无需重提 LLM）：已有草稿中 criteria.options 数值缺失的
+  // 硬度规则按 source_clause 定位原块做确定性解析并就地替换；无解析结果时保持原样交人工/S3
+  const hardnessRepaired = repairHardnessOptions(cached.drafts, cached.blocks);
+  if (hardnessRepaired > 0) {
+    progress(`硬度空 options 确定性修复：${hardnessRepaired} 条规则已就地替换`);
+  }
   if ((cached.drafts.unmounted_rules?.length ?? 0) > 0) {
     const remount = mountRulesByGrades(cached.drafts.unmounted_rules!, cached.drafts.slices);
     let remounted = 0;
@@ -498,6 +509,7 @@ export async function ingestStandard(options: IngestOptions): Promise<IngestResu
     fullDocumentText: cached.blocks.map((b) => b.text).join('\n\n'),
     // v1.7.3：en 档关闭 CJK 强制（定性原文层与语言一致性 lint 以源语言为准）
     requireCjk: resolvedProfile!.gateRules.requireCjk,
+    acceptedNewKeys: options.acceptNewKeys,
   });
 
   const metaId = String(cached.drafts.meta.standard_id || 'UNKNOWN_STANDARD');

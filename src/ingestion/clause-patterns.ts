@@ -18,7 +18,8 @@ export interface ClausePatternResult {
 }
 
 /** 组织类型词 -> slice.structure_type 查表映射（中英双语） */
-const STRUCTURE_TYPE_MAP: Record<string, string> = {
+/** 组织类型词 -> slice.structure_type 查表映射（中英双语）；硬度表解析器复用 */
+export const STRUCTURE_TYPE_MAP: Record<string, string> = {
   奥氏体: 'austenitic',
   铁素体: 'ferritic',
   双相: 'duplex',
@@ -124,7 +125,8 @@ const CONDITION_OPERATOR_MAP: Record<string, string> = {
   'less than': '<',
 };
 
-function extractTriggerCondition(sentence: string): string | null {
+/** 条件触发提取（中英双语）；硬度表解析器复用 */
+export function extractTriggerCondition(sentence: string): string | null {
   const zh = ZH_CONDITION_RE.exec(sentence);
   if (zh) {
     const field = CONDITION_FIELD_MAP[zh[1]!];
@@ -144,7 +146,8 @@ function extractTriggerCondition(sentence: string): string | null {
 
 /* ---------- 协商条款（降级别标记：同句产出的非豁免规则降为 OPTIONAL_AGREED） ---------- */
 
-const AGREEMENT_RE = /经供需双方协商|根据需方要求.{0,20}协商|when specified by the purchaser|by agreement between/i;
+/** 协商条款检测；硬度表解析器复用（"根据需方要求"即协商语境，无论是否出现"协商"字样） */
+export const AGREEMENT_RE = /经供需双方协商|根据需方要求|when specified by the purchaser|by agreement between/i;
 
 /* ---------- 豁免（可不进行/无需进行/可不做） ---------- */
 

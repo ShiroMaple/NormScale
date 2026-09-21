@@ -13,6 +13,7 @@ import type {
   TextBlock,
 } from './types.ts';
 import { applyClausePatterns } from './clause-patterns.ts';
+import { parseHardnessTable } from './hardness-table.ts';
 import type { StandardProfile } from './standard-profile.ts';
 import { ZH_CN_PROFILE } from './standard-profile.ts';
 
@@ -1013,14 +1014,30 @@ export async function extractAll(
     }
   }
 
+  // v1.7.4 确定性硬度表解析优先：机械表块且含标尺列头（HBW/HRB/HV）时先走确定性解析——
+  // 根治 LLM 两轮产出空 options 的问题；命中产出（deterministic 标记）即剔除该块的 LLM 提取，未命中回退 LLM
+  const detHardnessRules: DraftRule[] = [];
+  const llmMechBlocks: TextBlock[] = [];
+  for (const block of mechBlocks) {
+    const blockIdx = blocks.indexOf(block);
+    const contextText = blockIdx >= 0 ? blocks.slice(Math.max(0, blockIdx - 3), blockIdx).map((b) => b.text).join('\n') : '';
+    const parsed = parseHardnessTable(block, contextText);
+    if (parsed.hit && parsed.rules.length > 0) {
+      detHardnessRules.push(...parsed.rules);
+      onTask?.(`硬度表块 ${block.clauseRef} 由确定性解析器提取 ${parsed.rules.length} 条 or_choice_group（未走 LLM）...`);
+    } else {
+      llmMechBlocks.push(block);
+    }
+  }
+
   const mechSlices: DraftSlice[] = [];
   const gradeLines = gradeCatalogLines(chemSlices);
-  for (const [i, block] of mechBlocks.entries()) {
+  for (const [i, block] of llmMechBlocks.entries()) {
     const batches = splitGradeTableBlock(block, profile);
     if (batches.length > 1) {
       onTask?.(`表块 ${block.clauseRef} 拆为 ${batches.length} 批提取（每批 ≤${GRADE_TABLE_BATCH_SIZE} 牌号行）...`);
     }
-    onTask?.(`提取力学性能切片（第 ${i + 1}/${mechBlocks.length} 个表块 ${block.clauseRef}${batches.length > 1 ? `，${batches.length} 批` : ''}）...`);
+    onTask?.(`提取力学性能切片（第 ${i + 1}/${llmMechBlocks.length} 个表块 ${block.clauseRef}${batches.length > 1 ? `，${batches.length} 批` : ''}）...`);
     for (const batch of batches) {
       mechSlices.push(...(await extractMechanicalSlices(chat, [batch], profile, gradeLines)));
     }
@@ -1056,7 +1073,8 @@ export async function extractAll(
     appliesRules.push(...(await extractDynamicFormulas(chat, [block], catalogLines)));
   }
 
-  const { perSlice, unmounted } = mountRulesByGrades(appliesRules, mergedSlices);
+  // 确定性硬度表解析产出与其他 applies 规则同走挂载（dedupe 时 deterministic 恒胜 LLM 产物）
+  const { perSlice, unmounted } = mountRulesByGrades([...appliesRules, ...detHardnessRules], mergedSlices);
   mergedSlices.forEach((slice, i) => {
     slice.evaluation_rules.push(...perSlice[i]!);
   });

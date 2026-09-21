@@ -103,6 +103,12 @@ export interface GateInput {
   fullDocumentText?: string;
   /** 阶段 C profile：语言一致性 lint 开关（en-asme 档关闭 CJK 要求，缺省 true 与历史行为一致） */
   requireCjk?: boolean;
+  /**
+   * 人工确认放行的全新 property_key（注册表外 key 的人工接纳通道）。
+   * 注册表 lint 对命中此集合的 key 不再拦截——用于"确属新指标"的合法品类扩张，
+   * 由 CLI --accept-keys 传入并在报告中留痕；空集/缺省不改变既有行为
+   */
+  acceptedNewKeys?: ReadonlySet<string> | readonly string[];
 }
 
 export interface GateResult {
@@ -309,6 +315,8 @@ export function runGates(input: GateInput): GateResult {
   const propertyKeyRegistry = input.propertyKeyRegistry
     ? new Set<string>(input.propertyKeyRegistry)
     : null;
+  // 人工确认放行的全新 key（--accept-keys 通道，报告中应留痕）
+  const acceptedNewKeys = new Set<string>(input.acceptedNewKeys ?? []);
 
   // 2.0a 注册表归一化碰撞检测：两个不同注册 key 经 PropertyKeyNormalizer 归一到同一
   // canonical 时告警（WARN）——以质保书侧归一化输出为 canonical 基准（如 flattening 与
@@ -461,6 +469,7 @@ export function runGates(input: GateInput): GateResult {
       }
 
       if (propertyKeyRegistry && propertyKeyRegistry.size > 0 && !propertyKeyRegistry.has(rule.property_key)) {
+        if (acceptedNewKeys.has(rule.property_key)) continue;
         issue('LINT_PROPERTY_KEY_REGISTRY', `${ref} property_key "${rule.property_key}" 不在既有标准库注册表中（疑似命名漂移），转人工抽检确认`);
       }
     }

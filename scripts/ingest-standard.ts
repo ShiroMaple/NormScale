@@ -28,6 +28,7 @@ interface CliArgs {
   profile?: string;
   noVision: boolean;
   llmConfigId?: string;
+  acceptNewKeys?: string[];
   force: boolean;
 }
 
@@ -74,6 +75,13 @@ function parseArgs(argv: string[]): CliArgs {
       if (!args.llmConfigId) {
         throw new Error('--llm 需要参数（config.json 中的配置 id）');
       }
+    } else if (arg === '--accept-keys') {
+      // 人工确认放行的全新 property_key（逗号分隔）：注册表外的合法新指标，门禁放行并在报告留痕
+      const raw = argv[++i];
+      if (!raw) {
+        throw new Error('--accept-keys 需要参数（逗号分隔的 property_key 列表）');
+      }
+      args.acceptNewKeys = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
     } else if (arg === '--force') {
       args.force = true;
     } else if (!arg.startsWith('--') && args.pdfPath.length === 0) {
@@ -127,6 +135,7 @@ async function runIngest(args: CliArgs): Promise<void> {
     declaredFamilies: args.families,
     noVision: args.noVision,
     llmConfigId: args.llmConfigId,
+    acceptNewKeys: args.acceptNewKeys,
     force: args.force,
     onProgress: (msg) => console.log('  ▸ ' + msg),
   });
