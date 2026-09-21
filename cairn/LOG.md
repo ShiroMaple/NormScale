@@ -4,6 +4,16 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-20 · NB/T 47019.5-2021 正式库更替为最新管线全量产物（1a47b26）
+
+- 背景：用户指正"golden 非黄金准则"（同为早期 Agent 产物），要求以最新管线重切 NB 更替正式库；同时发现 ingestConfigId 被改回 k3-volume 导致按量计费（已订正回 k3-coding，314ccf8）；
+- 产物质量（v1.7.4，k3-coding）：22 切片 7 族全量（chem/mech/process/metallographic/corrosion/ndt/surface），晶粒度确定性精准 4 牌号、致密性替代组 20MPa+E2H、aliases 与旧值一致、TP304 级化学全对；
+- 过程修复链（全部确定性）：`hardness-table.ts` [NEW] 硬度表解析器（LLM 两轮空 options；列对位不硬编码 + 折行行组 + "其他"行 ORG 挂载 + 条款→表引用接力修复回放）；`enrichChemicalOtherColumn` 化学其他列 Cu/N 区间补提取（S39042 Cu 1.2~2.0 / S38367 Cu ≤0.75；06Cr19Ni10N 前缀边界误挂 N 修复）；`normalizeStrengthRounding` MPa 修约归一（z26022c 回归）；
+- **旧数据错误实证**：NB 表4"其他"行 HBW 实为 ≤187，旧 golden 写 ≤192（混淆 GB 表5 值）——管线确定性提取比旧"golden"更准；
+- 规则级人工修复（外部引用标注，注入 staging 后 promote）：压扁公式 dynamic_formula_pass、表面粗糙度 numeric OPTIONAL_AGREED 0.8μm、反向弯曲 CONDITIONAL 焊接管触发（无缝不再误判 MISSING FAIL）；
+- 公差表处置：存量 NB_T_47019_1_TABLE_2 为早期 Agent 从被引标准补录（本文件不含、引擎无消费者），按用户 doctrine 判为不可溯源数据，--force 净减放行留 forced 标记；
+- 验证就绪：88 套件 561 项单测 100% 绿灯，`tsc --noEmit` 0 错误，`standard:validate` 通过。
+
 ## 2026-09-20 · 执行标准支持自由清空至 0 部与未选/未声明标准统一空状态闭环
 
 - 消除不对称回退缺陷：彻底移除标准选择器取消已选标准时强行回退到库内首选标准（`catalog[0]`）的逻辑，允许执行标准自由清空至 0 部（`selectedStandardIds = []`）；
