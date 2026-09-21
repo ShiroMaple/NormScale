@@ -676,6 +676,61 @@ export function backfillUnifiedCodes(drafts: ExtractionDrafts, blocks: TextBlock
 }
 
 /**
+ * 化学表"其他"列普通数值区间确定性补提取（v1.7.4 回放修复，零 LLM）：
+ * "Cu：1.20～2.00"、"N：0.10" 这类普通区间不属于公式型条目（dynamic_formulas 通道），
+ * 却常被化学提取 prompt 的"其他列公式型不在本任务"语义误排除——S39042 的 Cu 规则丢失实证。
+ * 逐牌号行扫描 元素符号：数值[～数值] 形态（含字母/括号的公式形态自动跳过），
+ * 为切片补充缺失的 numeric_range 规则；已存在的 property_key 不重复添加。
+ * 数值直接取自原文行，天然满足溯源断言。
+ */
+export function enrichChemicalOtherColumn(drafts: ExtractionDrafts, blocks: TextBlock[]): number {
+  const chemBlocks = blocks.filter((b) => b.blockType === 'chemistry_table');
+  const ENTRY_RE = /([A-Z][a-z]?)：\s*([≤≥<>])?\s*([\d.]+)(?:\s*[～~]\s*([\d.]+))?/g;
+  let added = 0;
+  for (const block of chemBlocks) {
+    // 折行表格按行组处理：含牌号令牌的行开启新行组，其后的折行（含"其他"列条目）归属该行组
+    let currentSlice: (typeof drafts.slices)[number] | null = null;
+    for (const line of block.text.split('\n')) {
+      const owner = drafts.slices.find((s) =>
+        [s.spec_key, s.primary_grade].filter((t): t is string => typeof t === 'string' && t.length > 0).some((t) => line.includes(t)),
+      );
+      if (owner) currentSlice = owner;
+      if (!currentSlice) continue;
+      for (const m of line.matchAll(ENTRY_RE)) {
+        const el = m[1]!;
+        const comparator = m[2];
+        // 公式形态（Ti：5（C+N）～0.70、Nb：10C～1.10）：值段紧邻字母/括号，跳过（归 dynamic 通道）
+        const after = line.slice((m.index ?? 0) + m[0].length);
+        const valueInFormula = /[（(]|[A-Za-z]/.test(m[3]!) || /^\s*[（(A-Za-z]/.test(after) && !/^\s*[～~\d]/.test(after);
+        if (valueInFormula) continue;
+        if (currentSlice.evaluation_rules.some((r) => r.category === 'chemical' && r.property_key === el)) continue;
+        // 区间 "1.20～2.00" -> min/max 双界；单值按比较符定界（≤/< 上限，≥/> 下限，无符默认上限）
+        const max = m[4] ? Number(m[4]) : comparator === '≥' || comparator === '>' ? null : Number(m[3]);
+        const min = m[4] ? Number(m[3]) : comparator === '≥' || comparator === '>' ? Number(m[3]) : null;
+        currentSlice.evaluation_rules.push({
+          rule_id: `CHEM_${currentSlice.spec_key}_${el}`,
+          category: 'chemical',
+          property_key: el,
+          display_name: `${el}含量 (${el})`,
+          description: `依据化学表"其他"列：${el} ${m[4] ? `${m[3]}～${m[4]}` : `${comparator ?? '≤'} ${m[3]}`}%（确定性补提取）`,
+          rule_type: 'numeric_range',
+          requirement_level: 'MANDATORY',
+          criteria: {
+            min,
+            max,
+            unit: '%',
+            rounding_decimals: Math.max(m[3]!.split('.')[1]?.length ?? 0, (m[4] ?? '').split('.')[1]?.length ?? 0),
+          },
+          source_clause: block.clauseRef,
+        });
+        added += 1;
+      }
+    }
+  }
+  return added;
+}
+
+/**
  * source_clause 引用确定性归一：模型偶发把 prompt 的块标记原文抄入
  * （如 "【条款号 7.8】"），剥离标记字符与空白，使其与切块 clauseRef 精确对齐。
  * 对新鲜提取与缓存草稿幂等生效
