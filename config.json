@@ -10,7 +10,7 @@
     "timeoutMs": 60000,
     "maxRetries": 2,
     "ingestTimeoutMs": 600000,
-    "ingestConfigId": "k3-volume",
+    "ingestConfigId": "k3-coding",
     "configs": [
       {
         "id": "standard",
