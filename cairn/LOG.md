@@ -4,6 +4,14 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-20 · 标准入库管线剥离为独立项目 NormHub
+
+- 边界确认：`src/ingestion/`、`scripts/ingest-standard.ts`、`tests/ingestion/`、`tests/fixtures/nb-golden-family-rules.json` 全部迁移至 `C:\Users\gaoft\Documents\CodeSpace\NormHub`（独立 git 仓，初始提交 a866696）；`src/schemas/standard.schema.ts` 与 `src/normalizer/property-key-normalizer.ts` 为共享复制（NormScale 侧为主版本）；
+- NormScale 侧清理：移除 `standard:ingest` npm 脚本与 pdfjs-dist/@napi-rs/canvas 依赖（MTC 侧 PDF.js 为 CDN 动态加载不受影响）；`standard:validate` 保留；全量 72 套件 364 项单测全绿、`tsc --noEmit` 0 错误、`standard:validate` 通过；
+- NormHub 侧验证：独立 pnpm install、`typecheck` 0 错误、16 套件 197 项单测全绿（含 golden 对账指向 NormScale data/standards）；`config.json ingest.libraryRoot` 指向 NormScale data/standards 作为 promote 目标与存量对账根；
+- 数据与产物：`data/standards/`（含已晋级的 NB/T 47019.5-2021 管线产物）原样保留在 NormScale；运行缓存 `.cache/standard-ingest/` 归 NormHub 本地。
+
+## 2026-09-20 · NB/T 47019.5-2021 正式库更替为最新管线全量产物（1a47b26）
 ## 2026-09-20 · NB/T 47019.5-2021 正式库更替为最新管线全量产物（1a47b26）
 
 - 背景：用户指正"golden 非黄金准则"（同为早期 Agent 产物），要求以最新管线重切 NB 更替正式库；同时发现 ingestConfigId 被改回 k3-volume 导致按量计费（已订正回 k3-coding，314ccf8）；

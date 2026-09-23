@@ -23,6 +23,8 @@ authoring_mode: ai_generated
 
 # 标准文档离线入库管线（Standard Ingestion Pipeline）
 
+> **⚠️ 项目迁移通告（2026-09-20）**：管线代码已剥离至独立项目 **NormHub**（`C:\Users\gaoft\Documents\CodeSpace\NormHub`）。NormScale 侧仅保留解析产物（`data/standards/`）与 `pnpm standard:validate` 校验；`src/ingestion/`、`scripts/ingest-standard.ts`、`tests/ingestion/` 及 pdfjs-dist/@napi-rs/canvas 依赖已移除。NormHub 通过 `config.json` 的 `ingest.libraryRoot` 指向本项目的 data/standards 执行 promote。本文档作为管线架构知识存档继续有效，代码事实以 NormHub 仓库为准。
+
 ## 定位与核心决策
 
 将标准文档 PDF 按 `src/schemas/standard.schema.ts` 契约结构化归档至 `data/standards/<STD>/`（meta.json / slices/*.json / clauses.json）。
