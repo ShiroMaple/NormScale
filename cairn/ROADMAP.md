@@ -63,13 +63,13 @@
    - 步骤 1 前端入口就绪：独立划定技术协议单份 PDF 上传卡片并标记【功能待实施 · 暂未接入后端】；
    - 步骤 3 全景比对矩阵彻底打通：100% 引擎驱动，彻底废除伪造 mock 数据与硬编码 if-else；
    - 牌号免选落地：步骤 3 移除牌号下拉框，只读展示原件声明牌号；原牌号位置替换为【应用技术协议】卡片（选项留空待完善）。
-7. **[已解决] 标准离线入库工具链形态决策**：已落地「确定性 harness + LLM 有界初提」五阶段管线（`src/ingestion/` + `pnpm standard:ingest`），S3 四重确定性门禁（Zod/linter/溯源断言/牌号对账）+ MANUAL_REVIEW 显式阻断，配套 review-report.md 人工抽检报告；NB/T 47019.5 真实 E2E 与人工切片 golden 对比 30/30 一致。详见 [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)。
+7. **[已解决] 标准离线入库工具链形态决策**：已落地「确定性 harness + LLM 有界初提」五阶段管线（2026-09-20 起代码迁移至独立项目 NormHub，NormScale 仅保留产物 data/standards 与 `pnpm standard:validate`），S3 四重确定性门禁（Zod/linter/溯源断言/牌号对账）+ MANUAL_REVIEW 显式阻断，配套 review-report.md 人工抽检报告；NB/T 47019.5 真实 E2E 与人工切片 golden 对比 30/30 一致。详见 [`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)。
 8. **提取层服务边界与 DocEx REST API 待办**：当前 DocEx 项目端尚未实现专用的 MTC 质保书提取 REST API 端点（此项为未来联动待办），因此 Phase 3 优先通过 `ICertificateExtractor` 接口抽象完成协议契约与适配层（Mock / Direct LLM / HTTP Client），待 DocEx API 就绪后直接填入 URL 配置即可无缝打通。
 9. **历史遗留逻辑 Mock 排查与分支覆盖率专项治理**：
    - 核心洞察：数据 Mock 易于全局检索排查，但埋设在条件分支（如 fast-path 直通、错误降级、短路假定）中的“逻辑 Mock”隐蔽极深，常规行覆盖率单测常因未走异常分支而漏过隐雷；
    - 治理规划：后续专项安排带分支覆盖率（Branch Coverage 门禁 ≥ 80%）的测试度量体系，推行“分支覆盖补齐法”对各核心节点的决策分支逐一穿透，杜绝非标牌号或异常数据的静默放行漏洞。
 10. **[暂停待恢复] ASME SA-213 入库断点（2026-09-20 存档）**：
     - **当前状态**：en-asme 标准档已全链路打通（profile 嗅探/切块/化学/力学/工艺/公差/门禁），TP304 化学精度抽验与真值一致；产物仅在缓存 `.cache/standard-ingest/c22e010bb243a63cd57690c8dec96b52/`（drafts.json），门禁 MANUAL_REVIEW 未进 staging/正式库；
-    - **恢复条件**：用**完整版 SA-213 PDF** 替换 `docs/standards/` 下当前 16 页节选件后重跑 `pnpm standard:ingest`（缓存兼容，零 LLM 成本可重放门禁；全量重提加 `--force`）；
+    - **恢复条件**：用**完整版 SA-213 PDF** 替换 `docs/standards/` 下当前 16 页节选件后，在 **NormHub** 项目中重跑入库管线（`node --experimental-strip-types scripts/ingest-standard.ts <pdf>`，libraryRoot 已指向本项目 data/standards；缓存兼容可零成本重放门禁，全量重提加 `--force`）；
     - **遗留待办**：① 3 个幻影切片（S34752/N08925/N08926，用户已确认删除口径，节选件不存在对应牌号）；② T 系列低合金牌号力学表在完整版语料下的映射复核；③ drafts 分块增量缓存（中断重跑不再整段重提）；
     - **详细存档**：[`cairn/standard-ingestion-pipeline.md`](standard-ingestion-pipeline.md)「SA-213 E2E 结果与 en 档遗留问题」节。
