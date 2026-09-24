@@ -1,229 +1,364 @@
 {
-  "standard_id": "GB/T 13296-2023",
-  "standard_name": "锅炉、热交换器用不锈钢无缝钢管",
-  "version": "2023",
-  "description": "本标准规定了锅炉、热交换器用不锈钢无缝钢管的分类、代号、订货内容、尺寸、外形、重量、技术要求、试验方法、检验规则、包装、标志和质量证明书。",
-  "status": "CURRENT",
+  "standard_code": "GB/T 13296-2023",
+  "title": "锅炉、热交换器用不锈钢无缝钢管",
+  "publication_year": "2023",
+  "status": "ACTIVE",
   "material_category": "ferrous_pipe",
+  "description": "本标准规定了锅炉、热交换器用不锈钢无缝钢管的分类、代号、订货内容、尺寸、外形、重量、技术要求、试验方法、检验规则、包装、标志和质量证明书。",
   "applies_to_forms": [
     "tube_seamless"
   ],
-  "tolerance_tables": [
+  "grades": [
     {
-      "table_id": "TABLE_1",
-      "table_name": "表1 钢管公称外径和最小壁厚的允许偏差",
-      "rules": [
-        {
-          "dimension_property": "outer_diameter",
-          "process": "hot_rolled",
-          "delivery_mode": "min_wall",
-          "range_max": 140,
-          "plus_tolerance_value": 1.25,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": -1.25,
-          "minus_tolerance_is_percent": true,
-          "note": "<= 140mm: +-1.25%D"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "hot_rolled",
-          "delivery_mode": "min_wall",
-          "range_min": 140,
-          "plus_tolerance_value": 1,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": -1,
-          "minus_tolerance_is_percent": true,
-          "note": "> 140mm: +-1%D"
-        },
-        {
-          "dimension_property": "wall_thickness",
-          "process": "hot_rolled",
-          "delivery_mode": "min_wall",
-          "range_max": 4,
-          "plus_tolerance_value": 0.9,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": 0,
-          "minus_tolerance_is_percent": false,
-          "note": "<= 4.0mm: +0.90mm, 0"
-        },
-        {
-          "dimension_property": "wall_thickness",
-          "process": "hot_rolled",
-          "delivery_mode": "min_wall",
-          "range_min": 4,
-          "plus_tolerance_value": 25,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": 0,
-          "minus_tolerance_is_percent": false,
-          "note": "> 4.0mm: +25%S, 0"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_max": 25,
-          "plus_tolerance_value": 0.1,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.1,
-          "minus_tolerance_is_percent": false,
-          "note": "<= 25mm: +-0.10mm"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_min": 25,
-          "range_max": 40,
-          "plus_tolerance_value": 0.15,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.15,
-          "minus_tolerance_is_percent": false,
-          "note": "> 25~40mm: +-0.15mm"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_min": 40,
-          "range_max": 50,
-          "plus_tolerance_value": 0.2,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.2,
-          "minus_tolerance_is_percent": false,
-          "note": "> 40~50mm: +-0.20mm"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_min": 50,
-          "range_max": 65,
-          "plus_tolerance_value": 0.25,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.25,
-          "minus_tolerance_is_percent": false,
-          "note": "> 50~65mm: +-0.25mm"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_min": 65,
-          "range_max": 75,
-          "plus_tolerance_value": 0.3,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.3,
-          "minus_tolerance_is_percent": false,
-          "note": "> 65~75mm: +-0.30mm"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_min": 75,
-          "range_max": 100,
-          "plus_tolerance_value": 0.38,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.38,
-          "minus_tolerance_is_percent": false,
-          "note": "> 75~100mm: +-0.38mm"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_min": 100,
-          "range_max": 159,
-          "plus_tolerance_value": 0.38,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.64,
-          "minus_tolerance_is_percent": false,
-          "note": "> 100~159mm: +0.38mm, -0.64mm"
-        },
-        {
-          "dimension_property": "outer_diameter",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "range_min": 159,
-          "plus_tolerance_value": 0.5,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": -0.5,
-          "minus_tolerance_is_percent": true,
-          "note": "> 159mm: +-0.5%D"
-        },
-        {
-          "dimension_property": "wall_thickness",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "outer_diameter_limit": 38,
-          "plus_tolerance_value": 20,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": 0,
-          "minus_tolerance_is_percent": false,
-          "note": "D <= 38mm: +20%S, 0"
-        },
-        {
-          "dimension_property": "wall_thickness",
-          "process": "cold_drawn",
-          "delivery_mode": "min_wall",
-          "outer_diameter_limit": 38,
-          "plus_tolerance_value": 22,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": 0,
-          "minus_tolerance_is_percent": false,
-          "note": "D > 38mm: +22%S, 0"
-        }
-      ]
+      "spec_key": "S11306",
+      "primary_grade": "06Cr13",
+      "unified_code": "S11306",
+      "structure_type": "ferritic",
+      "aliases": [
+        "SUS410S",
+        "TP410S",
+        "0Cr13"
+      ],
+      "source_clause": "legacy-import"
     },
     {
-      "table_id": "TABLE_2",
-      "table_name": "表2 钢管公称壁厚的允许偏差",
-      "rules": [
-        {
-          "dimension_property": "wall_thickness",
-          "process": "hot_rolled",
-          "delivery_mode": "nominal_wall",
-          "range_max": 4,
-          "plus_tolerance_value": 0.45,
-          "plus_tolerance_is_percent": false,
-          "minus_tolerance_value": -0.45,
-          "minus_tolerance_is_percent": false,
-          "note": "<= 4.0mm: +-0.45mm"
-        },
-        {
-          "dimension_property": "wall_thickness",
-          "process": "hot_rolled",
-          "delivery_mode": "nominal_wall",
-          "range_min": 4,
-          "plus_tolerance_value": 12.5,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": -10,
-          "minus_tolerance_is_percent": true,
-          "note": "> 4.0mm: +12.5%S, -10%S"
-        },
-        {
-          "dimension_property": "wall_thickness",
-          "process": "cold_drawn",
-          "delivery_mode": "nominal_wall",
-          "outer_diameter_limit": 38,
-          "plus_tolerance_value": 10,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": -10,
-          "minus_tolerance_is_percent": true,
-          "note": "D <= 38mm: +-10%S"
-        },
-        {
-          "dimension_property": "wall_thickness",
-          "process": "cold_drawn",
-          "delivery_mode": "nominal_wall",
-          "outer_diameter_limit": 38,
-          "plus_tolerance_value": 11,
-          "plus_tolerance_is_percent": true,
-          "minus_tolerance_value": -11,
-          "minus_tolerance_is_percent": true,
-          "note": "D > 38mm: +-11%S"
-        }
-      ]
+      "spec_key": "S11710",
+      "primary_grade": "10Cr17",
+      "unified_code": "S11710",
+      "structure_type": "ferritic",
+      "aliases": [
+        "SUS430",
+        "TP430",
+        "1Cr17"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S12791",
+      "primary_grade": "008Cr27Mo",
+      "unified_code": "S12791",
+      "structure_type": "ferritic",
+      "aliases": [
+        "S12791"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30210",
+      "primary_grade": "12Cr18Ni9",
+      "unified_code": "S30210",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS302",
+        "TP302",
+        "1Cr18Ni9"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30403",
+      "primary_grade": "022Cr19Ni10",
+      "unified_code": "S30403",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304L",
+        "TP304L",
+        "00Cr19Ni10"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30408",
+      "primary_grade": "06Cr19Ni10",
+      "unified_code": "S30408",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304",
+        "TP304",
+        "0Cr18Ni9"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30409",
+      "primary_grade": "07Cr19Ni10",
+      "unified_code": "S30409",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304H",
+        "TP304H",
+        "1Cr18Ni9"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30453",
+      "primary_grade": "022Cr19Ni10N",
+      "unified_code": "S30453",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304LN",
+        "TP304LN"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30458",
+      "primary_grade": "06Cr19Ni10N",
+      "unified_code": "S30458",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304N",
+        "TP304N"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30908",
+      "primary_grade": "06Cr23Ni13",
+      "unified_code": "S30908",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS309",
+        "TP309"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30920",
+      "primary_grade": "16Cr23Ni13",
+      "unified_code": "S30920",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS309S",
+        "TP309S"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31008",
+      "primary_grade": "06Cr25Ni20",
+      "unified_code": "S31008",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS310",
+        "TP310"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31020",
+      "primary_grade": "20Cr25Ni20",
+      "unified_code": "S31020",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS310S",
+        "TP310S"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31252",
+      "primary_grade": "015Cr20Ni18Mo6CuN",
+      "unified_code": "S31252",
+      "structure_type": "austenitic",
+      "aliases": [
+        "254SMO",
+        "S31254",
+        "F44"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31603",
+      "primary_grade": "022Cr17Ni12Mo2",
+      "unified_code": "S31603",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS316L",
+        "TP316L",
+        "00Cr17Ni14Mo2"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31608",
+      "primary_grade": "06Cr17Ni12Mo2",
+      "unified_code": "S31608",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS316",
+        "TP316",
+        "0Cr17Ni12Mo2"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31609",
+      "primary_grade": "07Cr17Ni12Mo2",
+      "unified_code": "S31609",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS316H",
+        "TP316H"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31653",
+      "primary_grade": "022Cr17Ni12Mo2N",
+      "unified_code": "S31653",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS316LN",
+        "TP316LN"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31658",
+      "primary_grade": "06Cr17Ni12Mo2N",
+      "unified_code": "S31658",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS316N",
+        "TP316N"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31668",
+      "primary_grade": "06Cr17Ni12Mo2Ti",
+      "unified_code": "S31668",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS316Ti",
+        "TP316Ti",
+        "0Cr18Ni12Mo2Ti"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31683",
+      "primary_grade": "022Cr18Ni14Mo2Cu2",
+      "unified_code": "S31683",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316J1L"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31688",
+      "primary_grade": "06Cr18Ni12Mo2Cu2",
+      "unified_code": "S31688",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316J1"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31703",
+      "primary_grade": "022Cr19Ni13Mo3",
+      "unified_code": "S31703",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS317L",
+        "TP317L"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31708",
+      "primary_grade": "06Cr19Ni13Mo3",
+      "unified_code": "S31708",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS317",
+        "TP317"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S32168",
+      "primary_grade": "06Cr18Ni11Ti",
+      "unified_code": "S32168",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS321",
+        "TP321",
+        "0Cr18Ni10Ti"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S32169",
+      "primary_grade": "07Cr19Ni11Ti",
+      "unified_code": "S32169",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS321H",
+        "TP321H",
+        "1Cr18Ni9Ti"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S34778",
+      "primary_grade": "06Cr18Ni11Nb",
+      "unified_code": "S34778",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS347",
+        "TP347",
+        "0Cr18Ni11Nb"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S34779",
+      "primary_grade": "07Cr18Ni11Nb",
+      "unified_code": "S34779",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS347H",
+        "TP347H"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S38148",
+      "primary_grade": "06Cr18Ni13Si4",
+      "unified_code": "S38148",
+      "structure_type": "austenitic",
+      "aliases": [
+        "304Si"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S38367",
+      "primary_grade": "022Cr21Ni25Mo7N",
+      "unified_code": "S38367",
+      "structure_type": "austenitic",
+      "aliases": [
+        "654SMO",
+        "AL-6XN"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S39042",
+      "primary_grade": "015Cr21Ni26Mo5Cu2",
+      "unified_code": "S39042",
+      "structure_type": "austenitic",
+      "aliases": [
+        "904L",
+        "N08904",
+        "00Cr20Ni25Mo4.5Cu"
+      ],
+      "source_clause": "legacy-import"
     }
   ]
 }

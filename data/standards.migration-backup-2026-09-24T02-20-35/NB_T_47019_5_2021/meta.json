@@ -1,0 +1,22 @@
+{
+  "standard_id": "NB/T 47019.5-2021",
+  "standard_name": "锅炉、热交换器用管订货技术条件 第5部分：不锈钢",
+  "version": "2021",
+  "description": "本文件适用于锅炉、热交换器用不锈钢无缝和焊接管的订货。",
+  "status": "CURRENT",
+  "material_category": "ferrous_pipe",
+  "applies_to_forms": [
+    "tube_seamless",
+    "tube_welded"
+  ],
+  "standard_profile": "zh-cn",
+  "extracted_families": [
+    "chemical",
+    "mechanical",
+    "process",
+    "metallographic",
+    "corrosion",
+    "ndt",
+    "surface"
+  ]
+}

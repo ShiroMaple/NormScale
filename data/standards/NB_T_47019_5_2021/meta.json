@@ -1,13 +1,270 @@
 {
-  "standard_id": "NB/T 47019.5-2021",
-  "standard_name": "锅炉、热交换器用管订货技术条件 第5部分：不锈钢",
-  "version": "2021",
-  "description": "本文件适用于锅炉、热交换器用不锈钢无缝和焊接管的订货。",
-  "status": "CURRENT",
+  "standard_code": "NB/T 47019.5-2021",
+  "title": "锅炉、热交换器用管订货技术条件 第5部分：不锈钢",
+  "publication_year": "2021",
+  "status": "ACTIVE",
   "material_category": "ferrous_pipe",
+  "description": "本文件适用于锅炉、热交换器用不锈钢无缝和焊接管的订货。",
   "applies_to_forms": [
     "tube_seamless",
     "tube_welded"
+  ],
+  "grades": [
+    {
+      "spec_key": "S11306",
+      "primary_grade": "06Cr13",
+      "unified_code": "S11306",
+      "structure_type": "ferritic",
+      "aliases": [
+        "0Cr13",
+        "410S",
+        "SUS410S"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30403",
+      "primary_grade": "022Cr19Ni10",
+      "unified_code": "S30403",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304L",
+        "TP304L",
+        "00Cr19Ni10"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30408",
+      "primary_grade": "06Cr19Ni10",
+      "unified_code": "S30408",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304",
+        "TP304",
+        "0Cr18Ni9"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30409",
+      "primary_grade": "07Cr19Ni10",
+      "unified_code": "S30409",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304H",
+        "TP304H",
+        "304H"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30453",
+      "primary_grade": "022Cr19Ni10N",
+      "unified_code": "S30453",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304LN",
+        "TP304LN",
+        "304LN",
+        "00Cr18Ni10N"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S30458",
+      "primary_grade": "06Cr19Ni10N",
+      "unified_code": "S30458",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS304N1",
+        "304N",
+        "0Cr19Ni9N"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31008",
+      "primary_grade": "06Cr25Ni20",
+      "unified_code": "S31008",
+      "structure_type": "austenitic",
+      "aliases": [
+        "SUS310S",
+        "TP310S",
+        "0Cr25Ni20"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31252",
+      "primary_grade": "015Cr20Ni18Mo6CuN",
+      "unified_code": "S31252",
+      "structure_type": "austenitic",
+      "aliases": [],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31603",
+      "primary_grade": "022Cr17Ni12Mo2",
+      "unified_code": "S31603",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316L",
+        "SUS316L",
+        "TP316L",
+        "00Cr17Ni14Mo2"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31608",
+      "primary_grade": "06Cr17Ni12Mo2",
+      "unified_code": "S31608",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316",
+        "SUS316",
+        "TP316",
+        "0Cr17Ni12Mo2"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31609",
+      "primary_grade": "07Cr17Ni12Mo2",
+      "unified_code": "S31609",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316H",
+        "TP316H"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31653",
+      "primary_grade": "022Cr17Ni12Mo2N",
+      "unified_code": "S31653",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316LN",
+        "SUS316LN",
+        "TP316LN"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31658",
+      "primary_grade": "06Cr17Ni12Mo2N",
+      "unified_code": "S31658",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316N",
+        "SUS316N",
+        "TP316N"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31668",
+      "primary_grade": "06Cr17Ni12Mo2Ti",
+      "unified_code": "S31668",
+      "structure_type": "austenitic",
+      "aliases": [
+        "316Ti",
+        "SUS316Ti",
+        "TP316Ti"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31703",
+      "primary_grade": "022Cr19Ni13Mo3",
+      "unified_code": "S31703",
+      "structure_type": "austenitic",
+      "aliases": [
+        "317L",
+        "SUS317L",
+        "00Cr19Ni13Mo3"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S31708",
+      "primary_grade": "06Cr19Ni13Mo3",
+      "unified_code": "S31708",
+      "structure_type": "austenitic",
+      "aliases": [
+        "317",
+        "SUS317",
+        "0Cr19Ni13Mo3"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S32168",
+      "primary_grade": "06Cr18Ni11Ti",
+      "unified_code": "S32168",
+      "structure_type": "austenitic",
+      "aliases": [
+        "321",
+        "SUS321",
+        "0Cr18Ni10Ti",
+        "1Cr18Ni9Ti"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S32169",
+      "primary_grade": "07Cr19Ni11Ti",
+      "unified_code": "S32169",
+      "structure_type": "austenitic",
+      "aliases": [
+        "321H",
+        "SUS321H",
+        "1Cr18Ni11Ti"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S34778",
+      "primary_grade": "06Cr18Ni11Nb",
+      "unified_code": "S34778",
+      "structure_type": "austenitic",
+      "aliases": [
+        "347",
+        "SUS347",
+        "0Cr18Ni11Nb"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S34779",
+      "primary_grade": "07Cr18Ni11Nb",
+      "unified_code": "S34779",
+      "structure_type": "austenitic",
+      "aliases": [
+        "347H",
+        "SUS347H",
+        "1Cr19Ni11Nb"
+      ],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S38367",
+      "primary_grade": "022Cr21Ni25Mo7N",
+      "unified_code": "S38367",
+      "structure_type": "austenitic",
+      "aliases": [],
+      "source_clause": "legacy-import"
+    },
+    {
+      "spec_key": "S39042",
+      "primary_grade": "015Cr21Ni26Mo5Cu2",
+      "unified_code": "S39042",
+      "structure_type": "austenitic",
+      "aliases": [],
+      "source_clause": "legacy-import"
+    }
   ],
   "standard_profile": "zh-cn",
   "extracted_families": [

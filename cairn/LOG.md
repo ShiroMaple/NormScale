@@ -4,6 +4,20 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-24 · RASERule group 组语义 + NB 存量 clause_ref 回填（NormHub 2054fa4）
+
+- schema：`RASERule` 新增可选 `group {id, op: 'OR'|'AND'}`——修复硬度 HRB/HBW/HV 三选一被拆为独立 MANDATORY 导致引擎误判缺失的语义缺口；产出端三处同步：rase-convert（or_choice 拆分共享组）、DET2（同行多标尺共享组）、LLM prompt（多标尺硬度行/替代检验组要求输出 group）；
+- NB/T 47019.5-2021：clause_ref 全部回填真实条款号（490/490，源自迁移前备份 review-report.md 的 rule_id↔来源条款对照表），64 条硬度规则补齐 OR 组；GB/T 13296-2023 磁盘无对照表可恢复，留待 v2.0.0 管线重提修复；
+- 引擎消费注意：同 `group.id` 规则按 op 组合判定（OR=任选其一），不得逐条判缺失；`data/standards/NB_T_47019_5_2021/rules.json.bak-clause-ref` 为回填前备份。
+
+## 2026-09-24 · data/standards 存量迁移为 RASE 原子规则流拓扑（NormHub v2.0.0）
+
+- NormHub 管线完成 RASE 重构（e26cbc1/d17a425/c4e02b9）：牌号切片架构废弃，`standard.schema.ts` 现为 Zod 单源契约（RASERule 五元组 + StandardDocument），rule_id/clause_ref/data_element_id 及 meta 必填字段 `.min(1)` 严格化——**NormScale 侧同名主版本文件已同步为该版本**；
+- 存量迁移：`data/standards/` 两部标准经 NormHub `scripts/migrate-legacy-to-rase.ts` 刷为新拓扑（meta.json/clauses_tree.json/dictionary_mapping.json/rules.json/indices/grade_index.json）——GB/T 13296-2023 570 规则/31 牌号（含 tolerance_tables 转的 18 条 dim.tolerance.* 规则，防 meta 净减）、NB/T 47019.5-2021 490 规则/22 牌号；旧 slices 布局整体入备份 `data/standards.migration-backup-2026-09-24T02-20-35/`；
+- 迁移后 NormHub 侧 `standard:validate` 全库 1060 条规则 100% 过契约、17 套件 209/209 全绿；
+- ⚠️ 下游影响：NormScale 引擎/前端若直接消费 `slices/*.json` 需改为读 rules.json + grade_index（待核）；rule_id 唯一性口径为文档级（跨标准同 ID 合法）；
+- 详见 `cairn/standard-ingestion-pipeline.md` 的 RASE 迁移通告节。
+
 ## 2026-09-20 · 标准入库管线剥离为独立项目 NormHub
 
 - 边界确认：`src/ingestion/`、`scripts/ingest-standard.ts`、`tests/ingestion/`、`tests/fixtures/nb-golden-family-rules.json` 全部迁移至 `C:\Users\gaoft\Documents\CodeSpace\NormHub`（独立 git 仓，初始提交 a866696）；`src/schemas/standard.schema.ts` 与 `src/normalizer/property-key-normalizer.ts` 为共享复制（NormScale 侧为主版本）；

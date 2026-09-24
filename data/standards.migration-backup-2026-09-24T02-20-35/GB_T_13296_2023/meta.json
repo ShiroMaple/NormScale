@@ -1,0 +1,229 @@
+{
+  "standard_id": "GB/T 13296-2023",
+  "standard_name": "锅炉、热交换器用不锈钢无缝钢管",
+  "version": "2023",
+  "description": "本标准规定了锅炉、热交换器用不锈钢无缝钢管的分类、代号、订货内容、尺寸、外形、重量、技术要求、试验方法、检验规则、包装、标志和质量证明书。",
+  "status": "CURRENT",
+  "material_category": "ferrous_pipe",
+  "applies_to_forms": [
+    "tube_seamless"
+  ],
+  "tolerance_tables": [
+    {
+      "table_id": "TABLE_1",
+      "table_name": "表1 钢管公称外径和最小壁厚的允许偏差",
+      "rules": [
+        {
+          "dimension_property": "outer_diameter",
+          "process": "hot_rolled",
+          "delivery_mode": "min_wall",
+          "range_max": 140,
+          "plus_tolerance_value": 1.25,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": -1.25,
+          "minus_tolerance_is_percent": true,
+          "note": "<= 140mm: +-1.25%D"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "hot_rolled",
+          "delivery_mode": "min_wall",
+          "range_min": 140,
+          "plus_tolerance_value": 1,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": -1,
+          "minus_tolerance_is_percent": true,
+          "note": "> 140mm: +-1%D"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "hot_rolled",
+          "delivery_mode": "min_wall",
+          "range_max": 4,
+          "plus_tolerance_value": 0.9,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": 0,
+          "minus_tolerance_is_percent": false,
+          "note": "<= 4.0mm: +0.90mm, 0"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "hot_rolled",
+          "delivery_mode": "min_wall",
+          "range_min": 4,
+          "plus_tolerance_value": 25,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": 0,
+          "minus_tolerance_is_percent": false,
+          "note": "> 4.0mm: +25%S, 0"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_max": 25,
+          "plus_tolerance_value": 0.1,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.1,
+          "minus_tolerance_is_percent": false,
+          "note": "<= 25mm: +-0.10mm"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 25,
+          "range_max": 40,
+          "plus_tolerance_value": 0.15,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.15,
+          "minus_tolerance_is_percent": false,
+          "note": "> 25~40mm: +-0.15mm"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 40,
+          "range_max": 50,
+          "plus_tolerance_value": 0.2,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.2,
+          "minus_tolerance_is_percent": false,
+          "note": "> 40~50mm: +-0.20mm"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 50,
+          "range_max": 65,
+          "plus_tolerance_value": 0.25,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.25,
+          "minus_tolerance_is_percent": false,
+          "note": "> 50~65mm: +-0.25mm"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 65,
+          "range_max": 75,
+          "plus_tolerance_value": 0.3,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.3,
+          "minus_tolerance_is_percent": false,
+          "note": "> 65~75mm: +-0.30mm"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 75,
+          "range_max": 100,
+          "plus_tolerance_value": 0.38,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.38,
+          "minus_tolerance_is_percent": false,
+          "note": "> 75~100mm: +-0.38mm"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 100,
+          "range_max": 159,
+          "plus_tolerance_value": 0.38,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.64,
+          "minus_tolerance_is_percent": false,
+          "note": "> 100~159mm: +0.38mm, -0.64mm"
+        },
+        {
+          "dimension_property": "outer_diameter",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "range_min": 159,
+          "plus_tolerance_value": 0.5,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": -0.5,
+          "minus_tolerance_is_percent": true,
+          "note": "> 159mm: +-0.5%D"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "outer_diameter_limit": 38,
+          "plus_tolerance_value": 20,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": 0,
+          "minus_tolerance_is_percent": false,
+          "note": "D <= 38mm: +20%S, 0"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "cold_drawn",
+          "delivery_mode": "min_wall",
+          "outer_diameter_limit": 38,
+          "plus_tolerance_value": 22,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": 0,
+          "minus_tolerance_is_percent": false,
+          "note": "D > 38mm: +22%S, 0"
+        }
+      ]
+    },
+    {
+      "table_id": "TABLE_2",
+      "table_name": "表2 钢管公称壁厚的允许偏差",
+      "rules": [
+        {
+          "dimension_property": "wall_thickness",
+          "process": "hot_rolled",
+          "delivery_mode": "nominal_wall",
+          "range_max": 4,
+          "plus_tolerance_value": 0.45,
+          "plus_tolerance_is_percent": false,
+          "minus_tolerance_value": -0.45,
+          "minus_tolerance_is_percent": false,
+          "note": "<= 4.0mm: +-0.45mm"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "hot_rolled",
+          "delivery_mode": "nominal_wall",
+          "range_min": 4,
+          "plus_tolerance_value": 12.5,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": -10,
+          "minus_tolerance_is_percent": true,
+          "note": "> 4.0mm: +12.5%S, -10%S"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "cold_drawn",
+          "delivery_mode": "nominal_wall",
+          "outer_diameter_limit": 38,
+          "plus_tolerance_value": 10,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": -10,
+          "minus_tolerance_is_percent": true,
+          "note": "D <= 38mm: +-10%S"
+        },
+        {
+          "dimension_property": "wall_thickness",
+          "process": "cold_drawn",
+          "delivery_mode": "nominal_wall",
+          "outer_diameter_limit": 38,
+          "plus_tolerance_value": 11,
+          "plus_tolerance_is_percent": true,
+          "minus_tolerance_value": -11,
+          "minus_tolerance_is_percent": true,
+          "note": "D > 38mm: +-11%S"
+        }
+      ]
+    }
+  ]
+}
