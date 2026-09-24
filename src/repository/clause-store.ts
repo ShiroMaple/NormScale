@@ -17,6 +17,28 @@ export class ClauseStore {
     return id.toUpperCase().replace(/[\s\-_/\\]/g, '');
   }
 
+  private flattenClauses(list: any[]): StandardClause[] {
+    const result: StandardClause[] = [];
+    const recurse = (nodes: any[]) => {
+      for (const node of nodes) {
+        if (node.clause_id && (node.text || node.title)) {
+          result.push({
+            clause_id: String(node.clause_id),
+            title: String(node.title || node.clause_id),
+            text: String(node.text || ''),
+          });
+        }
+        if (Array.isArray(node.children) && node.children.length > 0) {
+          recurse(node.children);
+        }
+      }
+    };
+    if (Array.isArray(list)) {
+      recurse(list);
+    }
+    return result;
+  }
+
   /**
    * 加载指定标准的条款全文
    */
@@ -26,24 +48,41 @@ export class ClauseStore {
       return this.clausesCache.get(normStdId)!;
     }
 
-    // 尝试寻找 clauses.json
-    const directPath = path.join(this.baseDir, standardId.replace(/[/\-]/g, '_'), 'clauses.json');
-    if (fs.existsSync(directPath)) {
-      const data = JSON.parse(fs.readFileSync(directPath, 'utf8'));
-      this.clausesCache.set(normStdId, data);
-      return data;
+    const tryLoadFromDir = (dir: string): StandardClause[] | undefined => {
+      const treePath = path.join(dir, 'clauses_tree.json');
+      if (fs.existsSync(treePath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(treePath, 'utf8'));
+          return this.flattenClauses(raw);
+        } catch {}
+      }
+      const flatPath = path.join(dir, 'clauses.json');
+      if (fs.existsSync(flatPath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(flatPath, 'utf8'));
+          return Array.isArray(raw) ? raw : [];
+        } catch {}
+      }
+      return undefined;
+    };
+
+    // 尝试寻找直连目录
+    const directDir = path.join(this.baseDir, standardId.replace(/[/\-]/g, '_'));
+    const directRes = tryLoadFromDir(directDir);
+    if (directRes && directRes.length > 0) {
+      this.clausesCache.set(normStdId, directRes);
+      return directRes;
     }
 
-    // 扫描目录
+    // 扫描匹配目录
     if (fs.existsSync(this.baseDir)) {
       const entries = fs.readdirSync(this.baseDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory() && this.normalizeStandardId(entry.name) === normStdId) {
-          const cPath = path.join(this.baseDir, entry.name, 'clauses.json');
-          if (fs.existsSync(cPath)) {
-            const data = JSON.parse(fs.readFileSync(cPath, 'utf8'));
-            this.clausesCache.set(normStdId, data);
-            return data;
+          const res = tryLoadFromDir(path.join(this.baseDir, entry.name));
+          if (res && res.length > 0) {
+            this.clausesCache.set(normStdId, res);
+            return res;
           }
         }
       }

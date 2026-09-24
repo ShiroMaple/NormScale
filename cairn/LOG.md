@@ -4,6 +4,35 @@
 > 本日志按时间倒序（最新条目在顶部）记录实质性进展、关键决策与成果指针，单条不超过 20 行。
 > 当会话被压缩截断后，配合 `cairn/ROADMAP.md` 可作为复原当前最新代码与设计真相的索引。详细结论必须原地沉淀至 `cairn/<topic>.md` 知识专题中。
 
+## 2026-09-24 · 坚守引擎防混淆门禁并重新生成标准用例 Seed 缓存
+
+- 门禁原则：恪守工业合规比对严谨性，坚决不搞模糊兜底推断；引擎对 sub_property 的强隔离门禁是防止跨标尺混淆的核心防线；
+- 缓存重构：修正 `scripts/generate-sample-test-cases.ts`，组装力学性能时完整保留硬度标尺单位（`80 HRB`）；
+- 产物重刷：基于 Node 22 原生 TS 重刷全部 4 类测试场景 PDF 与 `.cache/parses/` 及 `tests/fixtures/scenarios/seeds/` 缓存切片；
+- 验证闭环：73 个测试文件 372 项自动化用例 100% 绿灯全过，Case 1 硬度通过 `80 HRB` 精准认领并合规放行。
+
+## 2026-09-24 · 消除修约硬编码 (maxDecimals) 与槽位冲突治理
+
+- 消除硬编码：`multi-standard-composer.ts` 废除写死 `maxDecimals = 2`，改由来源规则显式指定或保持 `undefined`，彻底修复实测 P 含量 0.035% 因奇进偶舍被误修约为 0.04% 判 FAIL 的临界误判 Bug；
+- 槽位治理：`core.ts` 解耦 `hydraulic_test` / `eddy_current_test` / `pressure_tightness` 双向过度绑定，各司其职入槽，彻底根除 8 处无意义槽位冲撞警告；
+- 路由净化：`normalize.node.ts` 前置过滤物流清单元数据（数量/重量/箱号等），杜绝非技术检验项误入 Tier 2 大模型消歧；
+- 验证闭环：73 套件 372/372 用例全部通过，新增防槽位冲突与修约保留单元测试。
+
+## 2026-09-24 · RASE 规则组求值引擎重构与严格排他合成全量落地
+
+- 核心落地：完成 `RuleGrouper` 预处理、`RuleGroupEvaluator` 单次委托求值与就地打标抑制（`is_suppressed`）、宽严相济告警放行（`PASS_WITH_WARNING`）及代表项置顶；
+- 多标合成：实现 `MultiStandardGroupComposer` 严格排他（Strict Pinning）原则，修复 `min_pass` 误升为 AND 的高风险漏洞；`MultiStandardComposer` 引入 `groupingKey` 解决硬度子标尺坍缩；
+- 契约与适配：`standard.schema.ts` 扩展 `RuleGroup` 与 `RuleCategory`（`test` / `dimensional`）；`file-rule-store.ts` 解决 `const criteria` 抛错、`meta.json` 牌号切片补齐并注入 `isNB` 与工艺前置；
+- 验证闭环：73 个测试文件 370 项自动化用例 100% PASS，`tsc --noEmit` 0 错误；
+- 详见 `cairn/multi-standard-engine.md` 第 9 节。
+
+## 2026-09-24 · group.semantic_code 规范语义代号闭集（NormHub 1664bec，响应引擎 CanonicalGroup Alignment 诉求）
+
+- 背景：下游引擎提出多标准与技术协议叠加时消除 "硬度/HV" 文本启发式，要求标准库单源定义规则组语义代号；
+- schema：`RuleGroupSemanticCodeSchema` 闭集枚举（`HARDNESS_CHOICE` 硬度标尺任选其一 / `TIGHTNESS_ALTERNATIVE` 致密性无损替代检验组），`group.semantic_code` 可选挂载；新增代号须先扩闭集；
+- 存量：GB 85 条 + NB 64 条硬度规则组已带 `semantic_code: 'HARDNESS_CHOICE'`；引擎按 `group.semantic_code` + `group.id` O(1) 归组、按 `op` 组合判定即可，严禁再按文本推测；
+- ⚠️ `standard.schema.ts` 为共享主版本文件，NormScale 侧需同步本次与 group 字段两次变更。
+
 ## 2026-09-24 · RASERule group 组语义 + NB 存量 clause_ref 回填（NormHub 2054fa4）
 
 - schema：`RASERule` 新增可选 `group {id, op: 'OR'|'AND'}`——修复硬度 HRB/HBW/HV 三选一被拆为独立 MANDATORY 导致引擎误判缺失的语义缺口；产出端三处同步：rase-convert（or_choice 拆分共享组）、DET2（同行多标尺共享组）、LLM prompt（多标尺硬度行/替代检验组要求输出 group）；

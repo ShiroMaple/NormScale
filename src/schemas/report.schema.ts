@@ -68,6 +68,11 @@ export const RuleEvaluationItemResultSchema = z.object({
   is_statutory_relaxation_risk: z.boolean().optional(),     // 是否属于高优先级技术协议放宽法定强标底线的风险项
   statutory_baseline: z.string().optional(),               // 被放宽的国家/行业标准底线限值
   statutory_relaxation_warning: z.string().optional(),      // 放宽法标风险警示说明
+
+  // 规则组与豁免打标扩展字段
+  group_id: z.string().optional(),                          // 所属逻辑组 ID
+  semantic_code: z.string().optional(),                     // 所属逻辑组机器语义代号
+  is_suppressed: z.boolean().optional(),                    // 是否被同组合格项豁免抑制
 });
 export type RuleEvaluationItemResult = z.infer<typeof RuleEvaluationItemResultSchema>;
 
@@ -117,7 +122,38 @@ export type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;
 
 
 /* ==========================================================================
-   五、完整合规性核验报告根模型 (Root Compliance Audit Report)
+   五、规则组综合比对诊断模型 (Rule Group Diagnostic Result)
+   - 校验多选一、替代检验及多标合成组的整体符合性判定
+   ========================================================================== */
+
+export const SubRuleDiagnosticItemSchema = z.object({
+  rule_id: z.string(),
+  data_element_id: z.string(),
+  status: z.enum(['PASS', 'FAIL', 'SKIPPED', 'MISSING']),
+  value_found: z.unknown().optional(),
+  target_threshold: z.string().optional(),
+  is_suppressed: z.boolean().optional(),
+  message: z.string().optional(),
+});
+export type SubRuleDiagnosticItem = z.infer<typeof SubRuleDiagnosticItemSchema>;
+
+export const RuleGroupDiagnosticResultSchema = z.object({
+  group_id: z.string(),
+  semantic_code: z.string().optional(),
+  group_name: z.string().optional(),
+  op: z.enum(['OR', 'AND']),
+  status: z.enum(['PASS', 'PASS_WITH_WARNING', 'FAIL']),
+  pass_count: z.number(),
+  min_pass: z.number(),
+  summary: z.string(),
+  is_blocking: z.boolean().optional(),
+  evaluated_rules: z.array(SubRuleDiagnosticItemSchema),
+});
+export type RuleGroupDiagnosticResult = z.infer<typeof RuleGroupDiagnosticResultSchema>;
+
+
+/* ==========================================================================
+   六、完整合规性核验报告根模型 (Root Compliance Audit Report)
    - 校验最终输出给前端展示、质检归档或 ERP/MES 系统消费的完整质检裁决报告
    ========================================================================== */
 
@@ -131,6 +167,7 @@ export const AuditReportSchema = z.object({
   audit_timestamp: z.string(),                               // 核验执行完成的时间戳（ISO-8601 格式，例如："2026-08-22T06:51:50Z"）
   summary: AuditSummarySchema,                               // 全局汇总与决策统计对象
   item_results: z.array(RuleEvaluationItemResultSchema),     // 全量检验规则项比对明细矩阵列表
+  group_results: z.array(RuleGroupDiagnosticResultSchema).optional(), // 规则组聚合诊断结果矩阵
   missing_mandatory_items: z.array(z.string()),              // 强制要求但未报送的漏检项属性清单（例如：["ultrasonic_test"]）
   unmatched_certificate_records: z.array(TestRecordSchema).optional(), // 质保书中已报送但标准库中未定义比对规则的额外记录项
   audit_traces: z.array(AuditTraceItemSchema).optional(),     // 业务审验过程自然语言轨迹流（供前端看板抽屉可视化渲染）

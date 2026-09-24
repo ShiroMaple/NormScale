@@ -487,15 +487,35 @@ const SCENARIOS = [
     specialItem: { name: 'Shear Toughness K1C', val: '85', unit: 'MPa.m^1/2' },
     additionalTests: [
       {
-        key: '特种非标微区抗剪切断裂韧度K1C',
-        name: '特种非标微区抗剪切断裂韧度K1C',
+        key: 'mech_shear_toughness',
+        name: 'Shear Toughness K1C',
         category: 'mechanical',
-        standard: 'NB/T 47019.5-2021',
-        result: '85 MPa·m^1/2',
-        value_num: 85,
-        unit: 'MPa·m^1/2',
-        conclusion: 'MANUAL_REVIEW',
-      }
+        standard: '',
+        result: '85 MPa.m^1/2',
+        value_num: null,
+        unit: '',
+        conclusion: 'PASS',
+      },
+      {
+        key: 'proc_hydraulic',
+        name: 'Hydrostatic Test',
+        category: 'process',
+        standard: 'GB/T 241',
+        result: 'PASS OK - 20.0 MPa 10s pressure holding without leakage',
+        value_num: null,
+        unit: '',
+        conclusion: 'PASS',
+      },
+      {
+        key: 'geo_surface_quality',
+        name: 'Surface Quality',
+        category: 'process',
+        standard: 'NB/T 47019.5',
+        result: 'PASS OK - Inner & outer surfaces smooth, no cracks or folds',
+        value_num: null,
+        unit: '',
+        conclusion: 'PASS',
+      },
     ],
   },
 ];
@@ -591,7 +611,11 @@ async function main() {
         yield_rp02: sc.mechItems.find(m => m.name.includes('ReH') || m.name.includes('Rp0.2'))?.val || '240',
         yield_reh: sc.mechItems.find(m => m.name.includes('ReH'))?.val || undefined,
         elongation_a: sc.mechItems.find(m => m.name.includes('Elongation') || m.name.includes('伸长率'))?.val || '42.0',
-        hardness: sc.mechItems.find(m => m.name.includes('Hardness') || m.name.includes('硬度'))?.val || '82 HRB',
+        hardness: (() => {
+          const h = sc.mechItems.find(m => m.name.includes('Hardness') || m.name.includes('硬度'));
+          if (!h) return '82 HRB';
+          return h.unit ? `${h.val} ${h.unit}` : (h.val.includes('HR') || h.val.includes('HV') || h.val.includes('HB') ? h.val : `${h.val} HRB`);
+        })(),
       },
       process: {
         flattening: '合格 OK (未见裂纹)',

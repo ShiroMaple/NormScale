@@ -324,11 +324,13 @@ export function composeMultiStandardSlices(
     for (const rule of item.slice.evaluation_rules) {
       const normResult = PropertyKeyNormalizer.normalize(rule.property_key, rule.category);
       const canonicalKey = normResult.property_key || rule.property_key;
+      const subProp = (rule as any).sub_property || (rule.criteria as any)?.sub_property;
+      const groupingKey = subProp ? `${canonicalKey}__${subProp}` : canonicalKey;
 
-      if (!groupedRules.has(canonicalKey)) {
-        groupedRules.set(canonicalKey, []);
+      if (!groupedRules.has(groupingKey)) {
+        groupedRules.set(groupingKey, []);
       }
-      groupedRules.get(canonicalKey)!.push({
+      groupedRules.get(groupingKey)!.push({
         rule,
         standardId: stdId,
         standardName: item.standardName,
@@ -341,7 +343,8 @@ export function composeMultiStandardSlices(
   // 4. 逐个检验项目合成最严包络线规则并生成多标尺追溯元数据
   const composedRules: CompositeEvaluationRule[] = [];
 
-  for (const [canonicalKey, items] of groupedRules.entries()) {
+  for (const [groupingKey, items] of groupedRules.entries()) {
+    const canonicalKey = groupingKey.includes('__') ? groupingKey.split('__')[0]! : groupingKey;
     if (items.length === 1) {
       // 独占检验项目（仅在某一标准中要求，例如 NB/T 专属的扩口试验或晶粒度）
       const single = items[0]!;
@@ -475,7 +478,7 @@ function composeNumericRangeRule(
   let minGoverningStdId = items[0]!.standardId;
   let maxGoverningStdId = items[0]!.standardId;
   let commonUnit = items[0]!.rule.criteria['unit'] || '';
-  let maxDecimals = 2;
+  let explicitRoundingDecimals: number | undefined = undefined;
 
   // 收集各来源原始限值
   const sources: SourceRuleTrace[] = [];
@@ -485,8 +488,10 @@ function composeNumericRangeRule(
     const itemMin = typeof c['min'] === 'number' ? c['min'] : null;
     const itemMax = typeof c['max'] === 'number' ? c['max'] : null;
     if (c['unit']) commonUnit = c['unit'];
-    if (typeof c['rounding_decimals'] === 'number' && c['rounding_decimals'] > maxDecimals) {
-      maxDecimals = c['rounding_decimals'];
+    if (typeof c['rounding_decimals'] === 'number') {
+      if (explicitRoundingDecimals === undefined || c['rounding_decimals'] > explicitRoundingDecimals) {
+        explicitRoundingDecimals = c['rounding_decimals'];
+      }
     }
 
     // 比较下限：取 max (严苛下限)
@@ -601,7 +606,7 @@ function composeNumericRangeRule(
       min: strictMin,
       max: strictMax,
       unit: commonUnit,
-      rounding_decimals: maxDecimals,
+      ...(explicitRoundingDecimals !== undefined ? { rounding_decimals: explicitRoundingDecimals } : {}),
       min_inclusive: true,
       max_inclusive: true,
     },

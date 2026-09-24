@@ -95,7 +95,7 @@
           "yield_rp02": "250",
           "yield_reh": "250",
           "elongation_a": "45.0",
-          "hardness": "80"
+          "hardness": "80 HRB"
         },
         "process": {
           "flattening": "合格 OK (未见裂纹)",

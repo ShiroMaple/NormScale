@@ -472,7 +472,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_FERRITIC_3_S11306",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -951,7 +952,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30403",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -984,7 +986,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30403",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1017,7 +1020,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30403",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1496,7 +1500,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30408",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1529,7 +1534,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30408",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1562,7 +1568,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30408",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2071,7 +2078,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30409",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2104,7 +2112,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30409",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2137,7 +2146,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S30409",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2643,7 +2653,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S30453",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2676,7 +2687,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S30453",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2709,7 +2721,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S30453",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3215,7 +3228,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S30458",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3248,7 +3262,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S30458",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3281,7 +3296,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S30458",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3760,7 +3776,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31008",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3793,7 +3810,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31008",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3826,7 +3844,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31008",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4332,7 +4351,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31252",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4365,7 +4385,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31252",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4398,7 +4419,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31252",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4958,7 +4980,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31603",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4991,7 +5014,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31603",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5024,7 +5048,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31603",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5530,7 +5555,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31608",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5563,7 +5589,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31608",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5596,7 +5623,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31608",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6132,7 +6160,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31609",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6165,7 +6194,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31609",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6198,7 +6228,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31609",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6731,7 +6762,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31653",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6764,7 +6796,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31653",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6797,7 +6830,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31653",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7330,7 +7364,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31658",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7363,7 +7398,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31658",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7396,7 +7432,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S31658",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7926,7 +7963,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31668",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7959,7 +7997,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31668",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7992,7 +8031,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31668",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8498,7 +8538,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31703",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8531,7 +8572,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31703",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8564,7 +8606,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31703",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9070,7 +9113,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31708",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9103,7 +9147,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31708",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9136,7 +9181,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S31708",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9639,7 +9685,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S32168",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9672,7 +9719,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S32168",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9705,7 +9753,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S32168",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10238,7 +10287,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S32169",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10271,7 +10321,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S32169",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10304,7 +10355,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S32169",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10807,7 +10859,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S34778",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10840,7 +10893,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S34778",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10873,7 +10927,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S34778",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11406,7 +11461,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S34779",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11439,7 +11495,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S34779",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11472,7 +11529,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_2_S34779",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11978,7 +12036,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S38367",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12011,7 +12070,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S38367",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12044,7 +12104,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S38367",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12601,7 +12662,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S39042",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12634,7 +12696,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S39042",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12667,7 +12730,8 @@
     },
     "group": {
       "id": "DET_HARDNESS_AUSTENITIC_1_S39042",
-      "op": "OR"
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {

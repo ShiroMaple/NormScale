@@ -9,6 +9,9 @@ import { logger as defaultLogger, ILogger, ITraceCollector } from '../logger';
 import { PerformanceProfiler } from '../logger/profiler';
 import { CompositeSlice, CompositeEvaluationRule, getStandardShortCode, humanizeDynamicFormulaText } from './multi-standard-composer';
 import { PropertyKeyNormalizer } from '../normalizer/property-key-normalizer';
+import { RuleGrouper } from './rule-grouper';
+import { RuleGroupEvaluator } from './rule-group-evaluator';
+import { RuleGroupDiagnosticResult } from '../schemas/report.schema';
 
 export interface EngineEvaluationOptions {
   logger?: ILogger;
@@ -71,22 +74,26 @@ export class ComplianceEngine {
       // 步骤 3：逐项执行原子规则评估流水线 (Execute Rule Evaluator Pipeline)
       // --------------------------------------------------------------------------
       const itemResults: RuleEvaluationItemResult[] = [];
+      const groupResults: RuleGroupDiagnosticResult[] = [];
       const missingMandatory: string[] = [];
       const evaluatedPropertyKeys = new Set<string>();
 
-      for (const rule of gradeRule.evaluation_rules) {
+      // 规则归组预处理 (有 group 的规则进入聚合求值，无 group 的保持独立求值)
+      const { singleRules, groupedRules } = RuleGrouper.partition(gradeRule.evaluation_rules as any);
+
+      // 1. 独立规则单项求值
+      for (const rule of singleRules as any as EvaluationRule[]) {
         const result = this.evaluateSingleRule(rule, context);
         itemResults.push(result);
         evaluatedPropertyKeys.add(rule.property_key);
 
-        // 处理复合逻辑组候选键覆盖
-        if (rule.rule_type === 'alternative_group' && Array.isArray(rule.criteria['candidates'])) {
-          for (const cand of rule.criteria['candidates']) {
+        if (rule.rule_type === 'alternative_group' && rule.criteria && Array.isArray((rule.criteria as any)['candidates'])) {
+          for (const cand of (rule.criteria as any)['candidates']) {
             if (cand.candidate_key) evaluatedPropertyKeys.add(cand.candidate_key);
           }
         }
-        if (rule.rule_type === 'or_choice_group' && Array.isArray(rule.criteria['options'])) {
-          for (const opt of rule.criteria['options']) {
+        if (rule.rule_type === 'or_choice_group' && rule.criteria && Array.isArray((rule.criteria as any)['options'])) {
+          for (const opt of (rule.criteria as any)['options']) {
             if (opt.sub_key) {
               evaluatedPropertyKeys.add(opt.sub_key);
               evaluatedPropertyKeys.add(`${rule.property_key}_${opt.sub_key}`);
@@ -108,6 +115,84 @@ export class ComplianceEngine {
         // 强制项或条件触发项漏检时记录到强制漏检清单
         if (result.status === 'MISSING' && (rule.requirement_level === 'MANDATORY' || rule.requirement_level === 'CONDITIONAL')) {
           missingMandatory.push(`${rule.display_name} (${rule.property_key})`);
+        }
+      }
+
+      // 2. 逻辑组聚合求值 (支持 OR/AND 组判定、宽严相济与就地打标抑制)
+      for (const [groupId, groupEntry] of groupedRules.entries()) {
+        const gResult = RuleGroupEvaluator.evaluate(
+          groupEntry.groupMeta,
+          groupEntry.rules,
+          (subRule) => this.evaluateSingleRule(subRule as any, context)
+        );
+
+        groupResults.push({
+          group_id: gResult.group_id,
+          semantic_code: gResult.semantic_code,
+          group_name: gResult.group_name,
+          op: gResult.op,
+          status: gResult.status,
+          pass_count: gResult.pass_count,
+          min_pass: gResult.min_pass,
+          summary: gResult.summary,
+          is_blocking: gResult.is_blocking,
+          evaluated_rules: gResult.evaluated_rules.map(r => ({
+            rule_id: r.rule_id,
+            data_element_id: r.data_element_id,
+            status: r.status,
+            value_found: r.actual_value,
+            target_threshold: r.threshold,
+            is_suppressed: r.is_suppressed,
+            message: r.message,
+          })),
+        });
+
+        // 就地打标并回写 itemResults (代表项优先排在最前：PASS > FAIL > MISSING > SKIPPED)
+        const statusPriority: Record<string, number> = {
+          PASS: 1,
+          FAIL: 2,
+          MISSING: 3,
+          SKIPPED: 4,
+        };
+
+        const sortedRules = [...gResult.evaluated_rules].sort((a, b) => {
+          if (!a.is_suppressed && b.is_suppressed) return -1;
+          if (a.is_suppressed && !b.is_suppressed) return 1;
+          const pA = statusPriority[a.status] || 99;
+          const pB = statusPriority[b.status] || 99;
+          if (pA !== pB) return pA - pB;
+          return 0;
+        });
+
+        for (const sub of sortedRules) {
+          const rawRes = sub.raw_item_result;
+          if (sub.is_suppressed) {
+            rawRes.status = 'SKIPPED';
+            rawRes.message = `[${gResult.group_name || groupId}] 已经由同组有效项通过而合法豁免，不计入缺失`;
+            (rawRes as any).is_suppressed = true;
+            (rawRes as any).group_id = groupId;
+            (rawRes as any).semantic_code = gResult.semantic_code;
+          } else {
+            (rawRes as any).group_id = groupId;
+            (rawRes as any).semantic_code = gResult.semantic_code;
+            (rawRes as any).is_suppressed = false;
+          }
+          itemResults.push(rawRes);
+          evaluatedPropertyKeys.add(sub.data_element_id);
+          evaluatedPropertyKeys.add(rawRes.property_key);
+          if (rawRes.property_key === 'hardness' || sub.data_element_id.startsWith('mech.hardness.')) {
+            evaluatedPropertyKeys.add('hardness');
+          }
+          if (sub.data_element_id === 'test.hydrostatic' || sub.data_element_id === 'test.eddy_current' || rawRes.property_key === 'pressure_tightness') {
+            evaluatedPropertyKeys.add('pressure_tightness');
+            evaluatedPropertyKeys.add('hydraulic_test');
+            evaluatedPropertyKeys.add('eddy_current_test');
+          }
+        }
+
+        // 仅在逻辑组最终判定 FAIL 且处于阻断级别时，登记强制项漏检清单
+        if (gResult.status === 'FAIL' && gResult.is_blocking) {
+          missingMandatory.push(`${gResult.group_name || groupId} (规则组未满足要求)`);
         }
       }
 
@@ -171,6 +256,7 @@ export class ComplianceEngine {
         audit_timestamp: new Date().toISOString(),
         summary,
         item_results: itemResults,
+        group_results: groupResults.length > 0 ? groupResults : undefined,
         missing_mandatory_items: missingMandatory,
         unmatched_certificate_records: unmatchedRecords.length > 0 ? unmatchedRecords : undefined,
         audit_traces: collector?.getTraces(),
@@ -210,21 +296,26 @@ export class ComplianceEngine {
 
       const context = this.buildContext(certificate);
       const itemResults: RuleEvaluationItemResult[] = [];
+      const groupResults: RuleGroupDiagnosticResult[] = [];
       const missingMandatory: string[] = [];
       const evaluatedPropertyKeys = new Set<string>();
 
-      for (const rule of slice.evaluation_rules) {
+      // 规则归组预处理 (有 group 的规则进入聚合求值，无 group 的保持独立求值)
+      const { singleRules, groupedRules } = RuleGrouper.partition(slice.evaluation_rules as any);
+
+      // 1. 独立规则单项求值
+      for (const rule of singleRules as any as EvaluationRule[]) {
         const result = this.evaluateSingleRule(rule, context);
         itemResults.push(result);
         evaluatedPropertyKeys.add(rule.property_key);
 
-        if (rule.rule_type === 'alternative_group' && Array.isArray(rule.criteria['candidates'])) {
-          for (const cand of rule.criteria['candidates']) {
+        if (rule.rule_type === 'alternative_group' && rule.criteria && Array.isArray((rule.criteria as any)['candidates'])) {
+          for (const cand of (rule.criteria as any)['candidates']) {
             if (cand.candidate_key) evaluatedPropertyKeys.add(cand.candidate_key);
           }
         }
-        if (rule.rule_type === 'or_choice_group' && Array.isArray(rule.criteria['options'])) {
-          for (const opt of rule.criteria['options']) {
+        if (rule.rule_type === 'or_choice_group' && rule.criteria && Array.isArray((rule.criteria as any)['options'])) {
+          for (const opt of (rule.criteria as any)['options']) {
             if (opt.sub_key) {
               evaluatedPropertyKeys.add(opt.sub_key);
               evaluatedPropertyKeys.add(`${rule.property_key}_${opt.sub_key}`);
@@ -244,6 +335,88 @@ export class ComplianceEngine {
 
         if (result.status === 'MISSING' && (rule.requirement_level === 'MANDATORY' || rule.requirement_level === 'CONDITIONAL')) {
           missingMandatory.push(`${rule.display_name} (${rule.property_key})`);
+        }
+      }
+
+      // 2. 逻辑组聚合求值 (支持 OR/AND 组判定、宽严相济与就地打标抑制)
+      for (const [groupId, groupEntry] of groupedRules.entries()) {
+        const gResult = RuleGroupEvaluator.evaluate(
+          groupEntry.groupMeta,
+          groupEntry.rules,
+          (subRule) => this.evaluateSingleRule(subRule as any, context)
+        );
+
+        groupResults.push({
+          group_id: gResult.group_id,
+          semantic_code: gResult.semantic_code,
+          group_name: gResult.group_name,
+          op: gResult.op,
+          status: gResult.status,
+          pass_count: gResult.pass_count,
+          min_pass: gResult.min_pass,
+          summary: gResult.summary,
+          is_blocking: gResult.is_blocking,
+          evaluated_rules: gResult.evaluated_rules.map(r => ({
+            rule_id: r.rule_id,
+            data_element_id: r.data_element_id,
+            status: r.status,
+            value_found: r.actual_value,
+            target_threshold: r.threshold,
+            is_suppressed: r.is_suppressed,
+            message: r.message,
+          })),
+        });
+
+        // 就地打标并回写 itemResults (代表项优先排在最前：PASS > FAIL > MISSING > SKIPPED)
+        const statusPriority: Record<string, number> = {
+          PASS: 1,
+          FAIL: 2,
+          MISSING: 3,
+          SKIPPED: 4,
+        };
+
+        const sortedRules = [...gResult.evaluated_rules].sort((a, b) => {
+          if (!a.is_suppressed && b.is_suppressed) return -1;
+          if (a.is_suppressed && !b.is_suppressed) return 1;
+          const pA = statusPriority[a.status] || 99;
+          const pB = statusPriority[b.status] || 99;
+          if (pA !== pB) return pA - pB;
+          return 0;
+        });
+
+        for (const sub of sortedRules) {
+          const rawRes = sub.raw_item_result;
+          if (sub.is_suppressed) {
+            rawRes.status = 'SKIPPED';
+            rawRes.message = `[${gResult.group_name || groupId}] 已经由同组有效项通过而合法豁免，不计入缺失`;
+            (rawRes as any).is_suppressed = true;
+            (rawRes as any).group_id = groupId;
+            (rawRes as any).semantic_code = gResult.semantic_code;
+          } else {
+            (rawRes as any).group_id = groupId;
+            (rawRes as any).semantic_code = gResult.semantic_code;
+            (rawRes as any).is_suppressed = false;
+          }
+          itemResults.push(rawRes);
+          evaluatedPropertyKeys.add(sub.data_element_id);
+          evaluatedPropertyKeys.add(rawRes.property_key);
+          if (rawRes.property_key === 'hardness' || sub.data_element_id.startsWith('mech.hardness.')) {
+            evaluatedPropertyKeys.add('hardness');
+          }
+          if (sub.data_element_id === 'test.hydrostatic' || sub.data_element_id === 'test.eddy_current' || rawRes.property_key === 'pressure_tightness') {
+            evaluatedPropertyKeys.add('pressure_tightness');
+            evaluatedPropertyKeys.add('hydraulic_test');
+            evaluatedPropertyKeys.add('eddy_current_test');
+          }
+        }
+
+        // 门禁判定：仅当组判定为 FAIL 且具备强制阻断效力时，才计入 missingMandatory
+        if (gResult.status === 'FAIL' && gResult.is_blocking) {
+          missingMandatory.push(`【${gResult.group_name || groupId}】${gResult.summary}`);
+          log.warn('ENGINE', `[逻辑组未达标阻断] ${gResult.group_name || groupId}: ${gResult.summary}`);
+          if (collector) collector.addTrace('ENGINE', 'warn', `[逻辑组未达标阻断] ${gResult.group_name || groupId}: ${gResult.summary}`);
+        } else {
+          log.debug('ENGINE', `[逻辑组放行] ${gResult.group_name || groupId}: ${gResult.summary}`);
         }
       }
 
@@ -298,6 +471,7 @@ export class ComplianceEngine {
         audit_timestamp: new Date().toISOString(),
         summary,
         item_results: itemResults,
+        group_results: groupResults.length > 0 ? groupResults : undefined,
         missing_mandatory_items: missingMandatory,
         unmatched_certificate_records: unmatchedRecords.length > 0 ? unmatchedRecords : undefined,
         audit_traces: collector?.getTraces(),
@@ -390,6 +564,41 @@ export class ComplianceEngine {
         `${record.category}_${canonicalKey}`,
       ];
 
+      // 双向对齐：挂载 RASE 数据元 ID 别名与跨标通用别名
+      if (record.category === 'chemical') {
+        keysToIndex.push(`chem.element.${canonicalKey}`);
+      } else if (canonicalKey === 'tensile_strength') {
+        keysToIndex.push('mech.tensile_strength.Rm', 'Rm');
+      } else if (canonicalKey === 'yield_strength_rp02') {
+        keysToIndex.push('mech.yield_strength.Rp02', 'Rp0.2', 'ReH');
+      } else if (canonicalKey === 'elongation_A') {
+        keysToIndex.push('mech.elongation.A', 'A');
+      } else if (canonicalKey === 'flattening_test') {
+        keysToIndex.push('test.flattening');
+      } else if (canonicalKey === 'flaring_test') {
+        keysToIndex.push('test.flaring');
+      } else if (canonicalKey === 'bending_test') {
+        keysToIndex.push('test.bending');
+      } else if (canonicalKey === 'hydraulic_test') {
+        keysToIndex.push('test.hydrostatic');
+      } else if (canonicalKey === 'eddy_current_test') {
+        keysToIndex.push('test.eddy_current');
+      } else if (canonicalKey === 'pressure_tightness') {
+        keysToIndex.push('test.pressure_tightness', 'test.tightness');
+      } else if (canonicalKey === 'ultrasonic_test') {
+        keysToIndex.push('test.ultrasonic');
+      } else if (canonicalKey === 'intergranular_corrosion') {
+        keysToIndex.push('test.intergranular_corrosion');
+      } else if (canonicalKey === 'hardness') {
+        if (record.sub_property) {
+          keysToIndex.push(
+            `mech.hardness.${record.sub_property}`,
+            record.sub_property,
+            `hardness_${record.sub_property}`
+          );
+        }
+      }
+
       for (const k of keysToIndex) {
         // 防冲毁机制：若槽位已存在定性/定量异构记录，优先保留两者在类型专用槽位，主槽位不发生静默抹杀
         if (recordsMap.has(k)) {
@@ -418,6 +627,8 @@ export class ComplianceEngine {
       if (record.sub_property) {
         this.arbitrateRecordSlot(recordsMap, `${record.property_key}_${record.sub_property}`, record);
         this.arbitrateRecordSlot(recordsMap, `${canonicalKey}_${record.sub_property}`, record);
+        this.arbitrateRecordSlot(recordsMap, `mech.hardness.${record.sub_property}`, record);
+        this.arbitrateRecordSlot(recordsMap, record.sub_property, record);
       }
 
       // 提取连续数值到对应大类的数值快照表中（用于动态公式求值，如 Ti >= 4*(C+N)）
@@ -562,7 +773,35 @@ export class ComplianceEngine {
     const isRuleNumeric = rule.rule_type === 'numeric_range' || rule.rule_type === 'dynamic_expression';
     const isRuleQualitative = rule.rule_type === 'qualitative_pass' || rule.rule_type === 'qualitative_enum';
 
-    // 1. 检查直接命中的 record (含类型专用槽位)
+    // 1. 检查直接命中的 record (含类型专用槽位与 sub_property 精确过滤)
+    const dataElementId = (rule as any).selection?.data_element_id;
+    const subProperty = (rule as any).sub_property || (rule.criteria as any)?.sub_property;
+
+    if (subProperty) {
+      const subKeys = [
+        ...(dataElementId ? [dataElementId, `${dataElementId}#num`, `${dataElementId}#qual`] : []),
+        `${rule.property_key}_${subProperty}`,
+        `${normKey}_${subProperty}`,
+        `${rule.property_key}_${subProperty}#num`,
+        `${normKey}_${subProperty}#num`,
+        subProperty,
+        `${subProperty}#num`,
+      ];
+      for (const k of subKeys) {
+        const rec = context.recordsMap.get(k);
+        if (rec && this.isRecordNonEmpty(rec)) {
+          if (!rec.sub_property || rec.sub_property.toUpperCase() === subProperty.toUpperCase()) {
+            return true;
+          }
+        }
+      }
+      const rec = context.recordsMap.get(rule.property_key) || context.recordsMap.get(normKey);
+      if (rec && this.isRecordNonEmpty(rec) && rec.sub_property && rec.sub_property.toUpperCase() === subProperty.toUpperCase()) {
+        return true;
+      }
+      return false;
+    }
+
     const directKeys = [
       ...(isRuleNumeric ? [`${rule.property_key}#num`, `${normKey}#num`] : []),
       ...(isRuleQualitative ? [`${rule.property_key}#qual`, `${normKey}#qual`] : []),
@@ -570,6 +809,7 @@ export class ComplianceEngine {
       normKey,
       `${rule.category}_${rule.property_key}`,
       `${rule.category}_${normKey}`,
+      ...(dataElementId ? [dataElementId, `${dataElementId}#num`, `${dataElementId}#qual`, `${rule.category}_${dataElementId}`] : []),
     ];
 
     for (const k of directKeys) {
@@ -658,13 +898,43 @@ export class ComplianceEngine {
     const isRuleNumeric = rule.rule_type === 'numeric_range' || rule.rule_type === 'dynamic_expression';
     const isRuleQualitative = rule.rule_type === 'qualitative_pass' || rule.rule_type === 'qualitative_enum';
 
-    const record =
-      (isRuleNumeric ? (context.recordsMap.get(`${rule.property_key}#num`) || context.recordsMap.get(`${normKey}#num`)) : undefined) ||
-      (isRuleQualitative ? (context.recordsMap.get(`${rule.property_key}#qual`) || context.recordsMap.get(`${normKey}#qual`)) : undefined) ||
-      context.recordsMap.get(rule.property_key) ||
-      context.recordsMap.get(normKey) ||
-      context.recordsMap.get(`${rule.category}_${rule.property_key}`) ||
-      context.recordsMap.get(`${rule.category}_${normKey}`);
+    const dataElementId = (rule as any).selection?.data_element_id;
+    const subProperty = (rule as any).sub_property || (rule.criteria as any)?.sub_property;
+
+    let record: TestRecord | undefined;
+    if (subProperty) {
+      const subKeys = [
+        ...(dataElementId ? [dataElementId, `${dataElementId}#num`, `${dataElementId}#qual`] : []),
+        `${rule.property_key}_${subProperty}`,
+        `${normKey}_${subProperty}`,
+        `${rule.property_key}_${subProperty}#num`,
+        `${normKey}_${subProperty}#num`,
+        subProperty,
+        `${subProperty}#num`,
+      ];
+      for (const k of subKeys) {
+        const candidate = context.recordsMap.get(k);
+        if (candidate && (!candidate.sub_property || candidate.sub_property.toUpperCase() === subProperty.toUpperCase())) {
+          record = candidate;
+          break;
+        }
+      }
+      if (!record) {
+        const candidate = context.recordsMap.get(rule.property_key) || context.recordsMap.get(normKey);
+        if (candidate && candidate.sub_property && candidate.sub_property.toUpperCase() === subProperty.toUpperCase()) {
+          record = candidate;
+        }
+      }
+    } else {
+      record =
+        (isRuleNumeric ? (context.recordsMap.get(`${rule.property_key}#num`) || context.recordsMap.get(`${normKey}#num`) || (dataElementId ? context.recordsMap.get(`${dataElementId}#num`) : undefined)) : undefined) ||
+        (isRuleQualitative ? (context.recordsMap.get(`${rule.property_key}#qual`) || context.recordsMap.get(`${normKey}#qual`) || (dataElementId ? context.recordsMap.get(`${dataElementId}#qual`) : undefined)) : undefined) ||
+        context.recordsMap.get(rule.property_key) ||
+        context.recordsMap.get(normKey) ||
+        (dataElementId ? context.recordsMap.get(dataElementId) : undefined) ||
+        context.recordsMap.get(`${rule.category}_${rule.property_key}`) ||
+        context.recordsMap.get(`${rule.category}_${normKey}`);
+    }
 
     let result: RuleEvaluationItemResult;
 

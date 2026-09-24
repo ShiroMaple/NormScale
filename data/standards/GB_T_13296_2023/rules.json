@@ -269,6 +269,11 @@
       "value": 183,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S11306_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -615,6 +620,11 @@
       "value": 183,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S11710_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -988,6 +998,11 @@
       "value": 219,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S12791_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1361,6 +1376,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30210_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1390,6 +1410,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30210_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1419,6 +1444,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30210_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1791,6 +1821,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30403_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1820,6 +1855,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30403_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -1849,6 +1889,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30403_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2221,6 +2266,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30408_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2250,6 +2300,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30408_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2279,6 +2334,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30408_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2654,6 +2714,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30409_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2683,6 +2748,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30409_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -2712,6 +2782,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30409_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3138,6 +3213,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30453_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3167,6 +3247,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30453_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3196,6 +3281,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30453_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3595,6 +3685,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30458_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3624,6 +3719,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30458_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -3653,6 +3753,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30458_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4025,6 +4130,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30908_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4054,6 +4164,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30908_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4083,6 +4198,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30908_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4455,6 +4575,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30920_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4484,6 +4609,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30920_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4513,6 +4643,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S30920_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4885,6 +5020,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31008_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4914,6 +5054,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31008_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -4943,6 +5088,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31008_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5315,6 +5465,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31020_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5344,6 +5499,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31020_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5373,6 +5533,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31020_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5826,6 +5991,11 @@
       "value": 96,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31252_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5855,6 +6025,11 @@
       "value": 220,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31252_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -5884,6 +6059,11 @@
       "value": 230,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31252_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6283,6 +6463,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31603_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6312,6 +6497,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31603_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6341,6 +6531,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31603_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6740,6 +6935,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31608_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6769,6 +6969,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31608_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -6798,6 +7003,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31608_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7200,6 +7410,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31609_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7229,6 +7444,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31609_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7258,6 +7478,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31609_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7711,6 +7936,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31653_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7740,6 +7970,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31653_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -7769,6 +8004,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31653_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8195,6 +8435,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31658_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8224,6 +8469,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31658_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8253,6 +8503,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31658_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8676,6 +8931,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31668_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8705,6 +8965,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31668_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -8734,6 +8999,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31668_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9160,6 +9430,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31683_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9189,6 +9464,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31683_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9218,6 +9498,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31683_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9644,6 +9929,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31688_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9673,6 +9963,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31688_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -9702,6 +9997,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31688_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10101,6 +10401,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31703_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10130,6 +10435,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31703_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10159,6 +10469,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31703_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10558,6 +10873,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31708_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10587,6 +10907,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31708_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -10616,6 +10941,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S31708_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11012,6 +11342,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S32168_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11041,6 +11376,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S32168_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11070,6 +11410,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S32168_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11469,6 +11814,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S32169_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11498,6 +11848,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S32169_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11527,6 +11882,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S32169_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11950,6 +12310,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S34778_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -11979,6 +12344,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S34778_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12008,6 +12378,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S34778_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12407,6 +12782,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S34779_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12436,6 +12816,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S34779_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12465,6 +12850,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S34779_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12867,6 +13257,11 @@
       "value": 95,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S38148_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12896,6 +13291,11 @@
       "value": 207,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S38148_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -12925,6 +13325,11 @@
       "value": 218,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S38148_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -13375,6 +13780,11 @@
       "value": 100,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S38367_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -13825,6 +14235,11 @@
       "value": 90,
       "unit": "HRB",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S39042_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -13854,6 +14269,11 @@
       "value": 192,
       "unit": "HBW",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S39042_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {
@@ -13883,6 +14303,11 @@
       "value": 200,
       "unit": "HV",
       "description": "依据 GB/T 13296-2023 第 7.4.2 条及表5，壁厚 >= 1.7mm 的钢管应进行硬度试验"
+    },
+    "group": {
+      "id": "MECH_S39042_HARDNESS",
+      "op": "OR",
+      "semantic_code": "HARDNESS_CHOICE"
     }
   },
   {

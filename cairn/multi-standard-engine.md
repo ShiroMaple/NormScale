@@ -159,3 +159,31 @@ graph TD
      - **实质合格（PASS）**：判定为 `PASS`，文案说明：“标准要求壁厚需 ≥ 1.7mm 时强制考核，当前规格法定免检（豁免）；供方主动报送实测数据且检验合格，予以认可通过”；
      - **实质不合格（FAIL）**：判定为 `FAIL`，准确拦截质量超标隐患：“规格虽属于法定免检范围，但供方主动报送的实测数据超出标准限值要求，判定不合格”。
   3. **制式防呆隔离**：在 `evaluateOrChoiceGroup` 多选一逻辑中，根据原始数据文本中的标尺符号（HV / HRB / HBW）进行靶向约束，防止 139.3 HV1 错误跨标尺误判为 HRB（上限 90）超标。
+
+---
+
+## 9. RASE 规则逻辑组 (RuleGroup) 求值引擎与多标准严格排他合成 (Strict Pinning)
+
+### 9.1 问题背景与解题逻辑
+NormHub v2.0.0 对执行标准进行 RASE 原子化拆分后，原本标准中的“多选一”（如 GB/T 13296 硬度 HRB 90 / HBW 192 / HV 200 任选其一）与“替代检验”（如涡流替代水压）被拆分为独立原子规则，导致丢失了逻辑组语义，使得质保书仅提供 HV 时 HRB/HBW 会被误报 MISSING/FAIL。
+为此，标准层恢复并扩充了 `RuleGroup` 契约（`id`, `op: 'OR'|'AND'`, `semantic_code`, `min_pass`）。比对引擎相应升级为两阶段求值与合成调度模型。
+
+### 9.2 规则预处理与单次委托求值架构
+- **预处理分离 (`RuleGrouper`)**：通过纯函数预处理，将扁平原子规则流干净拆分为 `standaloneRules`（单条独立规则）与 `groupedRules`（规则逻辑组映射）。
+- **单次委托求值 (`RuleGroupEvaluator`)**：
+  - 组内成员单次遍历委托求值，杜绝重复计算；
+  - **就地打标抑制 (`is_suppressed`)**：OR 组达到 `min_pass` 门槛后，未满足的兄弟项置位 `is_suppressed: true`，从全局 `summary.failed_count` 与 `missing_count` 中扣减剔除；
+  - **宽严相济告警放行 (`PASS_WITH_WARNING`)**：当 OR 组中同时报送多个指标且一过一不过（如 HBW 合格但 HV 不合格）时，组结论评定为 `PASS_WITH_WARNING`，既放行主结论，又保留警示提示；
+  - **代表项置顶排序**：在报告及矩阵展示中，按 `PASS > PASS_WITH_WARNING > FAIL > MISSING > SKIPPED` 优先级对组内项排序，确保最真实的合规证据置顶展示；
+  - **挂载矩阵 (`group_results`)**：在 `AuditReport` 顶层统一挂载 `group_results`，保障全景合规矩阵透明展示组维度状态。
+
+### 9.3 硬度子标尺精确匹配与防混淆
+- 针对具有子属性的指标（如 `sub_property: 'HV'`），在 `buildContext` 中注册独立命名空间（如 `mech.hardness.HV`）；
+- 核心求值器 `evaluateSingleRule` 实施强校验，杜绝报送的维氏硬度（如 140 HV）被布氏或洛氏规则（HRB 上限 90）粗暴抢占误判。
+
+### 9.4 多标合成对齐与严格排他 (Strict Pinning) 防 AND 误升
+- **对齐键分组 (`groupingKey`)**：`MultiStandardComposer` 采用 `canonicalKey__subProp`（如 `hardness__HV`）作为分组键，防止多标合成时不同硬度标尺被坍缩为单一规则，完整保留多标下的原子规则与逻辑组结构；
+- **严格排他合成 (`MultiStandardGroupComposer`)**：当上位技术协议（TA）指定“只允许测试 HBW 或 HV”（严格排他排除 HRB）时：
+  - 过滤排除未被激活的原子项；
+  - 保持原通过门槛 `min_pass: Math.min(primaryGroup.groupMeta.min_pass ?? 1, activeDataElements.size)`，坚决杜绝将多选一门槛误提升为 `activeDataElements.size`（误将二选一升为强制 AND 导致单项达标报 FAIL）。
+

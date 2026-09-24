@@ -144,4 +144,27 @@ describe('recordsMap 槽位冲突 provenance 优先级裁决 (引擎覆写信任
     expect(igcResult?.status).toBe('PASS');
     expect(extractSlotConflictWarns(warnSpy).length).toBe(0);
   });
+
+  it('致密性检验与涡流探伤共存时不互相抢占槽位：各自独立入槽，无槽位冲突 warn', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const ptRecord: TestRecord = {
+      category: 'ndt',
+      property_key: 'pressure_tightness',
+      qualitative_result: '合格 OK',
+      conclusion_text: '水压试验或替代检验合格',
+      provenance: 'core',
+    };
+    // baseRecords 中已包含 eddy_current_test，追加 pressure_tightness
+    const report = ComplianceEngine.evaluate(standardRuleSet, buildCert([...baseRecords(), ptRecord], 'CONF-A-007'));
+
+    const ptResult = report.item_results.find((r) => r.property_key === 'pressure_tightness');
+    expect(ptResult?.status).toBe('PASS');
+
+    // 严禁打印关于 pressure_tightness / eddy_current_test 的槽位冲突警告
+    const conflicts = extractSlotConflictWarns(warnSpy);
+    const ndtConflicts = conflicts.filter((m) =>
+      ['pressure_tightness', 'eddy_current_test', 'test.eddy_current'].includes(m.key)
+    );
+    expect(ndtConflicts.length).toBe(0);
+  });
 });

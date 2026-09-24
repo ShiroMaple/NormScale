@@ -235,4 +235,18 @@ describe('MultiStandardComposer 多标准规则切片合成器测试', () => {
     const humanized = humanizeDynamicFormulaText(raw, 0.285, '%');
     expect(humanized).toBe('≥ 5×(C+N) [即 ≥ 0.285%] 且 ≤ 0.7%');
   });
+
+  it('多标准合成消除硬编码 maxDecimals=2：未显式指定修约位数的数值规则保持 undefined，实测 0.035% 不被误修约为 0.04%', () => {
+    const input: SliceWithStandardMeta[] = [
+      { slice: gbSlice, standardId: 'GB/T 13296-2023' },
+      { slice: nbSlice, standardId: 'NB/T 47019.5-2021' },
+    ];
+
+    const composite = composeMultiStandardSlices(input);
+    const pRule = composite?.evaluation_rules.find((r) => r.property_key === 'P');
+    expect(pRule).toBeDefined();
+    // 关键断言：未显式要求修约时，严禁硬编码默认注入 2 位小数
+    expect(pRule?.criteria['rounding_decimals']).toBeUndefined();
+    expect(pRule?.criteria['max']).toBe(0.035);
+  });
 });

@@ -32,6 +32,16 @@ export function validateAllStandards(standardsDir?: string): { success: boolean;
         errors.push('[' + entry.name + '/meta.json] Schema 校验失败: ' + String(err));
       }
 
+      const gradeIndexPath = path.join(fullPath, 'indices', 'grade_index.json');
+      if (fs.existsSync(gradeIndexPath)) {
+        try {
+          const gIndex = JSON.parse(fs.readFileSync(gradeIndexPath, 'utf8'));
+          totalSlices += Object.keys(gIndex).length;
+        } catch (err) {
+          errors.push('[' + entry.name + '/indices/grade_index.json] 解析失败: ' + String(err));
+        }
+      }
+
       const slicesDir = path.join(fullPath, 'slices');
       if (fs.existsSync(slicesDir)) {
         const sliceFiles = fs.readdirSync(slicesDir).filter(f => f.endsWith('.json'));

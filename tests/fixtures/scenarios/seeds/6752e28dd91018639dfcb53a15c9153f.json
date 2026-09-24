@@ -106,7 +106,7 @@
           "tensile_rm": "560",
           "yield_rp02": "240",
           "elongation_a": "42.0",
-          "hardness": "82"
+          "hardness": "82 HRB"
         },
         "process": {
           "flattening": "合格 OK (未见裂纹)",

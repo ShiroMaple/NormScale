@@ -178,9 +178,16 @@ export function createNormalizeNode(ruleStore?: IRuleStore) {
 
       // 扫描未命中已知标准规则、标记为沙箱或大类为 other 的长尾属性
       const unresolved: PropertyResolutionCandidate[] = [];
+      const isNonTechnicalMetadata = (name: string): boolean =>
+        /数量|重量|净重|毛重|件数|支数|箱号|捆号|清单|装箱|交货状态|合同号|订单号|工程号/i.test(name);
+
       if (certificate && Array.isArray(certificate.test_records) && !humanCorrection?.corrected_property_keys) {
         for (const rec of certificate.test_records) {
           const rawName = rec.raw_property_name || rec.property_key;
+          if (isNonTechnicalMetadata(rawName)) {
+            continue;
+          }
+
           const norm = PropertyKeyNormalizer.normalize(rawName, rec.category, {
             measuredRaw: rec.measured_value_raw ?? rec.measured_value_num,
             unit: rec.unit,
